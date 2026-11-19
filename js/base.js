@@ -546,6 +546,9 @@ CC.Game = (function () {
       heroUp: null,
       builders: BUILD.start,
       level: 0,
+      // Выбранный для ближайшего боя уровень. Прогресс живёт в level и
+      // двигается только completeLevel — реплей старого уровня его не трогает.
+      selected: 0,
       cleared: [],
       stars: {},
       // Уже разграбленные постройки уровней: st.looted[levelIndex][buildingKey].
@@ -568,7 +571,9 @@ CC.Game = (function () {
         losses: 0,
         poolSeed: 0,
         attacked: [],
-        search: 0
+        search: 0,
+        // Разграбленные постройки призраков: pvp.looted[ghostId][key] = true.
+        looted: {}
       }
     };
   }
@@ -3102,13 +3107,34 @@ CC.Game = (function () {
 
   /* ---------- прогресс кампании ---------- */
 
-  // Уровни проходятся по порядку: st.level — индекс текущего,
-  // st.cleared — список пройденных индексов.
+  // Уровни проходятся по порядку: st.level — первый непройденный (прогресс),
+  // st.cleared — список пройденных индексов. Выбранный для боя уровень
+  // живёт отдельно в st.selected и прогресс не двигает.
   function currentLevel() {
     if (!LEVELS.length) return 0;
     const i = st.level | 0;
     if (i < 0) return 0;
     return i >= LEVELS.length ? LEVELS.length - 1 : i;
+  }
+
+  // Уровень, который откроется по «В БОЙ» и перезапуску. Старый сейв без
+  // поля selected читает текущий прогресс.
+  function selectedLevel() {
+    if (!LEVELS.length) return 0;
+    const i = Math.floor(num(st.selected, currentLevel()));
+    if (!isFinite(i) || i < 0) return 0;
+    return i >= LEVELS.length ? LEVELS.length - 1 : i;
+  }
+
+  // Вернуть выбор к прогрессу: следующий выход из боя начнёт новый уровень,
+  // а не повтор предыдущего.
+  function resetSelected() {
+    const i = currentLevel();
+    if (st.selected !== i) {
+      st.selected = i;
+      save();
+    }
+    return i;
   }
 
   function clearedLevels() {
@@ -3188,11 +3214,12 @@ CC.Game = (function () {
     return i <= maxCleared + 1 || st.cleared.indexOf(i) !== -1;
   }
 
-  // Выбор уровня для боя. Открытый уровень можно переиграть.
+  // Выбор уровня для боя. Открытый уровень можно переиграть: меняется только
+  // selected, прогресс st.level остаётся на первом непройденном.
   function selectLevel(index) {
     const i = Math.floor(Number(index));
     if (!isLevelUnlocked(i)) return { error: 'Уровень закрыт', locked: true };
-    st.level = i;
+    st.selected = i;
     save();
     return { ok: true, level: i, name: LEVELS[i] ? LEVELS[i].name : '' };
   }
@@ -3216,11 +3243,15 @@ CC.Game = (function () {
     }
     st.cleared.sort(function (a, b) { return a - b; });
 
-    // Следующий уровень открывается только за первое прохождение.
-    // Реплей старого уровня не должен откатывать текущий прогресс.
-    if (firstClear && i === st.level && i + 1 < LEVELS.length) {
-      st.level = i + 1;
-    }
+    // Прогресс — это первый непройденный уровень, а не последний выбранный.
+    // Реплей старого уровня и прохождение вразнобой не откатывают карту.
+    let next = 0;
+    while (next < LEVELS.length && st.cleared.indexOf(next) !== -1) next++;
+    st.level = next >= LEVELS.length ? LEVELS.length - 1 : next;
+
+    // Прошли выбранный уровень впервые — выбор идёт за прогрессом. Реплей
+    // уже пройденного уровня (firstClear === false) выбор не трогает.
+    if (firstClear && st.selected === i) st.selected = st.level;
 
     save();
     return {
@@ -3375,6 +3406,7 @@ CC.Game = (function () {
         heroUp: st.heroUp,
         builders: st.builders,
         level: st.level,
+        selected: st.selected,
         cleared: st.cleared,
         stars: st.stars,
         looted: st.looted,
@@ -3416,6 +3448,33 @@ CC.Game = (function () {
         if (n >= 500) break;
       }
       out[i] = clean;
+    }
+    return out;
+  }
+
+  // Разграбление призраков: ghostId → набор ключей построек. Старый сейв
+  // без поля получает пустую карту, битые записи отбрасываются.
+  function sanitizePvpLooted(src) {
+    const out = {};
+    if (!src || typeof src !== 'object') return out;
+    let ghosts = 0;
+    for (const gid in src) {
+      if (typeof gid !== 'string' || !gid || gid.length > 40) continue;
+      if (gid === '__proto__' || gid === 'constructor' || gid === 'prototype') continue;
+      const row = src[gid];
+      if (!row || typeof row !== 'object') continue;
+      const clean = {};
+      let n = 0;
+      for (const key in row) {
+        if (row[key] !== true) continue;
+        if (typeof key !== 'string' || !key || key.length > 64) continue;
+        clean[key] = true;
+        n++;
+        if (n >= 500) break;
+      }
+      out[gid] = clean;
+      ghosts++;
+      if (ghosts >= 100) break;
     }
     return out;
   }
@@ -3647,6 +3706,10 @@ CC.Game = (function () {
     if (LEVELS.length) {
       const lvl = Math.floor(num(d.level, 0));
       s.level = lvl < 0 ? 0 : (lvl >= LEVELS.length ? LEVELS.length - 1 : lvl);
+      // Старый сейв без selected: выбран текущий прогресс, а не нулевой
+      // уровень — иначе «В БОЙ» откатил бы игрока в начало.
+      const sel = Math.floor(num(d.selected, s.level));
+      s.selected = sel < 0 ? 0 : (sel >= LEVELS.length ? LEVELS.length - 1 : sel);
     }
 
     if (Array.isArray(d.cleared)) {
@@ -3699,6 +3762,7 @@ CC.Game = (function () {
       s.pvp.losses = Math.max(0, Math.floor(num(p.losses, 0)));
       s.pvp.poolSeed = Math.max(0, Math.floor(num(p.poolSeed, 0))) >>> 0;
       s.pvp.search = Math.max(0, Math.floor(num(p.search, 0)));
+      s.pvp.looted = sanitizePvpLooted(p.looted);
 
       if (Array.isArray(p.attacked)) {
         const seen = {};
@@ -4047,6 +4111,8 @@ CC.Game = (function () {
     offlineInfo: offlineInfo,
     claimOffline: claimOffline,
     currentLevel: currentLevel,
+    selectedLevel: selectedLevel,
+    resetSelected: resetSelected,
     clearedLevels: clearedLevels,
     isAllCleared: isAllCleared,
     completeLevel: completeLevel,

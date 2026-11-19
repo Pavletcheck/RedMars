@@ -131,11 +131,14 @@ CC.Battle = (function () {
     return S;
   }
 
-  // index — номер уровня кампании; без аргумента берём текущий из прогресса.
+  // index — номер уровня кампании; без аргумента берём выбранный для боя
+  // уровень (а не прогресс: реплей старого уровня не должен сбрасываться).
   function newState(index) {
     let idx;
     if (typeof index === 'number' && isFinite(index)) {
       idx = Math.floor(index);
+    } else if (CC.Game && CC.Game.selectedLevel) {
+      idx = CC.Game.selectedLevel();
     } else if (CC.Game && CC.Game.currentLevel) {
       idx = CC.Game.currentLevel();
     } else {
@@ -160,8 +163,12 @@ CC.Battle = (function () {
       // армию эпохи задаёт сам инструмент.
       const hasVillage = !!(CC.Base && CC.Base.count &&
         CC.Base.count('townhall') > 0);
+      // Выбранный для боя уровень (реплей) — не предпросмотр чужой эпохи:
+      // армия и герой остаются армейскими, как в обычном бою.
+      const selected = CC.Game.selectedLevel
+        ? CC.Game.selectedLevel() : current;
       const preview = !hasVillage ||
-        (typeof index === 'number' && idx !== current);
+        (typeof index === 'number' && idx !== current && idx !== selected);
       // Баланс-симулятор зовёт reset(i) с чужим индексом и своей армией эпохи.
       // Эпоха занимает два уровня центра: 1-2, 3-4 … 9-10, поэтому для
       // предпросмотра берём верхнюю границу эпохи, а не lvl.th (он 1..5).
@@ -1184,7 +1191,8 @@ CC.Battle = (function () {
     // Предпросмотр чужого уровня кампании (reset(i) из баланс-симулятора)
     // уже отфильтровал армию по верхней границе эпохи — не блокируем.
     const previewCampaign = S.kind === 'campaign' && CC.Game &&
-      CC.Game.currentLevel && S.level !== CC.Game.currentLevel();
+      CC.Game.currentLevel && S.level !== CC.Game.currentLevel() &&
+      (!CC.Game.selectedLevel || S.level !== CC.Game.selectedLevel());
     const hasVillage = !!(CC.Base && CC.Base.count &&
       CC.Base.count('townhall') > 0);
     if (!S.headless && !previewCampaign && hasVillage &&

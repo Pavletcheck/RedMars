@@ -605,6 +605,13 @@ CC.UI = (function () {
     return n;
   }
 
+  // Уровень, выбранный для боя. Он отделён от прогресса: реплей старого
+  // уровня не откатывает currentLevel().
+  function chosenLevel() {
+    if (CC.Game.selectedLevel) return CC.Game.selectedLevel();
+    return CC.Game.currentLevel();
+  }
+
   function setMode(mode) {
     if (mode === CC.App.mode && lastMode === mode) return;
 
@@ -619,6 +626,8 @@ CC.UI = (function () {
     // уходим с поля боя — невысаженные войска возвращаются в деревню
     if (mode === 'base' && CC.App.mode === 'battle' && CC.Battle.state) {
       CC.Battle.syncArmy();
+      // Следующий выход из деревни начинает прогресс, а не реплей.
+      if (CC.Game.resetSelected) CC.Game.resetSelected();
       CC.Game.save();
     }
 
@@ -650,13 +659,13 @@ CC.UI = (function () {
     if (mode === 'battle') {
       overlayShown = false;
       overlayEl.classList.add('hidden');
-      CC.Battle.reset(CC.Game.currentLevel());
+      CC.Battle.reset(chosenLevel());
       retryReadyAt = Date.now() + 2000;
       cache.pct = cache.time = cache.level = null;
       Object.keys(cache).forEach(function (k) {
         if (k !== 'pct' && k !== 'time' && k !== 'level') delete cache[k];
       });
-      const lvl = CC.LEVELS[CC.Game.currentLevel()];
+      const lvl = CC.LEVELS[chosenLevel()];
       showTip((lvl && lvl.hint) || 'Выбери войско внизу и тапни по любой свободной клетке');
     } else {
       // вернулись в деревню — окно результата боя больше не нужно
@@ -1938,8 +1947,9 @@ CC.UI = (function () {
     closeArena();
     closeReplays();
 
-    // На карте всегда подсвечен текущий узел: после победы он уже следующий.
-    mapSelected = CC.Game.currentLevel();
+    // На карте подсвечен выбранный для боя уровень; после выхода с поля боя
+    // он уже равен прогрессу (setMode('base') вызывает resetSelected).
+    mapSelected = chosenLevel();
     levelsOpen = true;
     if (levelsEl) levelsEl.classList.remove('hidden');
     if (mapScroll) mapScroll.scrollTop = 0;
@@ -4523,15 +4533,27 @@ CC.UI = (function () {
 
     const empty = armyTotal() <= 0;
     arenaList.innerHTML = arenaTargets.map(function (g) {
+      // В повторе показываем реальный остаток с учётом уже разграбленного:
+      // полный пул на карточке больше не обещаем.
+      const info = CC.Pvp && CC.Pvp.lootInfo
+        ? CC.Pvp.lootInfo(g)
+        : {
+          gold: g.loot.gold, elixir: g.loot.elixir,
+          first: true, empty: false
+        };
+      const note = info.first
+        ? ''
+        : (info.empty ? ' · пул исчерпан' : ' · повтор: 75%');
       return '<div class="arena-card" data-arena-card="' + escHtml(g.id) + '">' +
         '<div class="arena-card__head">' +
           '<b class="arena-card__name">' + escHtml(g.name) + '</b>' +
           '<span class="arena-card__rating">🏆 ' + g.rating + '</span>' +
         '</div>' +
-        '<div class="arena-card__meta">Центр ' + g.th + ' · оборона ' + g.defenses + '</div>' +
+        '<div class="arena-card__meta">Центр ' + g.th + ' · оборона ' + g.defenses +
+          note + '</div>' +
         '<div class="arena-card__loot">' +
-          '<span>🔩 ' + g.loot.gold + '</span>' +
-          '<span>⚡ ' + g.loot.elixir + '</span>' +
+          '<span>🔩 ' + info.gold + '</span>' +
+          '<span>⚡ ' + info.elixir + '</span>' +
         '</div>' +
         '<button class="arena-card__btn" type="button" data-arena-attack="' +
           escHtml(g.id) + '"' + (empty ? ' disabled' : '') + '>Атаковать</button>' +
@@ -4740,9 +4762,12 @@ CC.UI = (function () {
       const got = (actual.gold || 0) + (actual.elixir || 0) > 0;
       const had = (offered.gold || 0) + (offered.elixir || 0) > 0;
       const emptyLoot = Array.isArray(res.emptyLoot) && res.emptyLoot.length > 0;
+      const repeat = reward.first === false;
       arenaResultLoot.textContent = got
         ? 'Добыча: ' + lootText(actual)
-        : (had ? 'Добыча: ' + lootText(offered) + ' · всё не влезло' : 'Добычи нет');
+        : (had ? 'Добыча: ' + lootText(offered) + ' · всё не влезло'
+          : (repeat ? 'Добычи нет · пул призрака исчерпан' : 'Добычи нет'));
+      if (got && repeat) arenaResultLoot.textContent += ' · повтор: 75% от остатка';
       if (emptyLoot) arenaResultLoot.textContent += ' · в этом складе уже пусто';
     }
     if (arenaResultArmy) {
@@ -5355,9 +5380,9 @@ CC.UI = (function () {
     overlayShown = false;
     overlayEl.classList.add('hidden');
 
-    // после победы прогресс уже переключён на следующий уровень,
-    // после поражения остаётся текущий — reset берёт его из CC.Game
-    CC.Battle.reset(CC.Game.currentLevel());
+    // Перезапускаем выбранный уровень. После победы над новым уровнем
+    // выбор равен ему же, поэтому «Ещё раз» не уводит с карты.
+    CC.Battle.reset(chosenLevel());
     retryReadyAt = Date.now() + 2000;
     cache.pct = cache.time = cache.level = null;
     Object.keys(cache).forEach(function (k) {
@@ -5372,7 +5397,7 @@ CC.UI = (function () {
       if (CC.Sound && CC.Sound.setMode) CC.Sound.setMode('battle');
     }
 
-    const lvl = CC.LEVELS[CC.Game.currentLevel()];
+    const lvl = CC.LEVELS[chosenLevel()];
     showTip((lvl && lvl.hint) || 'Выбери войско внизу и тапни по любой свободной клетке');
     sync();
   }
@@ -5832,7 +5857,7 @@ CC.Intro = (function () {
     if (!viewW || !viewH) resize();
 
     const view = { w: viewW, h: viewH, dpr: viewDpr };
-    const t = Math.max(0, Math.min(totalMs(), Number(ms) || 0));
+    const tMs = Math.max(0, Math.min(totalMs(), Number(ms) || 0));
 
     try {
       if (c.setTransform) c.setTransform(1, 0, 0, 1, 0, 0);
@@ -5840,13 +5865,15 @@ CC.Intro = (function () {
         c.clearRect(0, 0, view.w * view.dpr, view.h * view.dpr);
       }
       if (CC.Render && typeof CC.Render.drawIntro === 'function') {
-        CC.Render.drawIntro(c, view, t);
+        // Художник живёт в секундах (0…6.5), а rAF и таймеры — в мс.
+        // Без деления второй кадр (~16.7) клампился в 6.5 и сцена стояла.
+        CC.Render.drawIntro(c, view, tMs / 1000);
       } else {
-        fallbackFrame(c, view, t);
+        fallbackFrame(c, view, tMs);
       }
       return true;
     } catch (e) {
-      try { fallbackFrame(c, view, t); } catch (e2) { /* без кадра, но без падения */ }
+      try { fallbackFrame(c, view, tMs); } catch (e2) { /* без кадра, но без падения */ }
       return false;
     }
   }

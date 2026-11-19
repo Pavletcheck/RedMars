@@ -81,8 +81,38 @@ CC.Pvp = (function () {
       losses: 0,
       poolSeed: 0,
       attacked: [],
-      search: 0
+      search: 0,
+      // Память разграбления по призракам: ghostId → { buildingKey: true }.
+      // Первый бой отдаёт полный пул, повтор — 75% от оставшегося.
+      looted: {}
     };
+  }
+
+  // Только призраки с разумными id и только true: битый сейв не должен
+  // открывать повторный полный пул и не раздувает состояние.
+  function cleanLooted(src) {
+    const out = {};
+    if (!src || typeof src !== 'object') return out;
+    let ghosts = 0;
+    for (const gid in src) {
+      if (typeof gid !== 'string' || !gid || gid.length > 40) continue;
+      if (gid === '__proto__' || gid === 'constructor' || gid === 'prototype') continue;
+      const row = src[gid];
+      if (!row || typeof row !== 'object') continue;
+      const clean = {};
+      let n = 0;
+      for (const key in row) {
+        if (row[key] !== true) continue;
+        if (typeof key !== 'string' || !key || key.length > 64) continue;
+        clean[key] = true;
+        n++;
+        if (n >= 500) break;
+      }
+      out[gid] = clean;
+      ghosts++;
+      if (ghosts >= 100) break;
+    }
+    return out;
   }
 
   // Состояние PvP из прогресса деревни. Для тестов можно передать свой
@@ -103,6 +133,7 @@ CC.Pvp = (function () {
     p.poolSeed = Math.max(0, Math.floor(num(p.poolSeed, 0))) >>> 0;
     p.search = Math.max(0, Math.floor(num(p.search, 0)));
     if (!Array.isArray(p.attacked)) p.attacked = [];
+    p.looted = cleanLooted(p.looted);
     return p;
   }
 
@@ -450,6 +481,99 @@ CC.Pvp = (function () {
 
   /* ---------- бой и награды ---------- */
 
+  // Карта уже разграбленных построек конкретного призрака.
+  function ghostLooted(id) {
+    if (!id) return {};
+    const p = pvpOf(null);
+    const row = p.looted && p.looted[id];
+    return row && typeof row === 'object' ? row : {};
+  }
+
+  // Первый бой — полный пул. Повтор — уже не первый, даже если запись
+  // в коротком списке attacked успела вытесниться: память looted важнее.
+  function firstIn(p, id) {
+    if (!id) return true;
+    if (p && Array.isArray(p.attacked) && p.attacked.indexOf(id) !== -1) return false;
+    const row = p && p.looted && p.looted[id];
+    if (row && typeof row === 'object') {
+      for (const key in row) {
+        if (row[key] === true) return false;
+      }
+    }
+    return true;
+  }
+
+  function isFirstGhost(id) {
+    if (!id) return true;
+    return firstIn(pvpOf(null), id);
+  }
+
+  // Раскладка пула призрака по его постройкам с учётом прошлых
+  // разграблений. Один источник правды для боя и для карточек Арены.
+  function ghostRows(ghost) {
+    const g = ghost || {};
+    const rows = (g.layout || []).map(function (r) {
+      return {
+        type: r.type,
+        x: Math.floor(num(r.x, 0)),
+        y: Math.floor(num(r.y, 0)),
+        level: Math.max(1, Math.floor(num(r.level, 1)))
+      };
+    }).filter(function (r) { return !!DEFS[r.type]; });
+
+    const pool = {
+      gold: Math.max(0, Math.floor(num(g.loot && g.loot.gold, 0))),
+      elixir: Math.max(0, Math.floor(num(g.loot && g.loot.elixir, 0)))
+    };
+    const plan = CC.Loot && CC.Loot.distribute ? CC.Loot.distribute(pool, rows) : {};
+    const looted = ghostLooted(g.id);
+
+    for (let i = 0; i < rows.length; i++) {
+      const key = CC.lootKey
+        ? CC.lootKey(rows[i].type, rows[i].x, rows[i].y)
+        : rows[i].type + ':' + rows[i].x + ':' + rows[i].y;
+      const part = plan[key] || { gold: 0, elixir: 0 };
+      const empty = looted[key] === true;
+      rows[i].key = key;
+      rows[i].lootGold = empty ? 0 : part.gold;
+      rows[i].lootElixir = empty ? 0 : part.elixir;
+      rows[i].emptyLoot = empty;
+    }
+    return { rows: rows, pool: pool };
+  }
+
+  // Фактическая добыча, которую игрок увидит на карточке: полный остаток
+  // в первом бою и 75% остатка в повторе.
+  function lootInfo(ghost) {
+    const info = ghostRows(ghost);
+    const id = ghost && ghost.id;
+    let remainGold = 0;
+    let remainElixir = 0;
+    let left = 0;
+    let lootedCount = 0;
+
+    for (let i = 0; i < info.rows.length; i++) {
+      const r = info.rows[i];
+      if (r.emptyLoot) lootedCount++;
+      else left++;
+      remainGold += r.lootGold;
+      remainElixir += r.lootElixir;
+    }
+
+    const first = isFirstGhost(id);
+    const share = first ? 1 : 0.75;
+    return {
+      first: first,
+      share: share,
+      empty: remainGold + remainElixir <= 0,
+      left: left,
+      looted: lootedCount,
+      remaining: { gold: remainGold, elixir: remainElixir },
+      gold: Math.floor(remainGold * share),
+      elixir: Math.floor(remainElixir * share)
+    };
+  }
+
   function copyArmy(map) {
     const out = {};
     const order = CC.ARMY_ORDER || [];
@@ -484,32 +608,9 @@ CC.Pvp = (function () {
       }
     }
 
-    const rows = (g.layout || []).map(function (r) {
-      return {
-        type: r.type,
-        x: Math.floor(num(r.x, 0)),
-        y: Math.floor(num(r.y, 0)),
-        level: Math.max(1, Math.floor(num(r.level, 1)))
-      };
-    }).filter(function (r) { return !!DEFS[r.type]; });
-
-    // Пул призрака лежит в его зданиях по тем же правилам, что в кампании:
-    // 60% в хранилища, 25% в центр, 15% в буры/реакторы. Снос склада
-    // отдаёт именно его долю, даже если звёзд нет.
-    const pool = {
-      gold: Math.max(0, Math.floor(num(g.loot && g.loot.gold, 0))),
-      elixir: Math.max(0, Math.floor(num(g.loot && g.loot.elixir, 0)))
-    };
-    const plan = CC.Loot && CC.Loot.distribute ? CC.Loot.distribute(pool, rows) : {};
-    for (let i = 0; i < rows.length; i++) {
-      const key = CC.lootKey
-        ? CC.lootKey(rows[i].type, rows[i].x, rows[i].y)
-        : rows[i].type + ':' + rows[i].x + ':' + rows[i].y;
-      const part = plan[key] || { gold: 0, elixir: 0 };
-      rows[i].key = key;
-      rows[i].lootGold = part.gold;
-      rows[i].lootElixir = part.elixir;
-    }
+    const built = ghostRows(g);
+    const rows = built.rows;
+    const pool = built.pool;
 
     return {
       id: g.id || 'pvp',
@@ -556,21 +657,22 @@ CC.Pvp = (function () {
     const nextRating = Math.max(0, rating + delta);
     delta = nextRating - rating;
 
-    const first = o.first !== undefined ? !!o.first : !wasAttacked(g.id);
+    const first = o.first !== undefined ? !!o.first : firstIn(p, g.id);
     const poolLoot = g.loot || { gold: 0, elixir: 0 };
 
-    // Новый движок боя отдаёт фактически снесённые здания. Тогда доля
-    // пула не считается вовсе: сколько складов разрушил — столько и унёс.
+    // Новый движок боя отдаёт фактически снесённые здания. Причём в повторе
+    // уже разграбленные в прошлый раз склады пришли с нулём: lootTaken —
+    // это ровно остаток. Первый бой отдаёт 100% остатка, повтор — 75%.
     // Старый расчёт остаётся для чистых вызовов finish() без боя.
     const taken = r.lootTaken && typeof r.lootTaken === 'object' ? r.lootTaken : null;
 
     let share;
     let offered;
     if (taken) {
-      share = 1;
+      share = first ? 1 : 0.75;
       offered = {
-        gold: Math.max(0, Math.floor(num(taken.gold, 0))),
-        elixir: Math.max(0, Math.floor(num(taken.elixir, 0)))
+        gold: Math.max(0, Math.floor(num(taken.gold, 0) * share)),
+        elixir: Math.max(0, Math.floor(num(taken.elixir, 0) * share))
       };
     } else {
       // Первое убийство призрака — весь пул. Повтор — доля по разрушениям:
@@ -615,6 +717,27 @@ CC.Pvp = (function () {
     };
   }
 
+  // Запоминаем только реально опустевшие постройки: повторный бой с этим
+  // призраком увидит именно их с нулём, даже после перезапуска игры.
+  function rememberLoot(p, ghostId, buildings) {
+    if (!p || !ghostId || !Array.isArray(buildings)) return 0;
+    if (!p.looted || typeof p.looted !== 'object') p.looted = {};
+    if (!p.looted[ghostId] || typeof p.looted[ghostId] !== 'object') {
+      p.looted[ghostId] = {};
+    }
+    const row = p.looted[ghostId];
+    let n = 0;
+    for (let i = 0; i < buildings.length; i++) {
+      const e = buildings[i];
+      if (!e || !e.key || e.empty) continue;
+      if ((e.gold || 0) + (e.elixir || 0) <= 0) continue;
+      if (row[e.key] === true) continue;
+      row[e.key] = true;
+      n++;
+    }
+    return n;
+  }
+
   // Начисление результата в деревню: рейтинг, счётчики, добыча, опыт.
   // Возвращает reward с фактически принятой добычей.
   function commit(result, ghost) {
@@ -630,13 +753,18 @@ CC.Pvp = (function () {
       }
       : null;
 
-    const first = !wasAttacked(ghost && ghost.id);
+    const first = isFirstGhost(ghost && ghost.id);
     const reward = finish(result, ghost, {
       rating: p.rating,
       first: first,
       cap: free,
       state: CC.Game.state
     });
+
+    // Сначала фиксируем, что именно опустело в этом бою, потом отмечаем
+    // призрака как атакованного. Повтор уже не получит полный пул.
+    rememberLoot(p, ghost && ghost.id,
+      result && result.lootedBuildings);
 
     p.rating = reward.rating;
     if (reward.win) p.wins++;
@@ -683,6 +811,7 @@ CC.Pvp = (function () {
     p.losses = 0;
     p.attacked = [];
     p.search = 0;
+    p.looted = {};
     if (CC.Game && CC.Game.save) CC.Game.save();
     return p;
   }
@@ -693,6 +822,7 @@ CC.Pvp = (function () {
     attack: attack,
     finish: finish,
     commit: commit,
+    lootInfo: lootInfo,
     recent: recent,
     wasAttacked: wasAttacked,
     markAttacked: markAttacked,
