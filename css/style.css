@@ -1637,6 +1637,32 @@ body {
   --ico-ac: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Ccircle cx='17.8' cy='3.4' r='2'/%3E%3Ccircle cx='20.4' cy='5.4' r='.9'/%3E%3C/g%3E%3C/svg%3E");
 }
 
+/* Сержант: тяжёлый шлем с визором, антенной и наплечниками.
+   Песочный металл, бирюзовый визор, золотая полоса различия. */
+.cc-icon[data-type="hero"] {
+  --ico: #ecd9ac;
+  --ico-a: #6ff2df;
+  --ico-m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Cpath d='M4.9 10.2Q4.9 3.5 12 3.5t7.1 6.7v4.3q0 4-3.7 5.6H8.6Q4.9 18.5 4.9 14.5z'/%3E%3Cpath d='M17.9 6.6 19.9 2l1.5.6-1.8 4.6z'/%3E%3Ccircle cx='20.7' cy='2.3' r='1.1'/%3E%3Crect x='1.2' y='14.4' width='4.4' height='4.6' rx='1.5'/%3E%3Crect x='18.4' y='14.4' width='4.4' height='4.6' rx='1.5'/%3E%3Crect x='8.4' y='16.8' width='7.2' height='3.4' rx='1.2'/%3E%3C/g%3E%3C/svg%3E");
+  --ico-ac: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Crect x='7.2' y='9.5' width='9.6' height='2.7' rx='1.2'/%3E%3Crect x='7.6' y='6.8' width='4.4' height='.9' rx='.45'/%3E%3Ccircle cx='18.1' cy='7.1' r='.85'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Купол щита отдельной иконкой: для кнопки способности и подсказок.
+   acc — искра/кромка, состояние «использован» гасит маску. */
+.cc-icon[data-type="hero-shield"] {
+  --ico: #9ffbf0;
+  --ico-a: #ffcf4a;
+  --ico-m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 2.6c5.1 0 9 3.5 9 8.4 0 5.6-3.7 10.4-9 12.4-5.3-2-9-6.8-9-12.4 0-4.9 3.9-8.4 9-8.4zm0 2.2c-3.9 0-6.8 2.6-6.8 6.3 0 4.2 2.7 7.9 6.8 9.6 4.1-1.7 6.8-5.4 6.8-9.6 0-3.7-2.9-6.3-6.8-6.3z'/%3E%3C/svg%3E");
+  --ico-ac: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Cpath d='M7.4 11.2 9.8 8.8l2 2 2.6-2.6 2.2 2.2-2.6 2.6 2 2-2.4 2.4-2-2-2.4 2.4z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.cc-icon[data-type="hero-shield"][data-state="used"],
+.cc-icon[data-type="hero-shield"].is-used {
+  --ico: #74868a;
+  --ico-a: #56676b;
+  opacity: .55;
+  filter: grayscale(1);
+}
+
 @supports (mask-image: url("data:image/svg+xml,")) or (-webkit-mask-image: url("data:image/svg+xml,")) {
 
   /* Тень-обводка делает песочный силуэт читаемым и на тёмном металле,
@@ -4716,3 +4742,390 @@ body {
     transition: none;
   }
 }
+
+/* ===================================================================
+   СПОСОБНОСТЬ ГЕРОЯ — КУПОЛ ЩИТА.
+   Кнопка живёт в боевой панели рядом с карточками войск. Контракт
+   классов: .hero-ability; состояния — .is-used / [disabled] /
+   [data-state="used"]. Внутренний .cc-icon скрываем: иконку купола
+   рисует маска, чтобы кнопка выглядела одинаково в любом ангаре.
+   Класс .hero-shield-btn и [data-ability="shield"] — синонимы,
+   чтобы разметка кодера могла использовать любое имя.
+   =================================================================== */
+
+.hero-ability,
+.hero-shield-btn,
+[data-ability="shield"] {
+  --ab-dome: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 2.4c5.4 0 9.3 3.7 9.3 8.6 0 5.8-3.9 10.8-9.3 12.8-5.4-2-9.3-7-9.3-12.8 0-4.9 3.9-8.6 9.3-8.6zm0 2.2c-4.2 0-7.2 2.7-7.2 6.4 0 4.4 2.9 8.3 7.2 10.1 4.3-1.8 7.2-5.7 7.2-10.1 0-3.7-3-6.4-7.2-6.4zM12 8.5l3 1.8v3.5l-3 1.8-3-1.8V10.3zm0 1.5-1.6 1v1.9L12 14l1.6-1v-1.9z'/%3E%3C/svg%3E");
+  --ab-edge: #6ff2df;
+  position: relative;
+  flex: 0 0 74px;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 4px 6px;
+  border: 1px solid rgba(70, 224, 200, .52);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(70, 224, 200, .26), rgba(8, 20, 24, 0) 68%),
+    linear-gradient(180deg, rgba(23, 42, 46, .97), rgba(8, 17, 21, .97));
+  color: #eafffb;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  isolation: isolate;
+  transition: transform .12s, box-shadow .12s, border-color .12s, filter .12s;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .16),
+    inset 0 -3px 0 rgba(0, 0, 0, .42),
+    0 3px 0 #06262a,
+    0 0 16px rgba(70, 224, 200, .22);
+}
+
+.hero-ability:hover,
+.hero-shield-btn:hover,
+[data-ability="shield"]:hover {
+  border-color: rgba(143, 255, 242, .85);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .2),
+    inset 0 -3px 0 rgba(0, 0, 0, .42),
+    0 3px 0 #06262a,
+    0 0 22px rgba(70, 224, 200, .36);
+}
+
+.hero-ability:active,
+.hero-shield-btn:active,
+[data-ability="shield"]:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .12),
+    0 1px 0 #06262a,
+    0 0 10px rgba(70, 224, 200, .2);
+}
+
+/* Иконка купола: маска вместо эмодзи, чтобы работала на любом фоне. */
+.hero-ability::before,
+.hero-shield-btn::before,
+[data-ability="shield"]::before {
+  content: "";
+  display: block;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  background-color: var(--ab-edge);
+  -webkit-mask-image: var(--ab-dome);
+  mask-image: var(--ab-dome);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  filter:
+    drop-shadow(0 0 4px rgba(70, 224, 200, .7))
+    drop-shadow(0 1px 1px rgba(0, 0, 0, .7));
+  transition: background-color .12s, filter .12s, opacity .12s;
+}
+
+/* Готов: пульсирующее кольцо вокруг иконки. */
+.hero-ability::after,
+.hero-shield-btn::after,
+[data-ability="shield"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  width: 36px;
+  height: 36px;
+  margin-left: -18px;
+  border: 1.5px solid rgba(111, 242, 223, .8);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: ccShieldPulse 1.8s ease-out infinite;
+}
+
+.hero-ability .cc-icon,
+.hero-shield-btn .cc-icon,
+[data-ability="shield"] .cc-icon {
+  display: none;
+}
+
+.hero-ability__name,
+.hero-shield-btn__name {
+  max-width: 64px;
+  overflow: hidden;
+  font-size: .56rem;
+  font-weight: 900;
+  color: #c9fbf4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-ability__count,
+.hero-shield-btn__count {
+  position: absolute;
+  top: -7px;
+  right: -5px;
+  min-width: 22px;
+  padding: 1px 5px;
+  border: 2px solid var(--ui-dark, #0d1116);
+  border-radius: 999px;
+  background: #46e0c8;
+  color: #062a27;
+  font-size: .58rem;
+  font-weight: 900;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 0 rgba(2, 30, 28, .4);
+}
+
+/* Использован: серее, без пульсации, с диагональной перечёркивающей
+   полосой вместо кольца. */
+.hero-ability.is-used,
+.hero-ability.is-spent,
+.hero-ability[data-state="used"],
+.hero-ability[aria-disabled="true"],
+.hero-ability:disabled,
+.hero-shield-btn.is-used,
+.hero-shield-btn[disabled],
+[data-ability="shield"].is-used,
+[data-ability="shield"][disabled] {
+  --ab-edge: #7c8f93;
+  border-color: rgba(124, 143, 147, .32);
+  background:
+    radial-gradient(circle at 50% 24%, rgba(124, 143, 147, .14), rgba(8, 20, 24, 0) 68%),
+    linear-gradient(180deg, rgba(24, 34, 37, .97), rgba(9, 16, 19, .97));
+  color: #a9b8ba;
+  cursor: default;
+  filter: saturate(.3);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .06),
+    inset 0 -3px 0 rgba(0, 0, 0, .42),
+    0 3px 0 #141d1f;
+}
+
+.hero-ability.is-used::before,
+.hero-ability.is-spent::before,
+.hero-ability[data-state="used"]::before,
+.hero-ability[aria-disabled="true"]::before,
+.hero-ability:disabled::before,
+.hero-shield-btn.is-used::before,
+.hero-shield-btn[disabled]::before,
+[data-ability="shield"].is-used::before,
+[data-ability="shield"][disabled]::before {
+  background-color: #89989b;
+  opacity: .6;
+  filter: none;
+}
+
+.hero-ability.is-used::after,
+.hero-ability.is-spent::after,
+.hero-ability[data-state="used"]::after,
+.hero-ability[aria-disabled="true"]::after,
+.hero-ability:disabled::after,
+.hero-shield-btn.is-used::after,
+.hero-shield-btn[disabled]::after,
+[data-ability="shield"].is-used::after,
+[data-ability="shield"][disabled]::after {
+  border: 0;
+  border-radius: 4px;
+  background: linear-gradient(135deg,
+    transparent 43%, rgba(160, 178, 181, .9) 45%,
+    rgba(160, 178, 181, .9) 55%, transparent 57%);
+  animation: none;
+}
+
+/* Перезарядка: купол есть, но приглушён, кольцо не пульсирует. */
+.hero-ability.is-charging,
+.hero-ability[data-state="charging"] {
+  --ab-edge: #3f8f88;
+  border-color: rgba(70, 224, 200, .24);
+  filter: saturate(.6);
+}
+
+.hero-ability.is-charging::after,
+.hero-ability[data-state="charging"]::after {
+  animation: none;
+  opacity: .35;
+}
+
+/* Компактный бой на телефоне: кнопка ниже, но палец всё ещё попадает. */
+[data-mode="battle"].is-short .hero-ability,
+[data-mode="battle"].is-short [data-ability="shield"] {
+  flex-basis: 58px;
+  min-height: 64px;
+  padding: 5px 3px 4px;
+}
+
+[data-mode="battle"].is-short .hero-ability::before,
+[data-mode="battle"].is-short [data-ability="shield"]::before {
+  width: 26px;
+  height: 26px;
+  flex-basis: 26px;
+}
+
+[data-mode="battle"].is-short .hero-ability::after,
+[data-mode="battle"].is-short [data-ability="shield"]::after {
+  top: 8px;
+  width: 28px;
+  height: 28px;
+  margin-left: -14px;
+}
+
+[data-mode="battle"].is-short .hero-ability__name {
+  font-size: .5rem;
+}
+
+/* Боевая кнопка кодера (#hero-shield) использует класс .hero-shield.
+   ui.css задаёт ей размер и место; здесь — только вид: тёмная панель,
+   купол-маска и понятные состояния. Текст внутри скрыт (font-size: 0),
+   подпись рисует ::after, поэтому эмодзи не спорит с иконкой. */
+#app .hero-shield {
+  --ab-dome: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 2.4c5.4 0 9.3 3.7 9.3 8.6 0 5.8-3.9 10.8-9.3 12.8-5.4-2-9.3-7-9.3-12.8 0-4.9 3.9-8.6 9.3-8.6zm0 2.2c-4.2 0-7.2 2.7-7.2 6.4 0 4.4 2.9 8.3 7.2 10.1 4.3-1.8 7.2-5.7 7.2-10.1 0-3.7-3-6.4-7.2-6.4zM12 8.5l3 1.8v3.5l-3 1.8-3-1.8V10.3zm0 1.5-1.6 1v1.9L12 14l1.6-1v-1.9z'/%3E%3C/svg%3E");
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 112px;
+  min-height: 44px;
+  padding: 0 12px 0 10px;
+  border: 1.5px solid rgba(70, 224, 200, .62);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 24% 30%, rgba(70, 224, 200, .24), rgba(8, 20, 24, 0) 62%),
+    linear-gradient(180deg, #173b40, #0a1c21);
+  color: #eafffb;
+  font-size: 0;
+  line-height: 1;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .14),
+    inset 0 -3px 0 rgba(0, 0, 0, .4),
+    0 3px 0 #04181b,
+    0 0 16px rgba(70, 224, 200, .24);
+  animation: ccShieldBtn 2.4s ease-in-out infinite;
+}
+
+#app .hero-shield::before {
+  content: "";
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  background-color: #8ffff2;
+  -webkit-mask-image: var(--ab-dome);
+  mask-image: var(--ab-dome);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  filter:
+    drop-shadow(0 0 4px rgba(70, 224, 200, .75))
+    drop-shadow(0 1px 1px rgba(0, 0, 0, .7));
+  transition: background-color .12s, opacity .12s, filter .12s;
+}
+
+#app .hero-shield::after {
+  content: "Щит 3 с";
+  font-size: .68rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: .02em;
+  color: #d9fffa;
+  text-shadow: 0 1px 0 rgba(0, 20, 18, .6);
+  white-space: nowrap;
+}
+
+#app .hero-shield:hover {
+  border-color: rgba(143, 255, 242, .9);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .18),
+    inset 0 -3px 0 rgba(0, 0, 0, .4),
+    0 3px 0 #04181b,
+    0 0 24px rgba(70, 224, 200, .4);
+}
+
+#app .hero-shield:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .1),
+    0 1px 0 #04181b,
+    0 0 10px rgba(70, 224, 200, .2);
+}
+
+/* В деревне кнопки боя быть не должно: ui.js прячет её классом hidden,
+   но #app перебивает display из ui.css — возвращаем скрытие явно. */
+#app[data-mode="base"] .hero-shield {
+  display: none;
+}
+
+/* Использован: серый купол, без пульсации, подпись честно говорит
+   «Использован». Кодер гасит кнопку через disabled — этого достаточно. */
+#app .hero-shield:disabled,
+#app .hero-shield.is-used {
+  border-color: rgba(124, 143, 147, .32);
+  background:
+    radial-gradient(circle at 24% 30%, rgba(124, 143, 147, .12), rgba(8, 20, 24, 0) 62%),
+    linear-gradient(180deg, #1c292c, #0a1114);
+  color: #a9b8ba;
+  animation: none;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .05),
+    inset 0 -3px 0 rgba(0, 0, 0, .42),
+    0 3px 0 #101a1c;
+}
+
+#app .hero-shield:disabled::before,
+#app .hero-shield.is-used::before {
+  background-color: #8a9a9e;
+  opacity: .55;
+  filter: none;
+}
+
+#app .hero-shield:disabled::after,
+#app .hero-shield.is-used::after {
+  content: "Использован";
+  color: #9fb0b3;
+  text-shadow: none;
+}
+
+@keyframes ccShieldPulse {
+  0% { transform: scale(.72); opacity: .85; }
+  70% { transform: scale(1.14); opacity: 0; }
+  100% { transform: scale(1.14); opacity: 0; }
+}
+
+@keyframes ccShieldBtn {
+  0%, 100% { box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .14),
+    inset 0 -3px 0 rgba(0, 0, 0, .4),
+    0 3px 0 #04181b,
+    0 0 14px rgba(70, 224, 200, .2); }
+  50% { box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .16),
+    inset 0 -3px 0 rgba(0, 0, 0, .4),
+    0 3px 0 #04181b,
+    0 0 26px rgba(70, 224, 200, .42); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-ability::after,
+  .hero-shield-btn::after,
+  [data-ability="shield"]::after {
+    animation: none;
+    opacity: .6;
+  }
+
+  .hero-ability,
+  .hero-shield-btn,
+  [data-ability="shield"] {
+    transition: none;
+  }
+}
+

@@ -7,6 +7,10 @@ CC.Battle = (function () {
   const G = CC.GRID;
   const DEFS = CC.BUILDINGS;
   const TROOPS = CC.TROOPS;
+  const HERO = CC.HERO || {
+    id: 'hero', minTh: 5, maxLevel: 10,
+    ability: { name: 'Щит', duration: 3, uses: 1 }
+  };
   const LEVELS = CC.LEVELS || [];
 
   let S = null;
@@ -36,6 +40,16 @@ CC.Battle = (function () {
     return out;
   }
 
+  // Герой доступен только после открытия (TH5+) и если он есть в деревне.
+  // В headless-прогонах и на чужой базе героя нет.
+  function heroAvailable(th) {
+    if (!TROOPS.hero) return false;
+    const level = typeof th === 'number' ? Math.round(th) : 1;
+    if (level < (HERO.minTh || 5)) return false;
+    if (!CC.Game || !CC.Game.heroLevel) return false;
+    return CC.Game.heroLevel() >= 1;
+  }
+
   // Общая сборка состояния: кампания, набег или произвольная база.
   // buildings: [{type, x, y, level}], level по умолчанию 1.
   function buildState(opts) {
@@ -52,6 +66,13 @@ CC.Battle = (function () {
       costs: new Float32Array(G * G),
       deployable: new Uint8Array(G * G),
       army: copyArmy(o.army),
+      // Герой не входит в ARMY_ORDER: он не тратит места и не тренируется.
+      // В бою это отдельный слот «1», который сгорает после высадки.
+      hero: null,
+      heroDeployed: false,
+      heroShield: 0,
+      abilityUsed: false,
+      abilityReady: false,
       selected: 'barb',
       level: o.level || 0,
       levelId: o.levelId || 0,
@@ -86,6 +107,12 @@ CC.Battle = (function () {
 
     // Снимок армии на входе: по нему считаем, сколько войск израсходовано.
     S.armyStart = copyArmy(S.army);
+
+    // Герой приходит отдельным полем снимка. Максимум один за бой:
+    // даже испорченный снимок с hero: 99 даёт ровно одного Сержанта.
+    if (o.army && Number(o.army.hero) > 0 && TROOPS.hero) {
+      S.army.hero = 1;
+    }
 
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -142,6 +169,11 @@ CC.Battle = (function () {
         ? Math.min(CC.MAX_TH || 10, (Math.floor(idx / 10) + 1) * 2)
         : CC.Game.townhallLevel();
       army = onlyUnlocked(CC.Game.armySnapshot(true), armyTh);
+      // Герой идёт только в настоящий бой игрока: баланс-симулятор и
+      // предпросмотр чужой эпохи его не получают.
+      if (!preview && hasVillage && heroAvailable(armyTh)) {
+        army.hero = 1;
+      }
     } else {
       army = Object.assign({}, CC.START_ARMY);
     }
@@ -653,7 +685,8 @@ CC.Battle = (function () {
     b.aim = Math.atan2(best.y - cy, best.x - cx);
     b.beamTarget = { x: best.x, y: best.y, id: best.id, charge: b.charge };
 
-    best.hp -= (b.def.dmg || 0) * b.charge * dt;
+    // Щит героя: урон не проходит, но луч продолжает светить.
+    if (!heroShielded(best)) best.hp -= (b.def.dmg || 0) * b.charge * dt;
     if (best.hp <= 0) {
       S.fx.push({ x: best.x, y: best.y, t: 0, dur: 0.4, kind: 'poof' });
     }
@@ -677,6 +710,7 @@ CC.Battle = (function () {
         for (let i = 0; i < S.units.length; i++) {
           const u = S.units[i];
           if (u.hp <= 0 || u.def.fly) continue;
+          if (heroShielded(u)) continue;
           if ((u.def.space || 1) > trap.maxUnitSpace) continue;
           const d = Math.hypot(u.x - cx, u.y - cy);
           if (d <= trap.radius) cand.push({ u: u, d: d, space: u.def.space || 1 });
@@ -796,7 +830,7 @@ CC.Battle = (function () {
       return;
     }
 
-    best.hp -= b.def.dmg;
+    if (!heroShielded(best)) best.hp -= b.def.dmg;
 
     S.shots.push({
       x1: cx, y1: cy, x2: best.x, y2: best.y,
@@ -818,6 +852,8 @@ CC.Battle = (function () {
       if (onlyGround && u.def.fly) continue;
       if (onlyAir && !u.def.fly) continue;
       if (Math.hypot(u.x - x, u.y - y) > r) continue;
+      // Неуязвимый герой под щитом пропускает урон по площади.
+      if (heroShielded(u)) continue;
 
       u.hp -= dmg;
       if (u.hp <= 0) {
@@ -861,6 +897,7 @@ CC.Battle = (function () {
   function endBattle(win) {
     if (S.over) return;
     S.over = true;
+    syncHeroState();
 
     const hall = S.buildings.find(function (b) { return b.type === 'townhall'; });
     const thDead = !!(hall && hall.dead);
@@ -998,7 +1035,8 @@ CC.Battle = (function () {
 
   function armyLeft() {
     let n = 0;
-    for (const k in S.army) n += S.army[k];
+    // Невысаженный герой не держит бой: армия кончилась — бой кончился.
+    for (const k in S.army) if (k !== 'hero') n += S.army[k];
     return n;
   }
 
@@ -1006,6 +1044,43 @@ CC.Battle = (function () {
     let n = 0;
     for (const k in map) n += map[k] | 0;
     return n;
+  }
+
+  // Поля для рендера и панели: живой герой, остаток щита 0..1 и готовность
+  // способности. Щит тратится один раз за бой, после смерти героя — нет.
+  function syncHeroState() {
+    if (!S) return;
+
+    const h = S.hero;
+    const alive = !!(h && h.hp > 0 && S.units.indexOf(h) !== -1);
+    if (!alive && h) S.hero = null;
+
+    const dur = Math.max(0.01, Number(HERO.ability && HERO.ability.duration) || 3);
+    const left = alive ? Math.max(0, h.shieldUntil - S.time) : 0;
+    S.heroShield = Math.min(1, left / dur);
+    S.abilityReady = alive && !S.abilityUsed && !S.over;
+  }
+
+  function heroShielded(u) {
+    return !!(u && u.shieldUntil > S.time);
+  }
+
+  // Способность «Щит»: 3 секунды неуязвимости, один раз за бой.
+  function heroAbility() {
+    if (!S) return { error: 'Бой не начат' };
+    if (S.over) return { error: 'Бой окончен' };
+
+    const h = S.hero;
+    if (!h || h.hp <= 0) return { error: 'Герой не высажен' };
+    if (S.abilityUsed || h.abilityUsed) return { error: 'Щит уже использован' };
+
+    const dur = Math.max(0.01, Number(HERO.ability && HERO.ability.duration) || 3);
+    h.shieldUntil = S.time + dur;
+    h.abilityUsed = true;
+    S.abilityUsed = true;
+
+    syncHeroState();
+    return { ok: true, duration: dur, until: h.shieldUntil };
   }
 
   function update(dt) {
@@ -1048,8 +1123,15 @@ CC.Battle = (function () {
     }
 
     for (let i = S.units.length - 1; i >= 0; i--) {
-      if (S.units[i].hp <= 0) S.units.splice(i, 1);
+      if (S.units[i].hp <= 0) {
+        if (S.units[i].isHero) S.hero = null;
+        S.units.splice(i, 1);
+      }
     }
+
+    // Герой после смерти не возвращается: S.hero обнуляется, вторая
+    // высадка невозможна до конца боя.
+    syncHeroState();
 
     let aliveBuildings = 0;
     let hall = null;
@@ -1114,9 +1196,13 @@ CC.Battle = (function () {
         return { error: 'Откроется на ' + need + ' уровне центра' };
       }
     }
+    if (type === 'hero' && S.heroDeployed) {
+      return { error: 'Герой уже высажен' };
+    }
     if (!S.army[type]) return { error: 'Эти войска закончились' };
 
     const d = TROOPS[type];
+    const isHero = type === 'hero';
     S.army[type]--;
     // Повтор и headless-прогон ставят бойцов ровно в записанную клетку.
     const jitter = (S.headless || S.viewReplay) ? 0 : 0.3;
@@ -1124,6 +1210,7 @@ CC.Battle = (function () {
     // Уровень войск игрока действует только в его атаках (кампания и Арена).
     // Набег ИИ и headless-симуляции остаются на 1 уровне: пороги баланса
     // и сложность набегов не должны зависеть от прокачки игрока.
+    // Герой сильнее линейных войск и считается по своей линейной формуле.
     let mult = 1;
     if (!S.headless && (S.kind === 'campaign' || S.kind === 'pvp') &&
         CC.Game && CC.Game.troopMultiplier) {
@@ -1131,9 +1218,20 @@ CC.Battle = (function () {
     }
     if (!isFinite(mult) || mult < 1) mult = 1;
 
-    const hp = d.hp * mult;
+    let hp = d.hp * mult;
+    let dmg = d.dmg * mult;
+    let heroLevel = 0;
+    if (isHero) {
+      heroLevel = CC.Game && CC.Game.heroLevel ? CC.Game.heroLevel() : 1;
+      if (!(heroLevel >= 1)) heroLevel = 1;
+      const stats = CC.Game && CC.Game.heroStats
+        ? CC.Game.heroStats(heroLevel)
+        : { hp: d.hp, dmg: d.dmg };
+      hp = stats.hp;
+      dmg = stats.dmg;
+    }
 
-    S.units.push({
+    const unit = {
       id: S.uid++,
       type: type,
       def: d,
@@ -1141,12 +1239,25 @@ CC.Battle = (function () {
       y: y + 0.5 + (Math.random() - 0.5) * jitter,
       hp: hp,
       maxHp: hp,
-      dmg: d.dmg * mult,
+      dmg: dmg,
       cd: 0,
       atk: 0,
       target: null,
       path: null
-    });
+    };
+
+    if (isHero) {
+      unit.isHero = true;
+      unit.level = heroLevel;
+      unit.shieldUntil = 0;
+      unit.abilityUsed = false;
+      S.hero = unit;
+      S.heroDeployed = true;
+      S.abilityUsed = false;
+    }
+
+    S.units.push(unit);
+    if (isHero) syncHeroState();
 
     // Запись высадки для истории набега и повтора. Время — игровое.
     S.deployLog.push({
@@ -1342,9 +1453,14 @@ CC.Battle = (function () {
     }
 
     try {
+      // ИИ набега героя не использует: даже если снимок пришёл с hero,
+      // в симуляцию он не попадает.
+      const raidArmy = Object.assign({}, desc.army || {});
+      delete raidArmy.hero;
+
       const state = start({
         buildings: buildings,
-        army: desc.army || {},
+        army: raidArmy,
         kind: 'raid',
         levelName: desc.name || 'Набег',
         loot: desc.loot || { gold: 0, elixir: 0 },
@@ -1401,6 +1517,7 @@ CC.Battle = (function () {
     update: update,
     deploy: deploy,
     select: select,
+    heroAbility: heroAbility,
     syncArmy: syncArmy,
     finishNow: finishNow,
     starsFor: starsFor,

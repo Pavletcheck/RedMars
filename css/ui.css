@@ -4305,3 +4305,85 @@ html, body { width: 100%; height: 100%; }
 
   .intro__canvas { animation: none !important; }
 }
+
+/* ---------- герой «Сержант» ---------- */
+
+/* Карточка в карусели ангара: первая, с золотой рамкой. */
+.tcard_hero {
+  flex-basis: clamp(176px, 82%, 232px);
+  border-color: #b8912f;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    0 0 0 2px rgba(240, 190, 69, .24),
+    0 2px 0 #4b3417;
+}
+
+.tcard_hero .tcard__name { color: #6b4f12; }
+
+.tcard_hero .tcard__icon {
+  background: radial-gradient(circle at 35% 30%, #ffe9a3, #c9a227 70%) !important;
+  color: #4b3417;
+}
+
+.hero-card__bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin-top: 1px;
+  border: 1px solid #75572d;
+  border-radius: 999px;
+  background: #4b3a22;
+  overflow: hidden;
+}
+
+.hero-card__bar b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #f5cf5a, #9ad35c);
+}
+
+/* Карточка героя в боевой панели: тоже одна, но с золотым ободком. */
+.troop_hero {
+  border-color: #c9a227;
+  background: linear-gradient(180deg, rgba(255, 236, 170, .5), rgba(190, 150, 50, .18));
+}
+
+.troop_hero .troop__name { color: #6b4f12; }
+
+/* Кнопка щита: 44 px, не мешает карточкам войск и нижней панели. */
+.hero-shield {
+  position: absolute;
+  left: 8px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 98px);
+  z-index: 7;
+  min-width: 108px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px solid #6b7f9a;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #d9ecff, #9fc3e8);
+  color: #17324f;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #35516e, 0 6px 10px rgba(20, 35, 55, .28);
+}
+
+.hero-shield:active { transform: translateY(2px); }
+
+.hero-shield:disabled {
+  opacity: .5;
+  cursor: default;
+  filter: grayscale(.35);
+}
+
+.hero-shield:disabled:active { transform: none; }
+
+[data-mode="base"] .hero-shield { display: none; }
+
+.is-compact .hero-shield,
+.is-short .hero-shield {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 124px);
+  min-height: 44px;
+}

@@ -5682,7 +5682,9 @@ CC.Render = (function () {
     giant: { h: 36, w: 1.62 },
     goblin: { h: 17, w: 0.72 },
     gnome: { h: 20, w: 1.02 },
-    airship: { h: 30, w: 1.25 }
+    airship: { h: 30, w: 1.25 },
+    // сержант: в ~1.6 раза выше штурмовика, широкий за счёт наплечников
+    hero: { h: 40, w: 1.56 }
   };
 
   // полоски здоровья: цвет от травы к золоту и красному (10 ступеней)
@@ -5870,6 +5872,9 @@ CC.Render = (function () {
       f: f,
       p: p,
       tier: unitTier(lvl),
+      // точный уровень нужен герою: с 6-го добавляются золото и вымпел,
+      // а полосы различия считаются не по трём ступеням, а по одному шагу
+      lvl: Number(lvl) || 1,
       u: u
     };
   }
@@ -6001,7 +6006,8 @@ CC.Render = (function () {
         flashCol || 'rgba(255,207,74,.9)');
       spot(ctx, x1 + gx * 2.2, y1 + gy * 2.2, 1.2, 'rgba(255,255,255,.95)');
     }
-    return { x: x1, y: y1 };
+    // кроме дульного среза отдаём крепление: герою нужен тяжёлый приклад
+    return { x: x1, y: y1, ox: ox, oy: oy };
   }
 
   /* --- штурмовик: широкие плечи, карабин, ранец --- */
@@ -6048,6 +6054,317 @@ CC.Render = (function () {
     if (q.fy >= -0.2) drawGun();
     // ствол поверх плеча легче читается
     if (q.tier >= 3) spot(ctx, 2.5 + q.f.x * 4, -20.2, 0.8, PAL.gold);
+  }
+
+  /* --- сержант: тяжёлый штурмовик, песочная броня с красным и золотом ---
+     Рисуется в 1.6 раза крупнее штурмовика: массивный шлем с бирюзовым
+     визором и антенной, наплечники, плащ и ручной бластер-дробовик.
+     С 6 уровня появляются золотые полосы, второй наплечник, вымпел,
+     сенсоры, свечение визора и длинный плащ — силуэт читается сразу. */
+  const HERO_RED = '#a8402f';
+  const HERO_RED_DARK = '#712a21';
+
+  function artHero(ctx, q, color) {
+    const lvl = Math.max(1, Math.min(10, Math.round(q.lvl || 1)));
+    const vet = lvl >= 6;       // ветеран: золото, вымпел, длинный плащ
+    const elite = lvl >= 8;
+    const ace = lvl >= 10;
+
+    // песочный металл: тёплый, а не серо-зелёный — цвет войска только
+    // подмешивается, чтобы сержант оставался узнаваемым в любой палитре
+    const sand = mix(PAL.metalLight, color, 0.72);
+    const sandLight = mix(PAL.panel, color, 0.52);
+    const sandDark = shade(sand, -0.36);
+    const cloth = mix(HERO_RED, PAL.metalDark, 0.12);
+    const gunMetal = '#3d454b';
+    const trim = vet ? PAL.gold : PAL.amber;
+    const glow = vet ? PAL.glass : PAL.cold;
+
+    const step = q.step;
+    const sway = step * (q.frame === 1 || q.frame === 2 ? 1 : 0);
+
+    // пыль из-под тяжёлых ботинок — статичная, чтобы не тратить частицы
+    if (step !== 0) {
+      ctx.fillStyle = 'rgba(226,205,172,.20)';
+      ctx.beginPath();
+      ctx.ellipse(-q.p.x * 4.4 - q.f.x * 2.4, -0.7, 4.2, 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 1. плащ: шире корпуса, иначе его не видно спереди; с 6 уровня
+    // длиннее, с 10 — с золотой кромкой по низу
+    const capeHalf = (vet ? 13.2 : 11.8) * (1 - 0.12 * Math.abs(q.fx));
+    const hem = vet ? (elite ? -2.6 : -4.6) : -7.0;
+    const bx = -q.f.x * 2.2;
+    const by = -q.f.y * 1.6;
+    const hemSway = q.p.x * sway * 2.0;
+
+    poly(ctx, [
+      { x: -q.p.x * capeHalf * 0.84 + bx, y: -27.4 + by },
+      { x: q.p.x * capeHalf * 0.84 + bx, y: -27.4 + by },
+      { x: q.p.x * capeHalf + bx + hemSway, y: hem + 1.4 },
+      { x: bx - q.p.x * 1.6 + q.f.x * 1.8, y: hem + 3.8 },
+      { x: -q.p.x * capeHalf + bx - hemSway * 0.7, y: hem - 0.8 }
+    ], cloth);
+
+    // тёмная изнанка и глубокая складка
+    poly(ctx, [
+      { x: -q.p.x * capeHalf * 0.42 + bx, y: -26 + by },
+      { x: q.p.x * capeHalf * 0.46 + bx, y: -26 + by },
+      { x: q.p.x * capeHalf * 0.62 + bx + hemSway * 0.6, y: hem + 0.6 },
+      { x: bx + q.p.x * 0.5 + q.f.x * 1.4, y: hem + 2.6 }
+    ], mix(cloth, PAL.dark, 0.5));
+
+    if (vet) {
+      uBar(ctx, -q.p.x * capeHalf * 0.9 + bx, hem - 0.2,
+        q.p.x * capeHalf * 0.92 + bx, hem + 1.6, ace ? 1.3 : 0.9, trim);
+    }
+
+    // 2. ноги: широкая стойка, тяжёлый шаг
+    unitLegs(ctx, q, {
+      col: sandDark, boot: PAL.metalDark,
+      spread: 4.6, w: 5.2, hip: -13.0, stride: 4.9, foot: 3.4
+    });
+
+    // 3. оружие за корпусом, если сержант стоит спиной
+    const drawGun = function () {
+      const g = unitGun(ctx, q, 3.0, 4.2, 21, 5.0, gunMetal, trim,
+        'rgba(255,207,74,.95)', -22);
+      const gx = g.x - g.ox;
+      const gy = g.y - g.oy;
+      const len = Math.hypot(gx, gy) || 1;
+      const ux = gx / len;
+      const uy = gy / len;
+
+      // казённик, приклад и золотая накладка
+      uBox(ctx, g.ox + ux * 3.4 - 2.9, g.oy + uy * 3.4 - 2.9, 5.8, 6.2, 1.4, PAL.metal);
+      uBox(ctx, g.ox + ux * 3.4 - 1.6, g.oy + uy * 3.4 - 1.4, 3.2, 2.8, 0.6, trim);
+      poly(ctx, [
+        { x: g.ox - ux * 3.4 - 2.6, y: g.oy - uy * 3.4 - 1.0 },
+        { x: g.ox + ux * 0.4 - 2.6, y: g.oy + uy * 0.4 - 2.2 },
+        { x: g.ox + ux * 0.4 + 2.2, y: g.oy + uy * 0.4 + 1.6 },
+        { x: g.ox - ux * 3.4 + 2.4, y: g.oy - uy * 3.4 + 2.0 }
+      ], gunMetal);
+
+      // цевьё и коробчатый магазин
+      uBox(ctx, g.ox + ux * 11 - 2.5, g.oy + uy * 11 - 2.0, 5.0, 4.2, 1.0, gunMetal);
+      uBox(ctx, g.ox + ux * 10.4 - 1.2, g.oy + uy * 10.4 + 1.1, 2.4, 3.0, 0.6, PAL.metalLight);
+
+      // руки в перчатках: у казённика и на цевье
+      spot(ctx, g.ox + ux * 3.0, g.oy + uy * 3.0 + 1.4, 2.3, sandDark);
+      spot(ctx, g.ox + ux * 12.4, g.oy + uy * 12.4 - 0.4, 2.0, sandDark);
+
+      // дульный тормоз крупнее ствола
+      uBar(ctx, g.x - ux * 3.0, g.y - uy * 3.0, g.x + ux * 0.9, g.y + uy * 0.9, 6.0, gunMetal);
+      uBar(ctx, g.x - ux * 2.6, g.y - uy * 2.6, g.x + ux * 0.6, g.y + uy * 0.6, 1.6, PAL.metalLight);
+      uBar(ctx, g.x - ux * 2.0, g.y - uy * 2.0, g.x + ux * 0.2, g.y + uy * 0.2, 0.8, trim);
+      // красная метка на цевье — тяжёлое оружие сержанта
+      uBar(ctx, g.ox + ux * 7.4, g.oy + uy * 7.4,
+        g.ox + ux * 9.2, g.oy + uy * 9.2, 1.2, HERO_RED);
+
+      if (q.atk) {
+        uFlash(ctx, g.x + ux * 3.6, g.y + uy * 3.6, 4.4, 'rgba(127,233,255,.92)');
+        spot(ctx, g.x + ux * 3.6, g.y + uy * 3.6, 1.5, 'rgba(255,255,255,.96)');
+      }
+    };
+    if (q.fy < -0.15) drawGun();
+
+    // 4. ранец: тяжёлый, с вентиляцией и красной полосой
+    if (q.fy < 0.62) {
+      const px = -q.f.x * 3.8;
+      const py = -24.5;
+      uBox(ctx, px - 4.2, py - 5.4, 8.4, 11.4, 1.8, PAL.metalDark);
+      uBox(ctx, px - 3.3, py - 4.4, 6.6, 4.2, 0.9, PAL.metal);
+      uBox(ctx, px - 3.3, py + 1.2, 6.6, 2.2, 0.7, HERO_RED_DARK);
+      spot(ctx, px - 1.9, py - 2.4, 0.9, glow);
+      spot(ctx, px + 1.9, py - 2.4, 0.9, glow);
+      uBar(ctx, px - 2.6, py - 5.4, px - 2.1, py - 7.4, 1, PAL.metalLight);
+      uBar(ctx, px + 2.6, py - 5.4, px + 2.1, py - 7.4, 1, PAL.metalLight);
+    }
+
+    // 5. корпус: широкий, с нагрудной пластиной
+    unitTorso(ctx, q, {
+      col: sand, top: -29.2, bot: -10, w: 16.2, shoulder: 17.2,
+      panel: sandLight, belt: PAL.metalDark
+    });
+    uBox(ctx, -5.2 + q.f.x * 0.9, -22.6, 10.4, 2.0, 0.6, HERO_RED);
+    spot(ctx, q.f.x * 0.9, -21.6, 1.1, trim);
+    uBox(ctx, -5.8, -30.2, 11.6, 2.2, 0.8, sandDark);
+
+    // воротник-накидка поверх плеч: красный виден с любого направления,
+    // даже когда сам плащ скрыт корпусом
+    poly(ctx, [
+      { x: -10.2, y: -29.8 },
+      { x: 10.2, y: -29.8 },
+      { x: 9.0, y: -25.8 },
+      { x: -9.0, y: -25.8 }
+    ], cloth);
+    uBar(ctx, -9.7, -27.4, 9.7, -27.4, vet ? 1.1 : 0.8, trim);
+    spot(ctx, 0, -28.3, 1.5, trim);
+    spot(ctx, 0, -28.3, 0.7, HERO_RED_DARK);
+
+    // полосы различия: 1 — с 6 уровня, 2 — с 8, 3 — с 10
+    const stripes = vet ? (ace ? 3 : (elite ? 2 : 1)) : 0;
+    for (let i = 0; i < stripes; i++) {
+      uBar(ctx, -8.2 + q.f.x * 0.9, -26.4 + i * 1.7,
+        -3.6 + q.f.x * 0.9, -26.4 + i * 1.7, 1.25, trim);
+    }
+    // у рядового на груди — красная нашивка, чтобы силуэт не был пустым
+    if (!vet) {
+      uBox(ctx, -7.6 + q.f.x * 0.9, -26.2, 2.6, 1.5, 0.4, HERO_RED_DARK);
+    }
+
+    // 6. наплечники: пластины, а не шары — дальний тёмный, ближний светлый
+    // на шаге наплечники чуть уходят в сторону опорной ноги — тяжёлая
+    // походка читается даже в покое кадра
+    const shSway = step * 0.45;
+    const shx = q.p.x * 8.4 + q.p.x * shSway;
+    const shy = -27.8 + q.p.y * 8.4 * 0.5 + q.p.y * shSway * 0.6;
+    const fsx = -q.p.x * 8.4 + q.p.x * shSway * 0.5;
+    const fsy = -27.8 - q.p.y * 8.4 * 0.5 + q.p.y * shSway * 0.3;
+
+    const plate = function (px, py, r, base, edge, near) {
+      // нижняя тень
+      ctx.fillStyle = shade(base, near ? -0.3 : -0.44);
+      ctx.beginPath();
+      ctx.ellipse(px, py + 1.0, r, r * 0.74, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // сама пластина
+      ctx.fillStyle = base;
+      ctx.beginPath();
+      ctx.ellipse(px, py - 0.7, r * 0.96, r * 0.66, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // красный кант по нижней дуге
+      ctx.strokeStyle = HERO_RED;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.ellipse(px, py + 0.2, r * 0.86, r * 0.56, 0, Math.PI * 0.12, Math.PI * 0.88);
+      ctx.stroke();
+      // золотая кромка и заклёпка
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.ellipse(px, py - r * 0.44, r * 0.62, r * 0.2, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+      spot(ctx, px + r * 0.28, py - r * 0.12, r * 0.17, edge);
+    };
+
+    plate(fsx, fsy, 5.0, shade(sand, -0.08), vet ? trim : PAL.metalLight, false);
+    if (vet) {
+      // второй наплечник: нижняя пластина на дальней руке
+      plate(fsx - q.p.x * 1.2, fsy + 3.0, 3.6, shade(sand, -0.2),
+        trim, false);
+    }
+
+    // 7. шлем: тяжёлый купол, визор, дыхательная маска, антенна
+    const hx = q.f.x * 0.8 + q.p.x * step * 0.35;
+    const hy = -36.6;
+
+    if (vet) {
+      // свечение визора: узкое пятно по линии глаз, а не шар за головой
+      const prev = ctx.globalAlpha;
+      ctx.globalAlpha = prev * (0.2 + (ace ? 0.12 : 0) + (q.atk ? 0.16 : 0));
+      ctx.fillStyle = PAL.cold;
+      ctx.beginPath();
+      ctx.ellipse(hx, hy + 0.1, 7.6, 3.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = prev * (0.1 + (ace ? 0.08 : 0));
+      ctx.beginPath();
+      ctx.ellipse(hx, hy + 0.1, 10.2, 4.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = prev;
+    }
+
+    // шея
+    uBar(ctx, hx - 2.5, -31.2, hx - 2.1, -33.6, 3.2, sandDark);
+    uBar(ctx, hx + 2.5, -31.2, hx + 2.1, -33.6, 3.2, sandDark);
+
+    spot(ctx, hx, hy, 6.0, sandDark);
+    spot(ctx, hx, hy - 0.3, 5.3, sand);
+    // гребень шлема: тяжёлый, с золотым кантом у ветерана
+    poly(ctx, [
+      { x: hx - 1.3, y: hy - 6.2 },
+      { x: hx + 1.3, y: hy - 6.2 },
+      { x: hx + 2.3, y: hy - 3.1 },
+      { x: hx - 2.3, y: hy - 3.1 }
+    ], vet ? shade(sand, 0.16) : sandLight);
+    uBar(ctx, hx - 4.8, hy - 3.2, hx + 4.8, hy - 3.2, 1.8, sandLight);
+    uBar(ctx, hx - 4.6, hy - 4.4, hx + 4.6, hy - 4.4, 0.9, vet ? trim : sandDark);
+    // надбровная плита нависает над визором
+    ctx.fillStyle = sandDark;
+    ctx.fillRect(hx - 4.8, hy - 2.4, 9.6, 1.4);
+
+    if (q.fy > -0.2) {
+      // визор
+      const vy = hy + 0.3;
+      uBox(ctx, hx - 4.3, vy - 1.8, 8.6, 3.3, 1.3, PAL.dark);
+      uBox(ctx, hx - 3.8, vy - 1.3, 7.6, 2.5, 1.0, glow);
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      ctx.fillRect(hx - 2.7, vy - 0.9, 3.2, 0.8);
+      if (vet) {
+        ctx.fillStyle = trim;
+        ctx.fillRect(hx - 3.8, vy + 1.4, 7.6, 0.55);
+      }
+
+      // дыхательная маска
+      poly(ctx, [
+        { x: hx - 3.2, y: hy + 2.2 },
+        { x: hx + 3.2, y: hy + 2.2 },
+        { x: hx + 2.2, y: hy + 5.4 },
+        { x: hx - 2.2, y: hy + 5.4 }
+      ], shade(sandDark, 0.06));
+      uBar(ctx, hx - 1.8, hy + 3.4, hx + 1.8, hy + 3.4, 0.8, PAL.dark);
+      uBar(ctx, hx - 1.4, hy + 4.5, hx + 1.4, hy + 4.5, 0.8, PAL.dark);
+
+      if (vet) {
+        // сенсоры на визоре
+        spot(ctx, hx - 4.6, hy + 0.6, 1.0, trim);
+        spot(ctx, hx + 4.6, hy + 0.6, 1.0, glow);
+      }
+    } else {
+      // со спины: вентиляционная пластина и затылочные щели
+      uBox(ctx, hx - 3.1, hy - 2.2, 6.2, 4.4, 1.0, sandDark);
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = PAL.dark;
+        ctx.fillRect(hx - 2.2, hy - 1.4 + i * 1.3, 4.4, 0.7);
+      }
+      if (vet) spot(ctx, hx, hy + 1.4, 0.9, trim);
+    }
+
+    // антенна с бирюзовым огоньком и вымпелом
+    const ax = hx - 3.2;
+    const ay = hy - 4.4;
+    const tipx = ax - 2.7 - q.p.x * 1.1;
+    const tipy = ay - 9.0;
+    uBar(ctx, ax, ay, tipx, tipy, 1.0, PAL.metalLight);
+    spot(ctx, tipx, tipy - 0.4, 1.0, glow);
+
+    if (vet) {
+      // вымпел на антенне: красное полотнище с золотой кромкой
+      poly(ctx, [
+        { x: tipx, y: tipy + 0.8 },
+        { x: tipx - q.f.x * 6.8 - q.p.x * 2.6 - 2.0, y: tipy - 2.0 },
+        { x: tipx - q.f.x * 6.0 - q.p.x * 2.6 - 2.2, y: tipy + 3.4 }
+      ], HERO_RED);
+      uBar(ctx, tipx, tipy + 0.6,
+        tipx - q.f.x * 6.4 - q.p.x * 2.6 - 2.0, tipy - 1.6, 0.7, trim);
+      spot(ctx, tipx - q.f.x * 3.0 - 1.0, tipy + 0.4, 0.5, trim);
+    }
+
+    // сенсорные бляхи на шлеме (с 6 уровня)
+    if (vet) {
+      spot(ctx, hx + q.p.x * 4.4, hy - 1.2 + q.p.y * 1.2, 1.0, trim);
+      spot(ctx, hx - q.p.x * 4.4, hy - 1.2 - q.p.y * 1.2, 0.9, glow);
+    }
+
+    // 8. ближний наплечник — поверх корпуса, под шлемом
+    plate(shx, shy, 5.4, mix(sand, sandLight, 0.35), vet ? trim : PAL.metalLight, true);
+    if (vet) {
+      uBar(ctx, shx - 3.8, shy + 2.0, shx + 3.8, shy + 2.0, 1.0, trim);
+      spot(ctx, shx + q.p.x * 2.4, shy - 1.0, 0.9, trim);
+    }
+
+    // 9. оружие перед корпусом
+    if (q.fy >= -0.15) drawGun();
   }
 
   /* --- лазерщик: тонкий силуэт, длинная винтовка, батарея --- */
@@ -6379,7 +6696,8 @@ CC.Render = (function () {
     const def = (u && u.def) || CC.TROOPS[type] || {};
     const color = def.color || PAL.wood;
 
-    if (type === 'giant') artGiant(ctx, q, color);
+    if (type === 'hero') artHero(ctx, q, color);
+    else if (type === 'giant') artGiant(ctx, q, color);
     else if (type === 'archer') artArcher(ctx, q, color);
     else if (type === 'goblin') artGoblin(ctx, q, color);
     else if (type === 'gnome') artGnome(ctx, q, color);
@@ -6416,6 +6734,187 @@ CC.Render = (function () {
     return sp;
   }
 
+  /* ---------- энергетический щит героя ----------
+     Купол живёт только в векторе: спрайт сержанта кэшируется, а щит
+     каждый кадр собирается из нескольких дуг и маленькой гексагональной
+     сетки. Ни канвы, ни клипа — цена кадра остаётся в пределах долей мс. */
+
+  const shieldStats = { drawn: 0, total: 0 };
+
+  // 0 — щита нет, 0..1 — остаток/яркость. Понимает и таймер, и готовую
+  // долю: кодер может выставить любое из полей, рендер не падает.
+  function heroShieldPower(u) {
+    if (!u) return 0;
+    let p = 0;
+
+    const hs = u.heroShield;
+    if (typeof hs === 'number' && isFinite(hs)) {
+      p = Math.max(0, Math.min(1, hs));
+    } else if (hs === true || u.shield === true) {
+      p = 1;
+    }
+
+    if (!(p > 0) && typeof u.shieldUntil === 'number' && isFinite(u.shieldUntil)) {
+      let now = 0;
+      try {
+        const S = CC.Battle && CC.Battle.state;
+        if (S && typeof S.time === 'number') now = S.time;
+      } catch (e) { now = 0; }
+      const left = u.shieldUntil - now;
+      if (left > 0) p = Math.max(0, Math.min(1, left / 3));
+    }
+
+    return p;
+  }
+
+  // Сетка купола не зависит от героя: центры ячеек и углы шестиугольника
+  // считаем один раз, в кадре остаются только умножение и lineTo.
+  const SHIELD_HEX = (function () {
+    const out = [];
+    const pts = [];
+    for (let k = 0; k < 6; k++) {
+      const a = k * Math.PI / 3 + 0.26;
+      pts.push({ x: Math.cos(a) * 0.9, y: Math.sin(a) * 0.84 });
+    }
+    for (let qy = -3; qy <= 3; qy++) {
+      for (let qx = -3; qx <= 3; qx++) {
+        if (Math.abs(qx + qy) > 3) continue;
+        const lx = (qx + qy / 2) * 1.74;
+        const ly = qy * 1.5;
+        const nx = lx / 3.2;
+        const ny = ly / 3.9;
+        if (nx * nx + ny * ny > 0.92) continue;
+        out.push({ x: lx, y: ly, pts: pts });
+      }
+    }
+    return out;
+  })();
+
+  function drawHeroShield(ctx, u, power) {
+    if (!(power > 0.01)) return;
+
+    const g = P(u.x, u.y);
+    // купол накрывает героя целиком: по ширине чуть больше плеч,
+    // по высоте — выше антенны шлема
+    const RX = 36;
+    const RY = 48;
+    const baseY = g.y - 3;
+    const cy = baseY - RY * 0.52;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 5.4 + ((u.id || 0) * 0.7));
+    const a = Math.max(0, Math.min(1, power));
+    const prev = ctx.globalAlpha;
+
+    shieldStats.drawn++;
+
+    // пятно энергии на земле
+    ctx.globalAlpha = prev * a * 0.22;
+    ctx.fillStyle = PAL.cold;
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX * 0.98, RX * 0.26, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // тело купола: верхняя полусфера. Заливка плоская: сетка и кромка
+    // дают объём, а градиент каждый кадр стоил бы лишнего времени.
+    ctx.globalAlpha = prev * a * 0.78;
+    ctx.fillStyle = 'rgba(70,224,200,.16)';
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX, RY, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // гексагональная сетка: 13 ячеек, поворачивается и пульсирует
+    const hs = RX * 0.275;
+    const rot = Math.sin(t * 0.35 + (u.id || 0) * 0.2) * 0.14;
+    const cr = Math.cos(rot);
+    const sr = Math.sin(rot);
+
+    // сетку обрезаем по куполу: ячейки у кромки не торчат наружу
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX, RY, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.strokeStyle = '#e2fffb';
+    ctx.lineWidth = 1.05;
+    ctx.globalAlpha = prev * a * (0.36 + 0.22 * pulse);
+    ctx.beginPath();
+    for (let i = 0; i < SHIELD_HEX.length; i++) {
+      const cell = SHIELD_HEX[i];
+      const lx = cell.x * hs;
+      const ly = cell.y * hs;
+      const hx = g.x + lx * cr - ly * sr;
+      const hy = cy + lx * sr + ly * cr;
+      const pts = cell.pts;
+      for (let k = 0; k < 6; k++) {
+        const px = hx + pts[k].x * hs;
+        const py = hy + pts[k].y * hs;
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // внутренние меридианы — купол читается объёмным
+    ctx.globalAlpha = prev * a * (0.1 + 0.08 * pulse);
+    ctx.strokeStyle = PAL.glass;
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX * 0.58, RY * 0.86, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX * 0.24, RY * 0.94, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+
+    // яркая кромка: тонкая бирюза плюс мягкое свечение
+    ctx.globalAlpha = prev * a * (0.22 + 0.18 * pulse);
+    ctx.strokeStyle = PAL.glass;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX, RY, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.globalAlpha = prev * a * (0.62 + 0.32 * pulse);
+    ctx.strokeStyle = '#e6fffb';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX, RY, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+
+    // нижнее кольцо на грунте
+    ctx.globalAlpha = prev * a * 0.62;
+    ctx.strokeStyle = PAL.cold;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX, RX * 0.22, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // расходящаяся волна: один эллипс на кадр, без частиц
+    const wave = (t * 0.55 + ((u.id || 0) * 0.13)) % 1;
+    ctx.globalAlpha = prev * a * (1 - wave) * 0.34;
+    ctx.strokeStyle = PAL.glass;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.ellipse(g.x, baseY, RX * (0.55 + 0.6 * wave), RX * 0.22 * (0.55 + 0.6 * wave),
+      0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // три искры на поверхности
+    ctx.globalAlpha = prev * a * 0.9;
+    for (let i = 0; i < 3; i++) {
+      const ang = t * 1.15 + i * (Math.PI * 2 / 3);
+      ctx.fillStyle = i === 1 ? PAL.gold : '#eafffb';
+      ctx.beginPath();
+      ctx.arc(g.x + Math.cos(ang) * RX * 0.88,
+        cy + Math.sin(ang) * RY * 0.5, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = prev;
+  }
+
   function drawUnit(ctx, u) {
     const p = P(u.x, u.y);
     const spec = UNIT_SPEC[u.type] || { h: 20, w: 1 };
@@ -6427,10 +6926,12 @@ CC.Render = (function () {
     const dir = m.dir;
     const frame = m.frame;
     const lvl = unitLevel(u);
+    const hero = u.type === 'hero';
 
-    // лёгкий кивок корпуса на шаге: не «прыжок», а перенос веса
+    // лёгкий кивок корпуса на шаге: не «прыжок», а перенос веса.
+    // Сержант тяжелее: качается меньше, но заметнее оседает на шаге.
     const bob = (!flying && m.walking)
-      ? Math.sin(m.phase * Math.PI) * 0.45
+      ? Math.sin(m.phase * Math.PI) * (hero ? 0.62 : 0.45)
       : Math.sin(t * 1.7 + ((u.id || 0) % 7)) * 0.18;
 
     // удар: короткий замах и выпад, без телепорта позиции
@@ -6438,7 +6939,8 @@ CC.Render = (function () {
     let lunge = 0;
     if (u.atk > 0) {
       const q = 1 - Math.min(1, u.atk / 0.18);
-      lunge = q < 0.4 ? -1.4 * (q / 0.4) : 2.1 * Math.sin((q - 0.4) / 0.6 * Math.PI);
+      const push = hero ? 1.7 : 2.1;      // тяжёлый шаг — короче выпад
+      lunge = q < 0.4 ? -1.3 * (q / 0.4) : push * Math.sin((q - 0.4) / 0.6 * Math.PI);
     }
 
     // тень: у летающих — отдельный мягкий эллипс на земле
@@ -6474,10 +6976,16 @@ CC.Render = (function () {
       ctx.restore();
     }
 
+    // щит сержанта — только вектор, поверх спрайта и под полоской здоровья
+    if (hero && !u.dead) {
+      const shield = heroShieldPower(u);
+      if (shield > 0) drawHeroShield(ctx, u, shield);
+    }
+
     // полоска здоровья — тонкая, только у раненых
     if (typeof u.maxHp === 'number' && u.hp < u.maxHp && u.maxHp > 0) {
       const ratio = Math.max(0, u.hp / u.maxHp);
-      const w = (u.type === 'giant' || flying ? 18 : 13);
+      const w = (hero ? 21 : (u.type === 'giant' || flying ? 18 : 13));
       const y = p.y - bob - lift - spec.h - 4;
 
       ctx.fillStyle = 'rgba(30,26,20,.45)';
@@ -8119,6 +8627,7 @@ CC.Render = (function () {
     t += 0.016;
     trapStats.hidden = 0;
     trapStats.drawn = 0;
+    shieldStats.drawn = 0;
     setLod(view.scale);
     updateWorldView(view);
 
@@ -9410,6 +9919,10 @@ CC.Render = (function () {
     // Нужны сцене-чеку, чтобы проверить невидимость до срабатывания.
     __traps: function () {
       return { hidden: trapStats.hidden, drawn: trapStats.drawn };
+    },
+    // купол героя: сколько щитов нарисовано в последнем кадре (tools)
+    __shield: function () {
+      return { drawn: shieldStats.drawn };
     },
     // счётчики псевдо-3D спрайтов войск: сколько канв запечено и сколько
     // обращений попало в готовый кэш. Ключ — тип|уровень|направление|кадр.

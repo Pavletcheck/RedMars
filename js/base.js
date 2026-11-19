@@ -460,6 +460,15 @@ CC.Game = (function () {
     max: 10, costFactor: 12, costGrowth: 1.55,
     timeFactor: 6, timeGrowth: 1.5, bonus: 0.12
   };
+  // Герой: открытие с TH5, линейные HP/урон и отдельный слот прокачки.
+  const HERO = CC.HERO || {
+    id: 'hero', minTh: 5, maxLevel: 10,
+    costBase: 1500, costGrowth: 1.5,
+    hpBase: 800, hpPerLevel: 150, dmgBase: 60, dmgPerLevel: 12,
+    speed: 2, range: 1.2,
+    ability: { name: 'Щит', duration: 3, uses: 1 },
+    costs: {}, times: {}
+  };
 
   let st = fresh();
   let move = null; // активный перенос: меняем только превью, не Base
@@ -470,6 +479,7 @@ CC.Game = (function () {
   let buildDoneEvent = [];
   let dailyDoneEvent = 0;
   let troopDoneEvent = null;
+  let heroDoneEvent = null;
 
   function copyArmy(src) {
     const out = {};
@@ -530,6 +540,10 @@ CC.Game = (function () {
       // строителей не занимает; старый сейв получает все уровни по 1.
       troopLevels: freshTroopLevels(),
       troopUp: null,
+      // Герой: 0 — ещё не открыт (TH ниже 5), 1..10 — уровень.
+      // heroUp — отдельный слот прокачки, не связанный с troopUp.
+      heroLevel: 0,
+      heroUp: null,
       builders: BUILD.start,
       level: 0,
       cleared: [],
@@ -1789,8 +1803,9 @@ CC.Game = (function () {
   /* ---------- прокачка войск ---------- */
 
   // Только собственные типы CC.TROOPS: «constructor» и «__proto__» не войска.
+  // Герой качается отдельным слотом, поэтому в линейку исследований не входит.
   function isTroopType(type) {
-    return typeof type === 'string' &&
+    return type !== 'hero' && typeof type === 'string' &&
       Object.prototype.hasOwnProperty.call(TROOPS, type);
   }
 
@@ -2054,6 +2069,226 @@ CC.Game = (function () {
   function takeTroopDone() {
     const e = troopDoneEvent;
     troopDoneEvent = null;
+    return e;
+  }
+
+  /* ---------- герой ---------- */
+
+  // Потолок героя = уровень центра. До TH5 герой закрыт и max = 0.
+  function heroMaxLevel(thLevel) {
+    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
+    if (th < (HERO.minTh || 5)) return 0;
+    return Math.min(HERO.maxLevel || 10, th);
+  }
+
+  // Текущий уровень героя. Старый сейв с TH5+ открывает его на 1 уровне.
+  function heroLevel() {
+    const th = townhallLevel();
+    const max = heroMaxLevel(th);
+    if (max <= 0) return 0;
+
+    let l = Math.floor(Number(st.heroLevel));
+    if (!(l >= 1)) {
+      l = 1;
+      st.heroLevel = l;
+      save();
+    }
+    if (l > max) l = max;
+    return l;
+  }
+
+  // Цена и время улучшения до СЛЕДУЮЩЕГО уровня. Целевой уровень to (2..10):
+  // руда = 1500 × 1.5^(to − 1), время — из таблицы CC.HERO.times.
+  function heroUpgradeCost() {
+    const th = townhallLevel();
+    const lvl = heroLevel();
+    const max = heroMaxLevel(th);
+    if (!lvl || lvl >= max) return null;
+
+    const to = lvl + 1;
+    const table = HERO.costs || {};
+    let gold = Math.floor(Number(table[to]));
+    if (!isFinite(gold) || gold <= 0) {
+      const base = Number(HERO.costBase) || 1500;
+      const growth = Number(HERO.costGrowth) || 1.5;
+      gold = Math.round(base * Math.pow(growth, to - 1));
+    }
+
+    const times = HERO.times || {};
+    let time = Math.floor(Number(times[to]));
+    if (!isFinite(time) || time <= 0) {
+      time = Math.min(24 * 3600, 30 * 60 * Math.pow(2, to - 2));
+    }
+
+    return {
+      type: HERO.id || 'hero',
+      level: lvl,
+      to: to,
+      gold: gold,
+      time: time
+    };
+  }
+
+  function heroBusy() {
+    return !!st.heroUp;
+  }
+
+  // Проверка перед стартом: закрыт → занят слот → максимум → руда.
+  function canUpgradeHero(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleHero(now);
+
+    const th = townhallLevel();
+    const minTh = HERO.minTh || 5;
+    if (th < minTh) {
+      const reason = 'Откроется с командного центра ' + minTh + ' уровня';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: minTh, locked: true, cost: null
+      };
+    }
+
+    if (heroBusy()) {
+      return {
+        ok: false, error: 'Уже улучшается', reason: 'Уже улучшается',
+        needTh: null, busy: true, cost: heroUpgradeCost()
+      };
+    }
+
+    const lvl = heroLevel();
+    const max = heroMaxLevel(th);
+    if (lvl >= max) {
+      if (max >= (HERO.maxLevel || 10)) {
+        return {
+          ok: false, error: 'Максимальный уровень',
+          reason: 'Максимальный уровень', needTh: null, cost: null
+        };
+      }
+      const need = lvl + 1;
+      const reason = 'Сначала улучши командный центр до ' + need + ' уровня';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: need, cost: null
+      };
+    }
+
+    const c = heroUpgradeCost();
+    if (!c) {
+      return {
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, cost: null
+      };
+    }
+
+    if (st.gold < c.gold) {
+      const need = Math.ceil(c.gold - st.gold);
+      return {
+        ok: false, error: 'Не хватает ' + numText(need) + ' руды',
+        reason: 'Не хватает руды', needTh: null,
+        cost: c, missing: { gold: need }
+      };
+    }
+
+    return { ok: true, error: null, reason: null, needTh: null, cost: c };
+  }
+
+  // Старт прокачки героя: отдельный слот, строители и troopUp не заняты.
+  function startHeroUpgrade(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const check = canUpgradeHero(now);
+    if (check.error) return check;
+
+    const c = check.cost;
+    st.gold -= c.gold;
+    st.heroUp = {
+      to: c.to,
+      startedAt: now,
+      endAt: now + c.time * 1000,
+      time: c.time
+    };
+    save();
+    return { ok: true, to: c.to, gold: c.gold, time: c.time, cost: c };
+  }
+
+  // Идущая прокачка героя: цель, остаток и прогресс 0..1 — для карточки.
+  function heroUpInfo(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleHero(now);
+
+    const u = st.heroUp;
+    if (!u) return null;
+
+    const leftMs = Math.max(0, u.endAt - now);
+    const total = Math.max(1, Number(u.time) || 0);
+    const left = leftMs / 1000;
+    return {
+      active: true,
+      type: HERO.id || 'hero',
+      name: (TROOPS.hero && TROOPS.hero.name) || 'Сержант',
+      to: u.to,
+      level: heroLevel(),
+      total: total,
+      left: left,
+      leftMs: leftMs,
+      progress: Math.max(0, Math.min(1, 1 - left / total)),
+      startedAt: u.startedAt,
+      endAt: u.endAt
+    };
+  }
+
+  // Завершение по абсолютному endAt: уровень поднимается один раз.
+  function settleHero(now) {
+    const u = st.heroUp;
+    if (!u || !(u.endAt <= now)) return false;
+
+    const max = heroMaxLevel();
+    const cur = heroLevel();
+    const to = Math.min(max || (HERO.maxLevel || 10),
+      Math.max(cur || 1, Math.floor(Number(u.to) || cur || 1)));
+
+    if (max > 0 && to >= 1) {
+      st.heroLevel = to;
+      heroDoneEvent = {
+        level: to,
+        name: (TROOPS.hero && TROOPS.hero.name) || 'Сержант'
+      };
+      addXp(10 * to);
+    }
+
+    st.heroUp = null;
+    save();
+    return true;
+  }
+
+  // Характеристики героя по уровню: HP и урон растут линейно.
+  function heroStats(level) {
+    const max = HERO.maxLevel || 10;
+    let l = Math.floor(Number(level));
+    if (!(l >= 1)) l = heroLevel() || 1;
+    if (l > max) l = max;
+
+    const hp = Math.round((HERO.hpBase || 800) +
+      (HERO.hpPerLevel || 150) * (l - 1));
+    const dmg = Math.round((HERO.dmgBase || 60) +
+      (HERO.dmgPerLevel || 12) * (l - 1));
+
+    return {
+      type: HERO.id || 'hero',
+      level: l,
+      hp: hp,
+      dmg: dmg,
+      speed: HERO.speed || 2,
+      range: HERO.range || 1.2,
+      max: heroMaxLevel(),
+      maxAll: max,
+      ability: HERO.ability || { name: 'Щит', duration: 3, uses: 1 }
+    };
+  }
+
+  function takeHeroDone() {
+    const e = heroDoneEvent;
+    heroDoneEvent = null;
     return e;
   }
 
@@ -2424,6 +2659,10 @@ CC.Game = (function () {
 
   function canTrain(type) {
     if (!TROOPS[type]) return { error: 'Неизвестное войско' };
+    // Герой не тренируется и не встаёт в очередь: он всегда готов.
+    if (type === 'hero') {
+      return { error: 'Герой не тренируется', reason: 'Герой не тренируется' };
+    }
 
     // Постепенное открытие: на TH1 только штурмовик, дальше раз в два уровня.
     const unlockAt = CC.troopUnlock ? CC.troopUnlock(type) : 1;
@@ -3132,6 +3371,8 @@ CC.Game = (function () {
         builds: st.builds,
         troopLevels: st.troopLevels,
         troopUp: st.troopUp,
+        heroLevel: st.heroLevel,
+        heroUp: st.heroUp,
         builders: st.builders,
         level: st.level,
         cleared: st.cleared,
@@ -3223,6 +3464,20 @@ CC.Game = (function () {
       });
     }
     return out;
+  }
+
+  // Уровень центра по данным сейва. normalize() выполняется до подмены st,
+  // поэтому townhallLevel() здесь читал бы старое состояние.
+  function townhallFromSave(d) {
+    const list = CC.Base && CC.Base.list ? CC.Base.list() : [];
+    const levels = d && d.levels && typeof d.levels === 'object' ? d.levels : {};
+    let th = 0;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].type !== 'townhall') continue;
+      const l = Math.floor(num(levels[list[i].id], 1));
+      if (l > th) th = l;
+    }
+    return th || 1;
   }
 
   function normalize(d) {
@@ -3333,6 +3588,30 @@ CC.Game = (function () {
         startedAt: num(d.troopUp.startedAt, 0),
         endAt: Number(d.troopUp.endAt),
         time: Math.max(0, num(d.troopUp.time, 0))
+      };
+    }
+
+    // Герой: старый сейв TH5+ открывает его на 1 уровне, TH ниже 5 — 0.
+    // Потолок всегда по уровню центра; битые значения подрезаем.
+    const heroTh = townhallFromSave(d);
+    const heroMax = heroTh >= (HERO.minTh || 5)
+      ? Math.min(HERO.maxLevel || 10, heroTh)
+      : 0;
+    let heroLvl = Math.floor(num(d.heroLevel, 0));
+    if (heroMax <= 0) heroLvl = 0;
+    else if (!(heroLvl >= 1)) heroLvl = 1;
+    else if (heroLvl > heroMax) heroLvl = heroMax;
+    s.heroLevel = heroLvl;
+
+    // Идущая прокачка героя: отдельный слот, абсолютный endAt.
+    if (heroLvl >= 1 && d.heroUp && typeof d.heroUp === 'object' &&
+        isFinite(Number(d.heroUp.endAt))) {
+      s.heroUp = {
+        to: Math.max(2, Math.min(HERO.maxLevel || 10,
+          Math.floor(num(d.heroUp.to, 2)))),
+        startedAt: num(d.heroUp.startedAt, 0),
+        endAt: Number(d.heroUp.endAt),
+        time: Math.max(0, num(d.heroUp.time, 0))
       };
     }
 
@@ -3544,6 +3823,13 @@ CC.Game = (function () {
     const migrating = !(data && typeof data === 'object');
     st = migrating ? fresh() : normalize(data);
 
+    // Герой всегда согласован с текущим центром: на TH5+ он есть,
+    // ниже — закрыт. Это же правило чинит сейв, где TH снесли/подняли.
+    const heroMaxLoad = heroMaxLevel();
+    if (heroMaxLoad <= 0) st.heroLevel = 0;
+    else if (!(st.heroLevel >= 1)) st.heroLevel = 1;
+    else if (st.heroLevel > heroMaxLoad) st.heroLevel = heroMaxLoad;
+
     // Старому сейву без ангары добавляем её, чтобы армии было где жить.
     // Если свободного места нет — армию не выдаём вовсе.
     if (migrating && !ensureBarracks()) st.army = copyArmy({});
@@ -3595,6 +3881,7 @@ CC.Game = (function () {
     buildDoneEvent = [];
     dailyDoneEvent = 0;
     troopDoneEvent = null;
+    heroDoneEvent = null;
     invalidateCaps();
     save();
   }
@@ -3625,6 +3912,7 @@ CC.Game = (function () {
     settleUpgrades(now);
     settleBuilds(now);
     settleTroops(now);
+    settleHero(now);
     settleQueue(now);
     settleDaily(now);
     checkQuests();
@@ -3706,6 +3994,15 @@ CC.Game = (function () {
     troopMultiplier: troopMultiplier,
     troopStats: troopStats,
     takeTroopDone: takeTroopDone,
+    // герой
+    heroLevel: heroLevel,
+    heroMaxLevel: heroMaxLevel,
+    heroUpgradeCost: heroUpgradeCost,
+    canUpgradeHero: canUpgradeHero,
+    startHeroUpgrade: startHeroUpgrade,
+    heroUpInfo: heroUpInfo,
+    heroStats: heroStats,
+    takeHeroDone: takeHeroDone,
     builders: builders,
     hireBuilder: hireBuilder,
     capacity: capacity,

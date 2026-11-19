@@ -473,6 +473,17 @@ CC.Pvp = (function () {
       });
     }
 
+    // Герой доступен и на Арене: один юнит, не входит в места армии.
+    // У призрака своего героя нет — его раскладка строится только из
+    // построек, а армию на бой собирает игрок.
+    if (CC.TROOPS && CC.TROOPS.hero && CC.HERO &&
+        CC.Game && CC.Game.heroLevel && CC.Game.townhallLevel) {
+      const th = CC.Game.townhallLevel();
+      if (th >= (CC.HERO.minTh || 5) && CC.Game.heroLevel() >= 1) {
+        army.hero = 1;
+      }
+    }
+
     const rows = (g.layout || []).map(function (r) {
       return {
         type: r.type,
