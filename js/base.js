@@ -228,6 +228,19 @@ CC.Base = (function () {
     return { ok: true };
   }
 
+  // Поставить готовую постройку без цены и таймера. Нужно миграции старых
+  // сейвов (например, когда общий склад стал только рудным): ресурсы игрока
+  // при этом не списываются. Обычная постановка по-прежнему идёт через place().
+  function insert(type, x, y) {
+    if (!DEFS[type] || !fits(type, x, y)) return null;
+    const it = { id: nextId++, type: type, x: x, y: y };
+    items.push(it);
+    rebuild();
+    if (CC.Game) CC.Game.invalidateCaps();
+    save();
+    return it;
+  }
+
   function move(id, x, y) {
     const it = items.find(function (o) { return o.id === id; });
     if (!it) return { error: 'Постройка не найдена' };
@@ -387,6 +400,7 @@ CC.Base = (function () {
     count: count,
     left: left,
     place: place,
+    insert: insert,
     remove: remove,
     move: move,
     isBuilding: isBuilding,
@@ -464,9 +478,9 @@ CC.Game = (function () {
   const HERO = CC.HERO || {
     id: 'hero', minTh: 5, maxLevel: 10,
     costBase: 1500, costGrowth: 1.5,
-    hpBase: 800, hpPerLevel: 150, dmgBase: 60, dmgPerLevel: 12,
+    hpBase: 1000, hpPerLevel: 200, dmgBase: 80, dmgPerLevel: 15,
     speed: 2, range: 1.2,
-    ability: { name: 'Щит', duration: 3, uses: 1 },
+    ability: { name: 'Щит', duration: 3, radius: 2.5, uses: 1 },
     costs: {}, times: {}
   };
 
@@ -475,6 +489,7 @@ CC.Game = (function () {
   let questRewardEvent = null;
   let levelUpEvent = 0;
   let pendingOffline = null;
+  let noEstorageEvent = false;
   let upgradeDoneEvent = 0;
   let buildDoneEvent = [];
   let dailyDoneEvent = 0;
@@ -563,6 +578,9 @@ CC.Game = (function () {
       raidTruceUntil: 0,
       daily: freshDaily(Date.now()),
       lastSeen: Date.now(),
+      // Миграция общего склада: после первого переноса в estorage больше
+      // не добавляем склад автоматически (иначе снос возвращал бы его даром).
+      estorageMigrated: false,
       // Локальный PvP: рейтинг, счётчики и стабильный seed пула.
       // Старый сейв без этого поля получает значения по умолчанию.
       pvp: {
@@ -880,27 +898,25 @@ CC.Game = (function () {
     const list = CC.Base.list();
     const storeG = ECON.storageCap.gold || 0;
     const storeE = ECON.storageCap.elixir || 0;
-    const grow = (UP.storage || {}).cap || 0;
-    let gold = ECON.baseCap;
-    let elixir = ECON.baseCap;
-    let th = 1;
+    const growG = (UP.storage || {}).cap || 0;
+    const growE = (UP.estorage || {}).cap || 0;
+    // Командный центр ёмкости не даёт: только готовые склады своего типа.
+    let gold = 0;
+    let elixir = 0;
 
     for (let i = 0; i < list.length; i++) {
       const it = list[i];
       if (isBuilding(it.id)) continue;
       if (it.type === 'storage') {
-        const k = 1 + grow * (level(it.id) - 1);
-        gold += storeG * k;
-        elixir += storeE * k;
-      } else if (it.type === 'townhall') {
-        const g = (UP.townhall || {}).cap || 0;
-        th = 1 + g * (level(it.id) - 1);
+        gold += storeG * (1 + growG * (level(it.id) - 1));
+      } else if (it.type === 'estorage') {
+        elixir += storeE * (1 + growE * (level(it.id) - 1));
       }
     }
 
     capCache = {
-      gold: Math.round(gold * th),
-      elixir: Math.round(elixir * th)
+      gold: Math.round(gold),
+      elixir: Math.round(elixir)
     };
     return capCache;
   }
@@ -910,7 +926,7 @@ CC.Game = (function () {
   }
 
   // Плашка «Full!»: бур/реактор полны, когда полон их собственный накопитель;
-  // хранилище — когда не влезает уже ни руда, ни энергия.
+  // склад — когда заполнен ресурс именно этого склада.
   function isFull(id) {
     const it = item(id);
     if (!it) return false;
@@ -918,8 +934,13 @@ CC.Game = (function () {
     const eps = 1e-6;
 
     if (it.type === 'storage') {
-      const c = caps();
-      return st.gold >= c.gold - eps && st.elixir >= c.elixir - eps;
+      const c = cap('gold');
+      return c > 0 && st.gold >= c - eps;
+    }
+
+    if (it.type === 'estorage') {
+      const c = cap('elixir');
+      return c > 0 && st.elixir >= c - eps;
     }
 
     const p = CC.PRODUCTION[it.type];
@@ -1027,12 +1048,14 @@ CC.Game = (function () {
     return { ok: true, added: add, gems: gemsNow() };
   }
 
-  // 1 платина за каждые N секунд остатка, но не меньше min.
+  // 1 платина за каждые N секунд остатка, но не меньше min и не больше
+  // потолка max. Потолок спасает долгие стройки от цены в сотни платин.
   function gemCostFor(seconds) {
     const per = GEMS.speed.secondsPerGem || 300;
     const min = GEMS.speed.min || 1;
+    const max = GEMS.speed.max || 80;
     const left = Math.max(0, Number(seconds) || 0);
-    return Math.max(min, Math.ceil(left / per));
+    return Math.min(max, Math.max(min, Math.ceil(left / per)));
   }
 
   function noGems(cost) {
@@ -1111,8 +1134,11 @@ CC.Game = (function () {
   }
 
   // Обмен платины на руду/энергию через общий credit() с лимитами хранилищ.
+  // Курс зависит от уровня центра: CC.gemExchange(res, TH).
   function exchangeGems(res, count) {
-    const rate = GEMS.exchange[res];
+    const rate = CC.gemExchange
+      ? CC.gemExchange(res, townhallLevel())
+      : GEMS.exchange[res];
     if (!rate) return { error: 'Неизвестный ресурс' };
 
     const n = Math.floor(Number(count) || 0);
@@ -1637,13 +1663,14 @@ CC.Game = (function () {
       };
     }
 
-    // Хранилище меньше цены — качать бесполезно, сначала расширяем лимит.
+    // Склад меньше цены — качать бесполезно, сначала расширяем лимит.
+    // У руды и энергии теперь разные здания, поэтому и подсказка своя.
     const capGold = cap('gold');
     const capElixir = cap('elixir');
 
     if (c.gold > capGold) {
-      const reason = 'Хранилище мало: ' + numText(capGold) + ' из ' + numText(c.gold) +
-        '. Поставь ещё хранилище';
+      const reason = 'Хранилище руды мало: ' + numText(capGold) + ' из ' + numText(c.gold) +
+        '. Поставь ещё хранилище руды';
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         needStorage: true, resource: 'gold', cap: Math.round(capGold),
@@ -1652,8 +1679,8 @@ CC.Game = (function () {
     }
 
     if (c.elixir > capElixir) {
-      const reason = 'Хранилище мало: ' + numText(capElixir) + ' из ' + numText(c.elixir) +
-        '. Поставь ещё хранилище';
+      const reason = 'Хранилище энергии мало: ' + numText(capElixir) + ' из ' + numText(c.elixir) +
+        '. Поставь ещё хранилище энергии';
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         needStorage: true, resource: 'elixir', cap: Math.round(capElixir),
@@ -1935,8 +1962,8 @@ CC.Game = (function () {
 
     // Цена выше лимита склада — качать нечем, пока не расширено хранилище.
     if (c.elixir > cap('elixir')) {
-      const reason = 'Хранилище мало: ' + numText(cap('elixir')) + ' из ' +
-        numText(c.elixir) + '. Поставь ещё хранилище';
+      const reason = 'Хранилище энергии мало: ' + numText(cap('elixir')) + ' из ' +
+        numText(c.elixir) + '. Поставь ещё хранилище энергии';
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         needStorage: true, resource: 'elixir', cap: Math.round(cap('elixir')),
@@ -2242,6 +2269,33 @@ CC.Game = (function () {
     };
   }
 
+  // Ускорение прокачки героя: та же формула и потолок, что у построек
+  // и исследований войск. Отдельная кнопка в карточке героя.
+  function heroSpeedCost(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const info = heroUpInfo(now);
+    if (!info) return null;
+    return { gems: gemCostFor(info.left), left: info.left, to: info.to };
+  }
+
+  function speedUpHero(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleHero(now);
+
+    if (!st.heroUp) return { error: 'Улучшение не идёт' };
+
+    const left = Math.max(0, (st.heroUp.endAt - now) / 1000);
+    const cost = gemCostFor(left);
+    if (st.gems < cost) return noGems(cost);
+
+    st.gems -= cost;
+    addStat('gemsSpent', cost);
+    st.heroUp.endAt = now;
+    settleHero(now);
+    save();
+    return { ok: true, spent: cost, gems: gemsNow(), level: heroLevel() };
+  }
+
   // Завершение по абсолютному endAt: уровень поднимается один раз.
   function settleHero(now) {
     const u = st.heroUp;
@@ -2273,10 +2327,10 @@ CC.Game = (function () {
     if (!(l >= 1)) l = heroLevel() || 1;
     if (l > max) l = max;
 
-    const hp = Math.round((HERO.hpBase || 800) +
-      (HERO.hpPerLevel || 150) * (l - 1));
-    const dmg = Math.round((HERO.dmgBase || 60) +
-      (HERO.dmgPerLevel || 12) * (l - 1));
+    const hp = Math.round((HERO.hpBase || 1000) +
+      (HERO.hpPerLevel || 200) * (l - 1));
+    const dmg = Math.round((HERO.dmgBase || 80) +
+      (HERO.dmgPerLevel || 15) * (l - 1));
 
     return {
       type: HERO.id || 'hero',
@@ -2564,7 +2618,12 @@ CC.Game = (function () {
 
     if (it.type === 'storage') {
       out.capGold = Math.round(ECON.storageCap.gold * (1 + (u.cap || 0) * k));
+      out.store = 'gold';
+    }
+
+    if (it.type === 'estorage') {
       out.capElixir = Math.round(ECON.storageCap.elixir * (1 + (u.cap || 0) * k));
+      out.store = 'elixir';
     }
 
     if (it.type === 'barracks') {
@@ -3416,6 +3475,7 @@ CC.Game = (function () {
         raidTruceUntil: st.raidTruceUntil,
         daily: st.daily,
         lastSeen: st.lastSeen,
+        estorageMigrated: !!st.estorageMigrated,
         pvp: st.pvp
       }));
     } catch (e) {
@@ -3570,6 +3630,7 @@ CC.Game = (function () {
       }
     }
     s.lastSeen = num(d.lastSeen, Date.now());
+    s.estorageMigrated = d.estorageMigrated === true || d.estorageMigrated === 1;
     s.builders = Math.min(BUILD.max, Math.max(1, Math.floor(num(d.builders, BUILD.start))));
 
     if (d.army && typeof d.army === 'object') {
@@ -3817,6 +3878,99 @@ CC.Game = (function () {
     return false;
   }
 
+  // Свободные клетки по периметру склада, начиная с ближайших.
+  function spotsNear(anchor) {
+    const s = CC.Base.size(anchor.type);
+    const out = [];
+
+    for (let y = anchor.y - 1; y <= anchor.y + s.h; y++) {
+      for (let x = anchor.x - 1; x <= anchor.x + s.w; x++) {
+        const inside = x >= anchor.x && x < anchor.x + s.w &&
+          y >= anchor.y && y < anchor.y + s.h;
+        if (inside) continue;
+        if (!CC.Base.fits('estorage', x, y)) continue;
+        out.push({
+          x: x, y: y,
+          d: Math.hypot(x + 0.5 - (anchor.x + s.w / 2),
+            y + 0.5 - (anchor.y + s.h / 2))
+        });
+      }
+    }
+
+    out.sort(function (a, b) {
+      if (a.d !== b.d) return a.d - b.d;
+      if (a.y !== b.y) return a.y - b.y;
+      return a.x - b.x;
+    });
+    return out;
+  }
+
+  /* Старый сейв хранил один общий склад. Теперь storage — только руда,
+     поэтому при загрузке добавляем склад энергии рядом с самым прокачанным
+     старым складом (или в любое свободное место). Уровень нового склада
+     равен максимальному уровню старых. Ресурсы не трогаем. Если места нет,
+     ничего не ломаем: лимит энергии останется 0, игрок поставит склад сам. */
+  function ensureEnergyStorage() {
+    if (CC.Base.count('estorage') > 0) {
+      if (!st.estorageMigrated) {
+        st.estorageMigrated = true;
+        save();
+      }
+      return false;
+    }
+    // Уже мигрировали: игрок сам снёс склад энергии — заново не выдаём.
+    if (st.estorageMigrated) return false;
+
+    const stores = CC.Base.list().filter(function (b) {
+      return b.type === 'storage';
+    });
+    if (!stores.length) return false;
+
+    let anchor = stores[0];
+    let lvl = 1;
+    for (let i = 0; i < stores.length; i++) {
+      const l = level(stores[i].id);
+      if (l > lvl) lvl = l;
+      if (l > level(anchor.id)) anchor = stores[i];
+    }
+    lvl = lvl > ECON.maxLevel ? ECON.maxLevel : lvl;
+
+    let spot = spotsNear(anchor)[0] || null;
+    if (!spot) {
+      // Рядом тесно — ищем любую свободную клетку на поле.
+      for (let y = 0; y < CC.GRID && !spot; y++) {
+        for (let x = 0; x < CC.GRID; x++) {
+          if (CC.Base.fits('estorage', x, y)) { spot = { x: x, y: y }; break; }
+        }
+      }
+    }
+
+    if (!spot) {
+      noEstorageEvent = true;
+      return false;
+    }
+
+    const it = CC.Base.insert('estorage', spot.x, spot.y);
+    if (!it) {
+      noEstorageEvent = true;
+      return false;
+    }
+
+    st.levels[it.id] = lvl;
+    if (st.builds && st.builds[it.id]) delete st.builds[it.id];
+    st.estorageMigrated = true;
+    invalidateCaps();
+    save();
+    return true;
+  }
+
+  // UI спрашивает один раз: показать тост «нет места под склад энергии».
+  function takeEstorageHint() {
+    const v = noEstorageEvent;
+    noEstorageEvent = false;
+    return v;
+  }
+
   // Чистим накопители после загрузки базы: буфер остаётся только у живых
   // буров/реакторов, значение обрезается по текущей ёмкости уровня.
   function sanitizeExtract() {
@@ -3898,6 +4052,11 @@ CC.Game = (function () {
     // Если свободного места нет — армию не выдаём вовсе.
     if (migrating && !ensureBarracks()) st.army = copyArmy({});
 
+    // Общий склад старого сейва стал складом руды: энергию хранить негде,
+    // поэтому без estorage лимит энергии был бы 0. Ставим второй склад
+    // бесплатно, с уровнем самого прокачанного старого склада.
+    const addedEstorage = ensureEnergyStorage();
+
     moveCancel();
     invalidateCaps();
     // Накопители: только живые буры/реакторы и не больше текущей ёмкости.
@@ -3905,9 +4064,14 @@ CC.Game = (function () {
     sanitizeBuilds();
     // старый сейв деревни мог сохранить ресурсы выше лимита — подрезаем.
     // При миграции старой раскладки стартовые ресурсы не трогаем.
-    if (!migrating) {
-      st.gold = Math.min(st.gold, cap('gold'));
-      st.elixir = Math.min(st.elixir, cap('elixir'));
+    // Нулевой лимит не обнуляет ресурсы: их нельзя терять, игрок сам
+    // поставит недостающий склад. В загрузке с миграцией склада ресурсы
+    // тоже не режем: игрок не должен терять энергию из-за смены модели.
+    if (!migrating && !addedEstorage) {
+      const gcap = cap('gold');
+      const ecap = cap('elixir');
+      if (gcap > 0) st.gold = Math.min(st.gold, gcap);
+      if (ecap > 0) st.elixir = Math.min(st.elixir, ecap);
     }
 
     pendingOffline = null;
@@ -4065,6 +4229,8 @@ CC.Game = (function () {
     canUpgradeHero: canUpgradeHero,
     startHeroUpgrade: startHeroUpgrade,
     heroUpInfo: heroUpInfo,
+    heroSpeedCost: heroSpeedCost,
+    speedUpHero: speedUpHero,
     heroStats: heroStats,
     takeHeroDone: takeHeroDone,
     builders: builders,
@@ -4110,6 +4276,7 @@ CC.Game = (function () {
     takeUpgradeDone: takeUpgradeDone,
     offlineInfo: offlineInfo,
     claimOffline: claimOffline,
+    takeEstorageHint: takeEstorageHint,
     currentLevel: currentLevel,
     selectedLevel: selectedLevel,
     resetSelected: resetSelected,

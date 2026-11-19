@@ -117,10 +117,17 @@ CC.BUILDINGS = {
     w: 1, h: 1, hp: 500, height: 26, resource: true,
     color: '#5d4b6b', top: '#b06fd0'
   },
+  // Два разных склада: старый storage теперь хранит только руду,
+  // estorage — только энергию. Командный центр ёмкости не даёт.
   storage: {
-    name: 'Хранилище', desc: 'хранит руду и энергию',
-    w: 1, h: 1, hp: 600, height: 28, resource: true,
+    name: 'Хранилище руды', desc: 'хранит только руду',
+    w: 1, h: 1, hp: 600, height: 28, resource: true, store: 'gold',
     color: '#77644a', top: '#d0ad6a'
+  },
+  estorage: {
+    name: 'Хранилище энергии', desc: 'хранит только энергию',
+    w: 1, h: 1, hp: 600, height: 28, resource: true, store: 'elixir',
+    color: '#4a5a74', top: '#7fc4ff'
   },
   barracks: {
     name: 'Ангар', desc: 'даёт места и тренирует',
@@ -181,8 +188,8 @@ CC.TROOPS = {
   // после открытия и восстанавливается между боями. Характеристики по
   // уровню считает CC.Game.heroStats(), а здесь — базовые значения.
   hero: {
-    name: 'Сержант', desc: 'щит на 3 с, один раз за бой',
-    icon: '🎖️', hp: 800, dmg: 60, speed: 2.0,
+    name: 'Сержант', desc: 'щит на 3 с для союзников, один раз за бой',
+    icon: '🎖️', hp: 1000, dmg: 80, speed: 2.0,
     range: 1.2, color: '#c9a227', target: 'any',
     space: 0, cost: 0, time: 0, hero: true
   }
@@ -234,26 +241,28 @@ CC.TROOP_LEVEL = {
      руда = 1500 × 1.5^(to − 1)
    Время задано таблицей: 2 — 30 мин, 3 — 1 ч, 4 — 2 ч, 5 — 4 ч,
    6 — 6 ч, 7 — 8 ч, 8 — 12 ч, 9 — 16 ч, 10 — 24 ч.
-   HP и урон растут линейно: 800 + 150×(уровень − 1), 60 + 12×(уровень − 1).
-   Способность «Щит» — 3 секунды неуязвимости, один раз за бой. */
+   HP и урон растут линейно: 1000 + 200×(уровень − 1), 80 + 15×(уровень − 1).
+   Способность «Щит» — 3 секунды неуязвимости всем союзным юнитам в радиусе
+   2.5 тайла (включая героя), один раз за бой. */
 CC.HERO = {
   id: 'hero',
   minTh: 5,
   maxLevel: 10,
   costBase: 1500,
   costGrowth: 1.5,
-  hpBase: 800,
-  hpPerLevel: 150,
-  dmgBase: 60,
-  dmgPerLevel: 12,
+  hpBase: 1000,
+  hpPerLevel: 200,
+  dmgBase: 80,
+  dmgPerLevel: 15,
   speed: 2.0,
   range: 1.2,
   ability: {
     name: 'Щит',
     duration: 3,
+    radius: 2.5,
     uses: 1,
     key: 'Q',
-    hint: 'Щит 3 с · 1 раз за бой'
+    hint: 'Щит 3 с на союзников · 1 раз за бой'
   },
   costs: {},
   times: {
@@ -288,8 +297,12 @@ CC.ECONOMY = {
   startGold: 800,
   startElixir: 800,
   offlineCap: 8 * 3600,     // максимум секунд оффлайна, которые начисляются
-  baseCap: 900,             // запас на каждый ресурс, который даёт командный центр
-  storageCap: { gold: 2200, elixir: 2000 }, // за уровень хранилища
+  // Ёмкость даёт только склад: командный центр не хранит ресурсы.
+  // baseCap оставлен нулём для старых сейвов и внешних читателей.
+  baseCap: 0,
+  // За уровень склада: руда — по складам руды, энергия — по складам энергии.
+  // TH1 с одним складом каждого типа даёт 1700/1500.
+  storageCap: { gold: 1700, elixir: 1500 },
   // 1.5 цены и 1.45 времени за уровень: к 10 уровню защита стоит 10-15 тыс.
   // руды и качается 15-20 минут, а не 150 тыс. и полдня.
   growth: { cost: 1.5, time: 1.45 },
@@ -331,13 +344,35 @@ CC.GEMS = {
   start: 50,
   perQuest: 1,
   perLevel: 1,
-  // 1 платина за каждые 5 минут остатка, минимум 1
-  speed: { secondsPerGem: 300, min: 1 },
-  // сколько ресурса даёт одна платина
+  // Потолок ускорения: не больше 80 платин за одну кнопку.
+  // Цена = min(80, max(1, ceil(остаток / 300))).
+  speed: { secondsPerGem: 300, min: 1, max: 80 },
+  /* Обмен: 1 платина даёт всё больше ресурсов с ростом центра.
+     руда    = 250 + 100 × (TH − 1)
+     энергия = 200 +  80 × (TH − 1)
+     Курс округляется до 10. */
   exchange: {
-    gold: 150,
-    elixir: 120
+    gold: 250,
+    elixir: 200,
+    perTh: { gold: 100, elixir: 80 }
   }
+};
+
+// Курс обмена для ресурса на указанном уровне центра. TH1: 250/200,
+// TH5: 650/520, TH10: 1150/920. Округление до 10 — запас на будущие
+// дробные шаги роста.
+CC.gemExchange = function (res, thLevel) {
+  const conf = CC.GEMS.exchange || {};
+  const base = Number(conf[res]);
+  if (!isFinite(base) || base <= 0) return 0;
+
+  let th = Math.floor(Number(thLevel));
+  if (!(th >= 1)) th = 1;
+  if (th > CC.MAX_TH) th = CC.MAX_TH;
+
+  const step = Number((conf.perTh || {})[res]) || 0;
+  const raw = base + step * (th - 1);
+  return Math.round(raw / 10) * 10;
 };
 
 /* Склонение платины: 1 платина, 2 платины, 5 платин.
@@ -452,6 +487,7 @@ CC.PLACE_COST = {
   goldmine: { elixir: 300 },
   elixir: { gold: 300 },
   storage: { gold: 400 },
+  estorage: { gold: 400 },
   barracks: { elixir: 500 },
   townhall: {}
 };
@@ -510,7 +546,7 @@ CC.placeTime = function (type) {
    hp/dmg/range/rate/cap — прибавка к характеристике за каждый уровень.
    Все постройки качаются до 10 уровня; цена округляется в base.js. */
 CC.UPGRADES = {
-  townhall: { max: 10, cost: { gold: 1200 }, time: 90, hp: 0.3, cap: 0.3 },
+  townhall: { max: 10, cost: { gold: 1200 }, time: 90, hp: 0.3 },
   cannon: { max: 10, cost: { gold: 420 }, time: 45, hp: 0.25, dmg: 0.25, range: 0.04, rate: 0.12 },
   archer: { max: 10, cost: { gold: 460 }, time: 50, hp: 0.25, dmg: 0.25, range: 0.04, rate: 0.12 },
   mortar: { max: 10, cost: { gold: 480 }, time: 60, hp: 0.2, dmg: 0.25, range: 0.04, rate: 0.1 },
@@ -525,6 +561,7 @@ CC.UPGRADES = {
   goldmine: { max: 10, cost: { elixir: 200 }, time: 40, hp: 0.2, rate: 0.5 },
   elixir: { max: 10, cost: { gold: 200 }, time: 40, hp: 0.2, rate: 0.5 },
   storage: { max: 10, cost: { gold: 320 }, time: 45, hp: 0.2, cap: 0.5 },
+  estorage: { max: 10, cost: { gold: 320 }, time: 45, hp: 0.2, cap: 0.5 },
   barracks: { max: 10, cost: { elixir: 400 }, time: 60, hp: 0.25 }
 };
 
@@ -570,34 +607,34 @@ CC.REQUIREMENTS = {
 CC.MAX_TH = 10;
 
 /* Достижения: постоянные цели, платина выдаётся вручную за ступень.
-   Награды уменьшены впятеро относительно старых (5/10/20 → 1/2/4 и т.п.). */
+   Платина — донат, поэтому за каждую ступень ровно 1 штука: всего 13×3 = 39. */
 CC.ACHIEVEMENTS = [
   { id: 'walls', name: 'Крушитель барьеров', desc: 'Снести энергобарьеры в бою',
-    stat: 'wallsDestroyed', tiers: [10, 100, 500], gems: [1, 2, 4] },
+    stat: 'wallsDestroyed', tiers: [10, 100, 500], gems: [1, 1, 1] },
   { id: 'wins', name: 'Командир', desc: 'Выиграть бои',
-    stat: 'battleWins', tiers: [1, 10, 50], gems: [1, 2, 4] },
+    stat: 'battleWins', tiers: [1, 10, 50], gems: [1, 1, 1] },
   { id: 'upgrades', name: 'Техник', desc: 'Завершить модернизации',
-    stat: 'upgrades', tiers: [5, 25, 100], gems: [1, 2, 4] },
+    stat: 'upgrades', tiers: [5, 25, 100], gems: [1, 1, 1] },
   { id: 'gold', name: 'Рудокоп', desc: 'Собрать руды суммарно',
-    stat: 'goldEarned', tiers: [1000, 10000, 100000], gems: [1, 2, 4] },
+    stat: 'goldEarned', tiers: [1000, 10000, 100000], gems: [1, 1, 1] },
   { id: 'levels', name: 'Покоритель', desc: 'Пройти секторы Марса',
-    stat: 'levelsCleared', tiers: [1, 10, 50], gems: [2, 3, 5] },
+    stat: 'levelsCleared', tiers: [1, 10, 50], gems: [1, 1, 1] },
   { id: 'defend', name: 'Щит базы', desc: 'Отбить набеги без потери командного центра',
-    stat: 'defended', tiers: [1, 10, 50], gems: [1, 2, 4] },
+    stat: 'defended', tiers: [1, 10, 50], gems: [1, 1, 1] },
   { id: 'placed', name: 'Строитель базы', desc: 'Поставить модули',
-    stat: 'placed', tiers: [10, 50, 150], gems: [1, 2, 4] },
+    stat: 'placed', tiers: [10, 50, 150], gems: [1, 1, 1] },
   { id: 'maxed', name: 'Максимальная мощность', desc: 'Довести модули до максимального уровня',
-    stat: 'maxed', tiers: [1, 3, 5], gems: [2, 4, 6] },
+    stat: 'maxed', tiers: [1, 3, 5], gems: [1, 1, 1] },
   { id: 'gems', name: 'Инвестор', desc: 'Потратить платину',
-    stat: 'gemsSpent', tiers: [10, 50, 200], gems: [1, 2, 4] },
+    stat: 'gemsSpent', tiers: [10, 50, 200], gems: [1, 1, 1] },
   { id: 'train', name: 'Рекрутёр', desc: 'Подготовить бойцов',
-    stat: 'trained', tiers: [10, 100, 500], gems: [1, 2, 4] },
+    stat: 'trained', tiers: [10, 100, 500], gems: [1, 1, 1] },
   { id: 'elixir', name: 'Энергетик', desc: 'Собрать энергии суммарно',
-    stat: 'elixirEarned', tiers: [1000, 10000, 100000], gems: [1, 2, 4] },
+    stat: 'elixirEarned', tiers: [1000, 10000, 100000], gems: [1, 1, 1] },
   { id: 'loot', name: 'Добытчик', desc: 'Унести руды из боёв',
-    stat: 'lootGold', tiers: [500, 5000, 50000], gems: [1, 2, 4] },
+    stat: 'lootGold', tiers: [500, 5000, 50000], gems: [1, 1, 1] },
   { id: 'mason', name: 'Барьерист', desc: 'Поставить энергобарьеры',
-    stat: 'wallsPlaced', tiers: [10, 100, 300], gems: [1, 2, 4] }
+    stat: 'wallsPlaced', tiers: [10, 100, 300], gems: [1, 1, 1] }
 ];
 
 /* Задания-туториал живут в js/base.js: константа QUESTS рядом с текстами
@@ -1085,7 +1122,8 @@ CC.LevelGen = {
     const resCounts = {
       goldmine: CC.limitAt('goldmine', capTh),
       elixir: CC.limitAt('elixir', capTh),
-      storage: CC.limitAt('storage', capTh)
+      storage: CC.limitAt('storage', capTh),
+      estorage: CC.limitAt('estorage', capTh)
     };
     if (within < 4) {
       resCounts.goldmine = Math.max(2, resCounts.goldmine - 1);
@@ -1105,9 +1143,13 @@ CC.LevelGen = {
     });
 
     const resList = [];
+    // Порядок как раньше: буры, реакторы, склад руды, затем новый склад
+    // энергии. Так старые раскладки не съезжают, а estorage встаёт в
+    // оставшееся место (или уходит в резервный проход ниже).
     for (let k = 0; k < resCounts.goldmine; k++) resList.push('goldmine');
     for (let k = 0; k < resCounts.elixir; k++) resList.push('elixir');
     for (let k = 0; k < resCounts.storage; k++) resList.push('storage');
+    for (let k = 0; k < resCounts.estorage; k++) resList.push('estorage');
 
     let ri = 0;
     const resPlaced = [];
@@ -1247,8 +1289,8 @@ CC.LevelGen = {
 
 /* Расстановка своей базы: [тип, x, y].
    Первый уровень — знакомство: центр в центре, ОДНА турель, два бура,
-   реактор, хранилище и ангар. Энергобарьеров нет: игрок сначала
-   разбирается с одним защитным модулем, а стены ставит сам, когда захочет.
+   реактор, склад руды, склад энергии и ангар. Энергобарьеров нет: игрок
+   сначала разбирается с одним защитным модулем, а стены ставит сам.
    Раскладка не превышает лимиты TH1. */
 CC.LAYOUT = [
   ['townhall', 16, 16],
@@ -1257,6 +1299,7 @@ CC.LAYOUT = [
   ['goldmine', 19, 20],
   ['elixir', 13, 20],
   ['storage', 20, 13],
+  ['estorage', 21, 13],
   ['barracks', 16, 20]
 ];
 
@@ -1278,7 +1321,8 @@ CC.LIMITS_BY_TH = {
   wall: [0, 20, 40, 60, 80, 100, 120, 130, 140, 150],
   goldmine: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
   elixir: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
-  storage: [1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+  storage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
+  estorage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
   barracks: [1, 1, 2, 2, 3, 3, 4, 4, 4, 4]
 };
 
@@ -1307,7 +1351,8 @@ CC.LIMITS = {
   wall: 150,
   goldmine: 6,
   elixir: 6,
-  storage: 6,
+  storage: 5,
+  estorage: 5,
   barracks: 4
 };
 
@@ -1316,13 +1361,12 @@ CC.LIMITS = {
 CC.LEVELS = CC.LevelGen.all();
 
 /* ---------- добыча привязана к постройкам ----------
-   Пул уровня больше не выдаётся процентом разрушений: он заранее разложен
-   по конкретным зданиям. 60% пула лежит в хранилищах, 25% — в командном
-   центре, 15% — в бурах/реакторах (в их накопителях). Если хранилищ нет,
-   весь пул уходит в центр, как и просил заказчик.
+   Пул уровня заранее разложен по конкретным зданиям. Руда: 85% в склады
+   руды, 15% в буры. Энергия: 85% в склады энергии, 15% в реакторы.
+   Командный центр не получает лут вовсе.
    Ключ постройки стабилен между заходами: тип + координаты. Именно он
    попадает в st.looted, поэтому разграбленное хранилище в повторе пустое. */
-CC.LOOT_SPLIT = { storage: 0.60, hall: 0.25, extract: 0.15 };
+CC.LOOT_SPLIT = { storage: 0.85, extract: 0.15 };
 
 CC.lootKey = function (type, x, y) {
   return String(type) + ':' + Math.floor(Number(x) || 0) + ':' +
@@ -1333,8 +1377,7 @@ CC.Loot = (function () {
   'use strict';
 
   function roleOf(type) {
-    if (type === 'storage') return 'storage';
-    if (type === 'townhall') return 'hall';
+    if (type === 'storage' || type === 'estorage') return 'storage';
     if (type === 'goldmine' || type === 'elixir') return 'extract';
     return '';
   }
@@ -1388,8 +1431,9 @@ CC.Loot = (function () {
   }
 
   /* Раскладка пула по постройкам. Возвращает объект key → {gold, elixir}.
-     Сумма по всем записям равна исходному пулу, если на базе есть центр
-     или хотя бы одно хранилище (иначе добычи просто негде лежать). */
+     Центр в раскладке не участвует. Если склада нужного ресурса нет,
+     его доля уходит добытчикам (бурам/реакторам); если нет и их — ресурс
+     просто негде хранить и в пул построек он не попадает. */
   function distribute(loot, rows) {
     const out = {};
     const list = normRows(rows);
@@ -1399,39 +1443,43 @@ CC.Loot = (function () {
     const e = Math.max(0, Math.floor(Number(loot && loot.elixir) || 0));
     if (!g && !e) return out;
 
-    const storage = bucket(list, 'storage');
-    const hall = bucket(list, 'townhall');
+    const oreStores = bucket(list, 'storage');
+    const elixirStores = bucket(list, 'estorage');
     const goldmine = bucket(list, 'goldmine');
     const reactor = bucket(list, 'elixir');
 
-    // Без хранилищ весь пул лежит в центре — это правило важнее пропорций.
-    if (!storage.length) {
-      if (!hall.length) return out;
-      add(out, hall, g, 'gold');
-      add(out, hall, e, 'elixir');
-      return out;
+    const S = CC.LOOT_SPLIT || { storage: 0.85, extract: 0.15 };
+
+    // Округляем вниз только долю склада: остаток (включая округление)
+    // уходит добытчикам, поэтому сумма всегда равна пулу.
+    let gStore = Math.floor(g * S.storage);
+    let gExt = g - gStore;
+    let eStore = Math.floor(e * S.storage);
+    let eExt = e - eStore;
+
+    // Нет складов — весь ресурс лежит в добытчиках.
+    if (!oreStores.length) {
+      gExt += gStore;
+      gStore = 0;
+    }
+    // Нет добытчиков — их доля остаётся на складах.
+    if (!goldmine.length) {
+      gStore += gExt;
+      gExt = 0;
     }
 
-    const S = CC.LOOT_SPLIT || { storage: 0.6, hall: 0.25, extract: 0.15 };
-    let gStore = Math.floor(g * S.storage);
-    let eStore = Math.floor(e * S.storage);
-    let gExt = Math.floor(g * S.extract);
-    let eExt = Math.floor(e * S.extract);
-    let gHall = g - gStore - gExt;
-    let eHall = e - eStore - eExt;
+    if (!elixirStores.length) {
+      eExt += eStore;
+      eStore = 0;
+    }
+    if (!reactor.length) {
+      eStore += eExt;
+      eExt = 0;
+    }
 
-    // Нет буров/реакторов — их доля уходит в центр, если он есть.
-    if (!goldmine.length) { gHall += gExt; gExt = 0; }
-    if (!reactor.length) { eHall += eExt; eExt = 0; }
-
-    // Нет центра — его доля остаётся в хранилищах.
-    if (!hall.length) { gStore += gHall; eStore += eHall; gHall = 0; eHall = 0; }
-
-    add(out, storage, gStore, 'gold');
-    add(out, storage, eStore, 'elixir');
-    add(out, hall, gHall, 'gold');
-    add(out, hall, eHall, 'elixir');
+    add(out, oreStores, gStore, 'gold');
     add(out, goldmine, gExt, 'gold');
+    add(out, elixirStores, eStore, 'elixir');
     add(out, reactor, eExt, 'elixir');
 
     return out;
@@ -1448,7 +1496,7 @@ CC.Loot = (function () {
 CC.PALETTE = [
   'townhall', 'cannon', 'archer', 'mortar', 'airdef', 'mage',
   'ambush', 'beam', 'wall', 'mine', 'spring', 'airmine',
-  'goldmine', 'elixir', 'storage', 'barracks'
+  'goldmine', 'elixir', 'storage', 'estorage', 'barracks'
 ];
 
 /* Иконки для палитры. */
@@ -1468,5 +1516,6 @@ CC.ICONS = {
   goldmine: '⛏️',
   elixir: '⚡',
   storage: '🗄️',
+  estorage: '🔋',
   barracks: '🏗️'
 };

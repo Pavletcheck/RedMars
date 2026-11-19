@@ -16,7 +16,7 @@ CC.Pvp = (function () {
   const FIND_ATTEMPTS = CFG.findAttempts || 20;
 
   const DEF_TYPES = ['cannon', 'archer', 'mortar', 'airdef', 'mage', 'ambush', 'beam'];
-  const RES_TYPES = ['goldmine', 'elixir', 'storage'];
+  const RES_TYPES = ['goldmine', 'elixir', 'storage', 'estorage'];
   const TRAP_TYPES = ['mine', 'spring', 'airmine'];
 
   const NAME_A = [

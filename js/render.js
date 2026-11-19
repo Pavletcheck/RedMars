@@ -102,6 +102,7 @@ CC.Render = (function () {
     goldmine: { h: 22, wall: PAL.wood, roof: PAL.wood, flag: null },
     elixir: { h: 18, wall: PAL.stone, roof: PAL.elixir, flag: null },
     storage: { h: 20, wall: PAL.wood, roof: PAL.wood, flag: null },
+    estorage: { h: 34, wall: PAL.metal, roof: PAL.elixir, flag: null },
     wall: { h: 16, wall: PAL.stone, roof: PAL.stone, flag: null }
   };
 
@@ -3604,155 +3605,609 @@ CC.Render = (function () {
     }
   }
 
+  /* ---------- накопитель энергии (estorage) ----------
+     Отдельный тип: не реактор (тот энергию производит) и не склад руды.
+     Силуэт — узкая стойка из двух вертикальных конденсаторов под общей
+     шиной, с кабелем и пультом заряда. Склад руды остаётся приземистым
+     контейнером, реактор — широким баком, поэтому типы не путаются даже
+     на мелком масштабе. */
+
+  // Одна ячейка-конденсатор: цилиндр с крышкой, полосой заряда и обручами.
+  function powerCell(ctx, x, baseY, w, h, lvl, energy, steel, hot) {
+    const rx = w / 2;
+    const ry = Math.max(1.4, w * 0.24);
+    const topY = baseY - h;
+    const glass = Math.max(1.8, w * 0.3);
+
+    // тень и нижний торец
+    ctx.fillStyle = 'rgba(20,14,26,.32)';
+    ctx.beginPath();
+    ctx.ellipse(x, baseY + 1.4, rx + 1.2, ry + 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shade(steel, -0.36);
+    ctx.beginPath();
+    ctx.ellipse(x, baseY, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // корпус: узкий цилиндр с лёгким сужением к крышке
+    poly(ctx, [
+      { x: x - rx, y: baseY },
+      { x: x + rx, y: baseY },
+      { x: x + rx * 0.9, y: topY + ry },
+      { x: x + rx * 0.9, y: topY },
+      { x: x - rx * 0.9, y: topY },
+      { x: x - rx * 0.9, y: topY + ry }
+    ], steel);
+
+    // объём: светлая левая грань и тёмная правая
+    poly(ctx, [
+      { x: x - rx, y: baseY },
+      { x: x - rx * 0.18, y: baseY },
+      { x: x - rx * 0.18, y: topY },
+      { x: x - rx * 0.9, y: topY },
+      { x: x - rx * 0.9, y: topY + ry }
+    ], shade(steel, 0.18));
+    poly(ctx, [
+      { x: x + rx * 0.34, y: baseY },
+      { x: x + rx, y: baseY },
+      { x: x + rx * 0.9, y: topY + ry },
+      { x: x + rx * 0.9, y: topY },
+      { x: x + rx * 0.34, y: topY }
+    ], shade(steel, -0.2));
+
+    // тёмная шахта индикатора и полоса заряда
+    ctx.fillStyle = 'rgba(20,14,30,.68)';
+    ctx.fillRect(x - glass / 2, topY + 4, glass, h - 8);
+
+    const bars = 3;
+    const bh = Math.max(1.2, (h - 11) / (bars * 1.55));
+    ctx.fillStyle = energy;
+    for (let i = 0; i < bars; i++) {
+      const y0 = topY + 5 + i * bh * 1.55;
+      ctx.fillRect(x - glass / 2 + 0.7, y0, glass - 1.4, bh);
+    }
+    ctx.fillStyle = hot;
+    ctx.globalAlpha = 0.55;
+    ctx.fillRect(x - glass / 2 + 0.7, topY + 5, Math.max(0.8, glass * 0.34), h - 11);
+    ctx.globalAlpha = 1;
+
+    // обручи: 6+ по два, 8+ третий
+    if (lvl >= 6) {
+      const bands = lvl >= 8 ? 3 : 2;
+      ctx.strokeStyle = shade(steel, -0.4);
+      ctx.lineWidth = 1.2;
+      for (let i = 0; i < bands; i++) {
+        const yy = baseY - h * (0.28 + i * 0.23);
+        ctx.beginPath();
+        ctx.ellipse(x, yy, rx + 0.4, ry * 0.94, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // крышка
+    ctx.fillStyle = shade(steel, -0.14);
+    ctx.beginPath();
+    ctx.ellipse(x, topY + 1.2, rx * 0.98, ry * 0.98, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shade(steel, 0.24);
+    ctx.beginPath();
+    ctx.ellipse(x, topY, rx * 0.9, ry * 0.86, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // клемма: золото с 9 уровня
+    if (lvl >= 9) {
+      ctx.fillStyle = PAL.gold;
+      ctx.fillRect(x - 1.1, topY - 2.6, 2.2, 2.8);
+      spot(ctx, x, topY - 3.2, 0.9, 'rgba(255,255,255,.8)');
+    }
+  }
+
+  function drawEstorage(ctx, b, lvl) {
+    const x0 = b.x;
+    const y0 = b.y;
+    const x1 = b.x + b.w;
+    const y1 = b.y + b.h;
+    const p = P(x0 + b.w / 2, y0 + b.h / 2);
+    const px = p.x;
+    const py = p.y;
+    const s = Math.min(1.45, Math.max(0.8, Math.min(b.w, b.h)));
+    const baseH = 4 + (lvl >= 4 ? 1 : 0);
+    const cellH = (23 + (lvl >= 4 ? 3 : 0) + (lvl >= 7 ? 2 : 0)) * s;
+    const cw = 12 * s;
+    const gap = 7.4 * s;
+    const topY = py - baseH - cellH;
+
+    const energy = mix(PAL.elixir, PAL.cold, 0.32);
+    const hot = mix(energy, '#ffffff', 0.46);
+    const steel = mix(PAL.metal, PAL.elixir, 0.2);
+    const steelLight = shade(steel, 0.25);
+    const steelDark = shade(steel, -0.26);
+
+    grassPad(ctx, x0, y0, x1, y1);
+    castShadow(ctx, x0, y0, x1, y1, 0.9);
+
+    // мягкое фиолетовое свечение стойки: видно, что внутри энергия
+    if (mid()) {
+      const gy = py - baseH - cellH * 0.48;
+      ctx.fillStyle = lvl >= 6 ? 'rgba(155,123,255,.15)' : 'rgba(155,123,255,.1)';
+      ctx.beginPath();
+      ctx.ellipse(px, gy, 18 * s, 24 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // силовая плита-поддон
+    prism(ctx, x0 + 0.04, y0 + 0.04, x1 - 0.04, y1 - 0.04, 0, baseH,
+      steelLight, steel, steelDark);
+
+    // кабель уходит за стойку и возвращается к пульту
+    ctx.strokeStyle = 'rgba(24,18,32,.85)';
+    ctx.lineWidth = 2.4 * s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(px - gap - cw * 0.6, py - baseH * 0.5);
+    ctx.quadraticCurveTo(px - gap - cw * 1.3, py + 3 * s, px + gap + cw * 1.2, py + 3.4 * s);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(70,224,200,.42)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(px - gap - cw * 0.6, py - baseH * 0.5);
+    ctx.quadraticCurveTo(px - gap - cw * 1.3, py + 3 * s, px + gap + cw * 1.2, py + 3.4 * s);
+    ctx.stroke();
+
+    // задние стойки рамы
+    ctx.strokeStyle = steelDark;
+    ctx.lineWidth = 2 * s;
+    ctx.beginPath();
+    ctx.moveTo(px - gap - cw * 0.5, py - baseH + 1);
+    ctx.lineTo(px - gap - cw * 0.5, topY - 3 * s);
+    ctx.moveTo(px + gap + cw * 0.5, py - baseH + 1);
+    ctx.lineTo(px + gap + cw * 0.5, topY - 3 * s);
+    ctx.stroke();
+    ctx.strokeStyle = steelLight;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(px - gap - cw * 0.5 - 0.5, py - baseH + 1);
+    ctx.lineTo(px - gap - cw * 0.5 - 0.5, topY - 3 * s);
+    ctx.stroke();
+
+    // нижняя секция: два конденсатора
+    powerCell(ctx, px - gap, py - baseH, cw, cellH, lvl, energy, steel, hot);
+    powerCell(ctx, px + gap, py - baseH, cw, cellH, lvl, energy, steel, hot);
+
+    // общая шина над нижней секцией
+    const busL = px - gap - cw * 0.44;
+    const busR = px + gap + cw * 0.44;
+    const busY = topY - 1.4 * s;
+    ctx.strokeStyle = steelDark;
+    ctx.lineWidth = 2.6 * s;
+    ctx.beginPath();
+    ctx.moveTo(busL, busY);
+    ctx.lineTo(busR, busY);
+    ctx.stroke();
+    ctx.strokeStyle = lvl >= 5 ? PAL.gold : steelLight;
+    ctx.lineWidth = lvl >= 5 ? 1.5 : 1;
+    ctx.beginPath();
+    ctx.moveTo(busL, busY - 0.8);
+    ctx.lineTo(busR, busY - 0.8);
+    ctx.stroke();
+    if (lvl >= 5) {
+      spot(ctx, busL, busY - 0.8, 1.2, PAL.gold);
+      spot(ctx, busR, busY - 0.8, 1.2, PAL.gold);
+    }
+
+    /* --- вторая секция: верхняя полка с малыми ячейками --- */
+    let deckTop = busY;
+    if (lvl >= 6) {
+      const deckY = busY - 3.2 * s;
+      const upperH = cellH * 0.56;
+      const uw = cw * 0.82;
+      const uGap = gap * 0.72;
+
+      // полка
+      ctx.strokeStyle = steelDark;
+      ctx.lineWidth = 2.2 * s;
+      ctx.beginPath();
+      ctx.moveTo(px - gap - cw * 0.62, deckY);
+      ctx.lineTo(px + gap + cw * 0.62, deckY);
+      ctx.stroke();
+      ctx.strokeStyle = steelLight;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(px - gap - cw * 0.62, deckY - 0.8);
+      ctx.lineTo(px + gap + cw * 0.62, deckY - 0.8);
+      ctx.stroke();
+
+      powerCell(ctx, px - uGap, deckY, uw, upperH, lvl, energy, steel, hot);
+      powerCell(ctx, px + uGap, deckY, uw, upperH, lvl, energy, steel, hot);
+      deckTop = deckY - upperH;
+
+      // верхняя шина
+      ctx.strokeStyle = steelDark;
+      ctx.lineWidth = 2.2 * s;
+      ctx.beginPath();
+      ctx.moveTo(px - uGap - uw * 0.42, deckTop - 1.2);
+      ctx.lineTo(px + uGap + uw * 0.42, deckTop - 1.2);
+      ctx.stroke();
+      ctx.strokeStyle = lvl >= 9 ? PAL.gold : steelLight;
+      ctx.lineWidth = lvl >= 9 ? 1.4 : 0.9;
+      ctx.beginPath();
+      ctx.moveTo(px - uGap - uw * 0.42, deckTop - 2);
+      ctx.lineTo(px + uGap + uw * 0.42, deckTop - 2);
+      ctx.stroke();
+    }
+
+    // пульт заряда на переднем крае
+    const cxp = px + gap + cw * 0.8;
+    const cyp = py + 2.4 * s;
+    ctx.fillStyle = steelDark;
+    ctx.fillRect(cxp - 5 * s, cyp - 7 * s, 10 * s, 7 * s);
+    ctx.fillStyle = shade(steel, 0.04);
+    ctx.fillRect(cxp - 4.2 * s, cyp - 6.2 * s, 8.4 * s, 3.4 * s);
+    ctx.fillStyle = energy;
+    ctx.fillRect(cxp - 3.6 * s, cyp - 5.6 * s, 5.4 * s, 1.5 * s);
+    spot(ctx, cxp + 2.6 * s, cyp - 5.4 * s, 0.9 * s, lvl >= 5 ? PAL.gold : PAL.cold);
+
+    /* --- 7-10: охлаждение, клеммы, свечение --- */
+
+    // 7: боковые рёбра охлаждения (с 8 их сменяет радиатор)
+    if (lvl >= 7 && lvl < 8) {
+      ctx.strokeStyle = 'rgba(154,167,173,.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const yy = py - baseH - cellH * (0.3 + i * 0.18);
+        ctx.moveTo(px + gap + cw * 0.56, yy);
+        ctx.lineTo(px + gap + cw * 1.05, yy);
+      }
+      ctx.stroke();
+    }
+
+    // 8: вентиляция — решётка на пульте и грибовидные вытяжки
+    if (lvl >= 8) {
+      ctx.strokeStyle = 'rgba(18,26,30,.6)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        ctx.moveTo(cxp - 3.4 * s, cyp - 1.4 * s + i * 1.3 * s);
+        ctx.lineTo(cxp + 3.4 * s, cyp - 1.4 * s + i * 1.3 * s);
+      }
+      ctx.stroke();
+
+      // боковой радиатор стойки: тёмный короб с частыми ламелями
+      const vx = px + gap + cw * 0.94;
+      const vy = py - baseH - cellH * 0.46;
+      ctx.fillStyle = shade(steel, -0.32);
+      ctx.fillRect(vx - 2.4 * s, vy - 5.4 * s, 4.8 * s, 10.8 * s);
+      ctx.strokeStyle = 'rgba(154,167,173,.6)';
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const yy = vy - 3.6 * s + i * 2.2 * s;
+        ctx.moveTo(vx - 1.7 * s, yy);
+        ctx.lineTo(vx + 1.7 * s, yy);
+      }
+      ctx.stroke();
+
+      // вытяжной колпак на верхней секции
+      const ventY = lvl >= 6 ? deckTop - 4 * s : topY - 7 * s;
+      ctx.fillStyle = steelDark;
+      ctx.beginPath();
+      ctx.ellipse(px, ventY, 3.2 * s, 1.5 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(127,233,255,.5)';
+      ctx.beginPath();
+      ctx.ellipse(px, ventY - 0.6, 2.2 * s, 0.9 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 9: золотые клеммы и угловые накладки
+    if (lvl >= 9) {
+      spot(ctx, px - gap, topY - 4.4 * s, 1.5, PAL.gold);
+      spot(ctx, px + gap, topY - 4.4 * s, 1.5, PAL.gold);
+      ctx.fillStyle = PAL.gold;
+      ctx.fillRect(px - 8 * s, py - baseH + 0.4, 3.2 * s, 1.8 * s);
+      ctx.fillRect(px + 4.8 * s, py - baseH + 0.4, 3.2 * s, 1.8 * s);
+    }
+
+    // 10: надстройка-катушка: кольцо и ореол над стойкой
+    if (lvl >= 10) {
+      const coilY = deckTop - 9 * s;
+      ring(ctx, px, coilY, 9 * s, 3.4 * s, PAL.gold, 1.5);
+      ring(ctx, px, coilY, 6 * s, 2.2 * s, 'rgba(70,224,200,.6)', 1);
+      ctx.strokeStyle = steelLight;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(px - 8 * s, coilY + 1.5);
+      ctx.lineTo(px - gap * 0.5, deckTop - 2);
+      ctx.moveTo(px + 8 * s, coilY + 1.5);
+      ctx.lineTo(px + gap * 0.5, deckTop - 2);
+      ctx.stroke();
+      spot(ctx, px, coilY - 1.4, 2 * s, hot);
+      spot(ctx, px, coilY - 1.4, 0.9 * s, 'rgba(255,255,255,.9)');
+    }
+  }
+
+  // Живое свечение накопителя: только с 6 уровня и только на среднем/близком
+  // масштабе. Один эллипс на постройку, спрайт при этом не перепекается.
+  function drawEstorageGlow(ctx, b, lvl) {
+    if (lvl < 6 || !mid()) return;
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const H = 4 + 23 + (lvl >= 4 ? 3 : 0) + (lvl >= 7 ? 2 : 0);
+    const a = (lvl >= 10 ? 0.16 : 0.1) +
+      0.06 * (0.5 + 0.5 * Math.sin(t * 2.4 + (b.x + b.y) * 0.6));
+    ctx.fillStyle = 'rgba(155,123,255,' + a.toFixed(3) + ')';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y - H * 0.72, 15, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Мешок руды: песочная ткань, тёмная завязка и золотой самородок сверху.
+  function oreSack(ctx, x, y, s) {
+    const cloth = '#c9a063';
+    ctx.fillStyle = 'rgba(60,28,14,.2)';
+    ctx.beginPath();
+    ctx.ellipse(x + 1.5, y + 1, 5.4 * s, 2.2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = shade(cloth, -0.22);
+    ctx.beginPath();
+    ctx.ellipse(x, y - 3.4 * s, 5 * s, 3.8 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = cloth;
+    ctx.beginPath();
+    ctx.ellipse(x - 0.8 * s, y - 4.4 * s, 4.2 * s, 3.2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shade(cloth, 0.28);
+    ctx.beginPath();
+    ctx.ellipse(x - 1.8 * s, y - 5.6 * s, 1.8 * s, 1 * s, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // завязанное горло
+    poly(ctx, [
+      { x: x - 1.5 * s, y: y - 7.4 * s },
+      { x: x + 1.5 * s, y: y - 7.4 * s },
+      { x: x + 1 * s, y: y - 9.4 * s },
+      { x: x - 1 * s, y: y - 9.4 * s }
+    ], shade(cloth, -0.34));
+
+    // золото в горловине
+    spot(ctx, x, y - 9.5 * s, 1.5 * s, PAL.gold);
+    spot(ctx, x - 0.6 * s, y - 10.2 * s, 0.6 * s, shade(PAL.gold, 0.4));
+  }
+
   function drawStorage(ctx, b, lvl) {
     const x0 = b.x;
     const y0 = b.y;
     const x1 = b.x + b.w;
     const y1 = b.y + b.h;
-    const p = P(x0 + 0.5, y0 + 0.5);
+    const p = P(x0 + b.w / 2, y0 + b.h / 2);
+
+    // Склад руды — тёплый песочный контейнер с золотыми прожилками и
+    // мешками у входа. Ни одной энергетической бирюзы: рядом стоит
+    // фиолетово-бирюзовый накопитель, и типы должны различаться с первого
+    // взгляда.
+    const sand = mix(PAL.stoneLight, PAL.gold, 0.42);
+    const sandTop = shade(sand, 0.16);
+    const sandDark = shade(sand, -0.24);
+    const ink = 'rgba(58,40,22,.82)';
 
     grassPad(ctx, x0, y0, x1, y1);
     castShadow(ctx, x0, y0, x1, y1, 0.9);
 
-    // бетонная плита
+    // каменная плита
     prism(ctx, x0 + 0.02, y0 + 0.02, x1 - 0.02, y1 - 0.02, 0, 5,
       PAL.stoneLight, PAL.stone, PAL.stoneDark);
 
-    // основной контейнер
+    // основной песочный контейнер
     const h1 = 17 + (lvl >= 4 ? 3 : 0);
-    box(ctx, x0 + 0.08, y0 + 0.1, x1 - 0.26, y1 - 0.26, h1, PAL.metal);
+    box(ctx, x0 + 0.08, y0 + 0.1, x1 - 0.26, y1 - 0.26, h1, sand);
 
     const D = P(x0 + 0.08, y1 - 0.26);
     const C = P(x1 - 0.26, y1 - 0.26);
     const B = P(x1 - 0.26, y0 + 0.1);
 
-    // рёбра и янтарная маркировка
-    patchPx(ctx, D, C, h1, 0.12, 0.16, 2, h1 - 2, PAL.metalDark);
-    patchPx(ctx, D, C, h1, 0.84, 0.88, 2, h1 - 2, PAL.metalDark);
-    patchPx(ctx, D, C, h1, 0.24, 0.42, h1 * 0.4, h1 * 0.55, PAL.amber);
-    patchPx(ctx, D, C, h1, 0.45, 0.62, h1 * 0.4, h1 * 0.55, PAL.metalDark);
-    patchPx(ctx, C, B, h1, 0.2, 0.34, h1 * 0.3, h1 * 0.45, PAL.glass);
+    // рёбра жёсткости и тёплые тени
+    patchPx(ctx, D, C, h1, 0.1, 0.145, 2, h1 - 2, sandDark);
+    patchPx(ctx, D, C, h1, 0.855, 0.9, 2, h1 - 2, sandDark);
+    patchPx(ctx, C, B, h1, 0.14, 0.18, 2, h1 - 2, sandDark);
 
-    // второй контейнер со 2 уровня
+    // табличка «руда»: тёмная пластина и три золотых самородка
+    patchPx(ctx, D, C, h1, 0.24, 0.56, h1 * 0.36, h1 * 0.62, ink);
+    const q = {
+      x: D.x + (C.x - D.x) * 0.4,
+      y: D.y + (C.y - D.y) * 0.4 - h1 * 0.49
+    };
+    spot(ctx, q.x - 3.2, q.y + 0.8, 1.7, PAL.gold);
+    spot(ctx, q.x + 0.6, q.y - 0.8, 2, PAL.gold);
+    spot(ctx, q.x + 3.6, q.y + 0.9, 1.4, PAL.gold);
+    if (mid()) {
+      spot(ctx, q.x - 3.6, q.y + 0.2, 0.6, shade(PAL.gold, 0.45));
+      spot(ctx, q.x + 0.2, q.y - 1.4, 0.6, shade(PAL.gold, 0.45));
+    }
+
+    // вентиляционная решётка на правой грани — склад, а не бак
+    patchPx(ctx, C, B, h1, 0.24, 0.42, h1 * 0.3, h1 * 0.46, 'rgba(52,40,26,.62)');
+    if (mid()) {
+      ctx.strokeStyle = 'rgba(255,235,190,.22)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const yy = h1 * 0.34 + i * 1.8;
+        ctx.moveTo(C.x + (B.x - C.x) * 0.26, C.y + (B.y - C.y) * 0.26 - yy);
+        ctx.lineTo(C.x + (B.x - C.x) * 0.4, C.y + (B.y - C.y) * 0.4 - yy);
+      }
+      ctx.stroke();
+    }
+
+    // золотая жила по нижней кромке
+    patchPx(ctx, D, C, h1, 0.08, 0.92, 1.2, 2.4, 'rgba(255,207,74,.5)');
+
+    // открытый лоток на крыше: горка руды
+    const t = P(x0 + 0.4, y0 + 0.32);
+    const topY = t.y - h1;
+    ctx.fillStyle = shade(PAL.gold, -0.22);
+    ctx.beginPath();
+    ctx.ellipse(t.x, topY - 0.6, 9.5, 3.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PAL.gold;
+    ctx.beginPath();
+    ctx.ellipse(t.x - 0.8, topY - 2.2, 7.4, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(t.x + 5.4, topY - 1.2, 4.2, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (mid()) {
+      spot(ctx, t.x - 3.4, topY - 3.6, 1.5, shade(PAL.gold, 0.35));
+      spot(ctx, t.x + 2.4, topY - 3.1, 1.1, shade(PAL.gold, 0.3));
+    }
+
+    // второй контейнер со 2 уровня — светлее, чтобы читалась глубина
     if (lvl >= 2) {
       prism(ctx, x0 + 0.42, y0 + 0.52, x1 - 0.06, y1 - 0.06, 5, 11,
-        PAL.metalLight, PAL.metal, PAL.metalDark);
-      const q = P(x1 - 0.24, y1 - 0.18);
-      ctx.strokeStyle = PAL.cyan;
-      ctx.lineWidth = 1;
+        sandTop, shade(sand, 0.02), sandDark);
+      const sq = P(x1 - 0.24, y1 - 0.18);
+      ctx.strokeStyle = 'rgba(255,207,74,.75)';
+      ctx.lineWidth = 1.1;
       ctx.beginPath();
-      ctx.moveTo(q.x - 4, q.y - 8);
-      ctx.lineTo(q.x + 2, q.y - 8);
+      ctx.moveTo(sq.x - 4, sq.y - 8);
+      ctx.lineTo(sq.x + 2, sq.y - 8);
       ctx.stroke();
     }
 
-    // цистерна сбоку с 3 уровня
+    // 3: бункер-накопитель руды с золотой горкой вместо уровня энергии
     if (lvl >= 3) {
-      const t = P(x0 + 0.26, y0 + 0.34);
+      const h = P(x0 + 0.26, y0 + 0.34);
       const th = 16 + (lvl >= 5 ? 4 : 0);
-      ctx.fillStyle = PAL.metalDark;
+      ctx.fillStyle = sandDark;
       ctx.beginPath();
-      ctx.ellipse(t.x, t.y - 1, 7, 3.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(h.x, h.y - 1, 7, 3.4, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = PAL.metal;
-      ctx.fillRect(t.x - 7, t.y - th, 14, th);
-      ctx.fillStyle = PAL.metalLight;
+      ctx.fillStyle = shade(sand, -0.06);
+      ctx.fillRect(h.x - 7, h.y - th, 14, th);
+      ctx.fillStyle = sandTop;
       ctx.beginPath();
-      ctx.ellipse(t.x, t.y - th, 7, 3.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(h.x, h.y - th, 7, 3.4, 0, 0, Math.PI * 2);
       ctx.fill();
-      // уровень энергии
-      ctx.fillStyle = 'rgba(70,224,200,.6)';
-      ctx.fillRect(t.x - 1.6, t.y - th + 4, 3.2, th - 7);
-      ctx.strokeStyle = PAL.metalDark;
-      ctx.lineWidth = 1;
+      // золото в бункере
+      ctx.fillStyle = shade(PAL.gold, -0.16);
       ctx.beginPath();
-      ctx.moveTo(t.x - 7, t.y - th * 0.4);
-      ctx.lineTo(t.x + 7, t.y - th * 0.4);
+      ctx.ellipse(h.x, h.y - th - 0.6, 6, 2.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PAL.gold;
+      ctx.beginPath();
+      ctx.ellipse(h.x - 0.8, h.y - th - 1.8, 4.6, 2.1, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // обручи бункера
+      ctx.strokeStyle = sandDark;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(h.x - 7, h.y - th * 0.42);
+      ctx.lineTo(h.x + 7, h.y - th * 0.42);
       ctx.stroke();
+      spot(ctx, h.x - 5, h.y - th + 1.2, 1, PAL.gold);
     }
 
-    // трубопровод
-    if (lvl >= 3 && mid()) {
-      ctx.strokeStyle = PAL.metalLight;
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.moveTo(p.x - 10, p.y - 10);
-      ctx.lineTo(p.x + 2, p.y - 12);
-      ctx.lineTo(p.x + 2, p.y - 3);
-      ctx.stroke();
-    }
-
-    // 4: второй бак
+    // 4: второй малый контейнер
     if (lvl >= 4) {
       const t2 = P(x1 - 0.18, y0 + 0.24);
-      ctx.fillStyle = PAL.metalDark;
+      ctx.fillStyle = sandDark;
       ctx.beginPath();
       ctx.ellipse(t2.x, t2.y - 1, 5, 2.6, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = PAL.metalLight;
+      ctx.fillStyle = sandTop;
       ctx.fillRect(t2.x - 5, t2.y - 15, 10, 15);
-      ctx.fillStyle = PAL.metal;
+      ctx.fillStyle = sand;
       ctx.beginPath();
       ctx.ellipse(t2.x, t2.y - 15, 5, 2.6, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // 5: золотые вентили и маяк
+    // мешки руды у входа: сразу читается «руда», а не энергия
+    const sackY = P(x0 + 0.14, y1 - 0.08);
+    oreSack(ctx, sackY.x, sackY.y, 0.92);
+    oreSack(ctx, sackY.x + 9, sackY.y + 2, 0.76);
+    if (lvl >= 6) oreSack(ctx, sackY.x + 5, sackY.y + 8, 0.82);
+
+    // 5: золотая окантовка и блеск руды
     if (lvl >= 5) {
-      spot(ctx, p.x + 1, p.y - h1 - 10, 2.2, PAL.gold);
-      spot(ctx, p.x - 13, p.y - 13, 1.6, PAL.gold);
       ctx.strokeStyle = PAL.gold;
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(p.x + 1, p.y - h1 - 8);
-      ctx.lineTo(p.x + 1, p.y - h1 - 3);
-      ctx.stroke();
-    }
-
-    /* --- 6-10: хранилище растёт стеллажами и надстройкой --- */
-
-    // 6: окна-индикаторы и подсветка стыков
-    if (lvl >= 6) {
-      windowRow(ctx, D, C, h1, 0.4, 0.8, 6, 11, 2);
-      spot(ctx, p.x - 14, p.y - 8, 1.4, PAL.glass);
-      spot(ctx, p.x + 8, p.y - h1 - 2, 1.4, PAL.cyan);
-    }
-
-    // 7: стойки-рёбра и второй контур контейнера
-    if (lvl >= 7) {
-      ribLines(ctx, D, C, h1, 0.06, 0.94, 2, h1 - 2, 5, 'rgba(76,86,92,.45)', 1.2);
-      ctx.strokeStyle = PAL.metalLight;
-      ctx.lineWidth = 1.3;
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
       ctx.moveTo(D.x, D.y - h1 - 1);
       ctx.lineTo(C.x, C.y - h1 - 1);
       ctx.lineTo(B.x, B.y - h1 - 1);
       ctx.stroke();
+      spot(ctx, t.x - 2, topY - 4.4, 1.6, PAL.gold);
+      spark(ctx, q.x + 6, q.y + 1, 3);
     }
 
-    // 8: антенна на крыше и вытяжка
+    /* --- 6-10: склад наращивает стеллажи и погрузку --- */
+
+    // 6: янтарные лампы и окна-щели на корпусе
+    if (lvl >= 6) {
+      windowRow(ctx, D, C, h1, 0.62, 0.8, 7, 11, 2, 'rgba(255,207,74,.78)');
+      spot(ctx, p.x - 14, p.y - 7, 1.4, PAL.amber);
+      spot(ctx, C.x - 2, C.y - h1 + 3, 1.3, PAL.amber);
+    }
+
+    // 7: стойки-рёбра и светлая кромка крышки
+    if (lvl >= 7) {
+      ribLines(ctx, D, C, h1, 0.04, 0.94, 2, h1 - 2, 5, 'rgba(92,66,38,.38)', 1.2);
+      ctx.strokeStyle = 'rgba(255,229,178,.5)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(D.x + 1, D.y - h1 - 2);
+      ctx.lineTo(C.x - 1, C.y - h1 - 2);
+      ctx.lineTo(B.x - 1, B.y - h1 - 2);
+      ctx.stroke();
+    }
+
+    // 8: ленточный транспортёр и пыль от руды
     if (lvl >= 8) {
-      const a = P(x0 + 0.2, y0 + 0.24);
-      antennaMast(ctx, a.x, a.y - h1 - 4, 16, PAL.metalLight, PAL.cyan);
-      const e1 = P(x0 + 0.5, y0 + 0.18);
-      exhaustStack(ctx, e1.x, e1.y - h1 - 3, 9, 3.2);
+      const a = P(x0 + 0.52, y0 + 0.18);
+      const e = P(x1 - 0.06, y0 + 0.3);
+      ctx.strokeStyle = PAL.metalDark;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - h1 - 2);
+      ctx.lineTo(e.x, e.y - h1 - 6);
+      ctx.stroke();
+      ctx.strokeStyle = '#a98a5c';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - h1 - 3.2);
+      ctx.lineTo(e.x, e.y - h1 - 7.2);
+      ctx.stroke();
+      spot(ctx, a.x + (e.x - a.x) * 0.35, a.y - h1 - 4 + (e.y - a.y) * 0.35, 1.2, PAL.gold);
+      spot(ctx, a.x + (e.x - a.x) * 0.7, a.y - h1 - 5 + (e.y - a.y) * 0.7, 1, PAL.gold);
+      exhaustStack(ctx, P(x0 + 0.48, y0 + 0.16).x, P(x0 + 0.48, y0 + 0.16).y - h1 - 3,
+        8, 2.8, 'rgba(201,160,99,.22)');
     }
 
-    // 9: золотые угловые накладки и вымпел
+    // 9: золотые накладки и вымпел
     if (lvl >= 9) {
       spot(ctx, D.x, D.y - 2, 2, PAL.gold);
       spot(ctx, C.x, C.y - 2, 2, PAL.gold);
       pennant(ctx, C.x - 2, C.y - h1 - 2, 15, PAL.gold, 6);
+      spot(ctx, sackY.x - 3, sackY.y - 10, 1.3, PAL.gold);
     }
 
-    // 10: верхний стеллаж — второй контейнер ярусом выше
+    // 10: верхний стеллаж — открытый бункер с рудой
     if (lvl >= 10) {
       const tH = 9;
       prism(ctx, x0 + 0.16, y0 + 0.14, x1 - 0.44, y1 - 0.44, h1 + 5, tH,
-        PAL.metalLight, PAL.metal, PAL.metalDark);
+        sandTop, sand, sandDark);
       const uD = P(x0 + 0.16, y1 - 0.44);
       const uC = P(x1 - 0.44, y1 - 0.44);
-      windowRow(ctx, uD, uC, h1 + 5 + tH, 0.18, 0.82, h1 + 7, h1 + 12, 3, 'rgba(255,207,74,.75)');
+      const uM = P(x0 + 0.42, y0 + 0.3);
+      ctx.fillStyle = shade(PAL.gold, -0.12);
+      ctx.beginPath();
+      ctx.ellipse(uM.x, uM.y - h1 - 5 - tH + 1, 7, 2.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PAL.gold;
+      ctx.beginPath();
+      ctx.ellipse(uM.x - 1, uM.y - h1 - 5 - tH - 0.6, 5, 2.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      windowRow(ctx, uD, uC, h1 + 5 + tH, 0.18, 0.82, h1 + 6, h1 + 10, 3,
+        'rgba(255,207,74,.8)');
       ring(ctx, p.x - 4, p.y - h1 - 5, 9, 3.2, PAL.gold, 1.3);
       spot(ctx, p.x - 15, p.y - h1 - 4, 1.5, PAL.gold);
     }
@@ -5118,7 +5573,7 @@ CC.Render = (function () {
   const BODY_H = {
     townhall: 40, barracks: 28, archer: 44, cannon: 30,
     mortar: 38, airdef: 26, mage: 50,
-    goldmine: 22, elixir: 18, storage: 20, wall: 18,
+    goldmine: 22, elixir: 18, storage: 20, estorage: 56, wall: 18,
     mine: 10, spring: 18, airmine: 34, ambush: 16, beam: 62
   };
 
@@ -5135,13 +5590,17 @@ CC.Render = (function () {
      и дальше только блитим. На сильном зуме (тайл > 96 px) возвращаемся
      к вектору, чтобы линии оставались резкими. */
   const spriteCache = new Map();
+  const spriteBakes = { count: 0, hits: 0 };
 
   function spriteFor(b, lvl) {
     const detail = lod;
     const variant = trapVariant(b);
     const key = b.type + '|' + lvl + '|' + detail + '|' + b.w + 'x' + b.h +
       (variant ? '|' + variant : '');
-    if (spriteCache.has(key)) return spriteCache.get(key);
+    if (spriteCache.has(key)) {
+      spriteBakes.hits++;
+      return spriteCache.get(key);
+    }
 
     const w = b.w || 1;
     const h = b.h || 1;
@@ -5169,6 +5628,7 @@ CC.Render = (function () {
     }
 
     spriteCache.set(key, sp);
+    spriteBakes.count++;
     return sp;
   }
 
@@ -5586,6 +6046,7 @@ CC.Render = (function () {
     // Динамика поверх запечённого корпуса: мигание, дым, ствол, свечение.
     function deco() {
       if (type === 'mage') { drawMageHalo(ctx, b, lvl); return; }
+      if (type === 'estorage') { drawEstorageGlow(ctx, b, lvl); return; }
       if (type === 'mine') { drawMineFx(ctx, b, lvl); return; }
       if (type === 'spring') { drawSpringFx(ctx, b); return; }
       if (type === 'airmine') { drawAirMineFx(ctx, b, lvl); return; }
@@ -5654,6 +6115,7 @@ CC.Render = (function () {
     if (type === 'goldmine') { drawGoldmine(ctx, b, lvl); return; }
     if (type === 'elixir') { drawElixir(ctx, b, lvl); return; }
     if (type === 'storage') { drawStorage(ctx, b, lvl); return; }
+    if (type === 'estorage') { drawEstorage(ctx, b, lvl); return; }
     if (type === 'mine') { drawMine(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
     if (type === 'spring') { drawSpring(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
     if (type === 'airmine') { drawAirMine(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
@@ -6734,16 +7196,37 @@ CC.Render = (function () {
     return sp;
   }
 
-  /* ---------- энергетический щит героя ----------
-     Купол живёт только в векторе: спрайт сержанта кэшируется, а щит
-     каждый кадр собирается из нескольких дуг и маленькой гексагональной
-     сетки. Ни канвы, ни клипа — цена кадра остаётся в пределах долей мс. */
+  /* ---------- энергетический щит: герой и союзники ----------
+     Купол живёт только в векторе: спрайты кэшируются, а щит каждый кадр
+     собирается из нескольких дуг и маленькой гексагональной сетки. Ни канвы,
+     ни клипа на обычных юнитах — цена кадра остаётся в пределах долей мс.
 
-  const shieldStats = { drawn: 0, total: 0 };
+     Купол рисуется любому своему живому юниту с активным shieldUntil
+     (и герою тоже). Размер берётся из силуэта: у героя — прежний большой,
+     у линейных войск — по высоте фигурки. При большом числе щитов сетка
+     упрощается (LOD), чтобы пачка из ~10 куполов не раздувала кадр. */
+
+  const shieldStats = { drawn: 0, wave: 0, cells: 0, minRx: 0, maxRx: 0 };
+  const shieldFrame = { count: 0, src: null };
+  const shieldSeen = new Map();
+  let shieldNow = 0;
+
+  // Волна активации: короткое кольцо от героя на радиус способности.
+  const shieldWave = { on: false, x: 0, y: 0, t0: 0, r: 2.5 };
+
+  function shieldDuration() {
+    const d = Number(CC.HERO && CC.HERO.ability && CC.HERO.ability.duration);
+    return d > 0 ? d : 3;
+  }
+
+  function shieldRadius() {
+    const r = Number(CC.HERO && CC.HERO.ability && CC.HERO.ability.radius);
+    return r > 0 ? r : 2.5;
+  }
 
   // 0 — щита нет, 0..1 — остаток/яркость. Понимает и таймер, и готовую
   // долю: кодер может выставить любое из полей, рендер не падает.
-  function heroShieldPower(u) {
+  function unitShieldPower(u) {
     if (!u) return 0;
     let p = 0;
 
@@ -6754,21 +7237,43 @@ CC.Render = (function () {
       p = 1;
     }
 
-    if (!(p > 0) && typeof u.shieldUntil === 'number' && isFinite(u.shieldUntil)) {
-      let now = 0;
-      try {
-        const S = CC.Battle && CC.Battle.state;
-        if (S && typeof S.time === 'number') now = S.time;
-      } catch (e) { now = 0; }
-      const left = u.shieldUntil - now;
-      if (left > 0) p = Math.max(0, Math.min(1, left / 3));
+    if (typeof u.shieldUntil === 'number' && isFinite(u.shieldUntil)) {
+      const left = u.shieldUntil - shieldNow;
+      if (left > 0) {
+        const q = Math.max(0, Math.min(1, left / shieldDuration()));
+        if (q > p) p = q;
+      }
     }
 
     return p;
   }
 
-  // Сетка купола не зависит от героя: центры ячеек и углы шестиугольника
+  // Вражеские юниты могли бы прийти из будущих режимов: не рисуем им щит.
+  // Все юниты S.units сейчас свои, поэтому по умолчанию считаем союзником.
+  function unitShieldable(u) {
+    if (!u || u.dead === true) return false;
+    if (typeof u.hp === 'number' && u.hp <= 0) return false;
+    if (u.enemy === true || u.foe === true || u.hostile === true ||
+        u.isEnemy === true || u.isAlly === false) {
+      return false;
+    }
+
+    const side = u.side != null ? u.side
+      : (u.team != null ? u.team : (u.faction != null ? u.faction : u.owner));
+    if (typeof side === 'string') {
+      const s = side.toLowerCase();
+      if (s === 'enemy' || s === 'foe' || s === 'hostile' || s === 'red') return false;
+    }
+    return true;
+  }
+
+  function isHeroUnit(u) {
+    return !!(u && (u.isHero === true || u.type === 'hero'));
+  }
+
+  // Сетка купола не зависит от юнита: центры ячеек и углы шестиугольника
   // считаем один раз, в кадре остаются только умножение и lineTo.
+  // ring 0..3 — запас по гексагональной дистанции; LOD берёт всё меньше ячеек.
   const SHIELD_HEX = (function () {
     const out = [];
     const pts = [];
@@ -6784,34 +7289,115 @@ CC.Render = (function () {
         const nx = lx / 3.2;
         const ny = ly / 3.9;
         if (nx * nx + ny * ny > 0.92) continue;
-        out.push({ x: lx, y: ly, pts: pts });
+        const ring = Math.max(Math.abs(qx), Math.abs(qy), Math.abs(qx + qy));
+        out.push({ x: lx, y: ly, pts: pts, ring: ring });
       }
     }
+    out.sort(function (a, b) { return a.ring - b.ring; });
     return out;
   })();
 
-  function drawHeroShield(ctx, u, power) {
+  const SHIELD_HEX_MID = SHIELD_HEX.filter(function (c) { return c.ring <= 1; });
+
+  // LOD сетки: 2 — полная, 1 — семь ячеек, 0 — только кромка и тело.
+  function shieldGridLod(hero) {
+    let base;
+    if (lod === 0) base = hero ? 1 : 0;
+    else base = hero ? 2 : 1;
+
+    const n = shieldFrame.count;
+    const pressure = n >= 12 ? 2 : (n >= 8 ? 1 : 0);
+    const out = base - pressure;
+    return hero ? Math.max(1, out) : Math.max(0, out);
+  }
+
+  // Размер купола по силуэту: герой остаётся крупным, линейные войска
+  // получают сферу по росту, иначе штурмовик утонул бы в куполе героя.
+  function shieldSize(spec, hero) {
+    if (hero) return { rx: 36, ry: 48 };
+    const h = (spec && spec.h) || 20;
+    const w = (spec && spec.w) || 1;
+    const ry = Math.round(h * 0.78 + 6);
+    const rx = Math.round(ry * (0.72 + 0.1 * Math.min(1.7, w)));
+    return { rx: rx, ry: ry };
+  }
+
+  // Детектор активации: щит уже был на прошлом кадре и вдруг вырос.
+  // Сценарные тулзы ставят поле один раз — ложной волны не будет.
+  function trackShieldFrame(S) {
+    const units = (S && S.units) || [];
+
+    if (shieldFrame.src !== S) {
+      shieldFrame.src = S;
+      shieldSeen.clear();
+      shieldWave.on = false;
+    }
+    if (S && typeof S.time === 'number' && isFinite(S.time)) shieldNow = S.time;
+    else shieldNow = 0;
+
+    let count = 0;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (!u) continue;
+
+      const power = unitShieldable(u) ? unitShieldPower(u) : 0;
+      if (power > 0.01) count++;
+
+      const until = (typeof u.shieldUntil === 'number' && isFinite(u.shieldUntil))
+        ? u.shieldUntil : 0;
+      const prev = shieldSeen.get(u.id);
+      if (prev && isHeroUnit(u) && unitShieldable(u)) {
+        const rose = until > prev.until + 0.02 ||
+          (power > prev.power + 0.35 && power > 0.85);
+        if (rose) {
+          shieldWave.on = true;
+          shieldWave.x = u.x;
+          shieldWave.y = u.y;
+          shieldWave.t0 = t;
+          shieldWave.r = shieldRadius();
+        }
+      }
+      shieldSeen.set(u.id, { until: until, power: power });
+    }
+
+    // юниты ушли из боя — их отметки больше не нужны
+    if (shieldSeen.size > units.length + 8) {
+      const alive = new Set();
+      for (let i = 0; i < units.length; i++) if (units[i]) alive.add(units[i].id);
+      shieldSeen.forEach(function (v, k) { if (!alive.has(k)) shieldSeen.delete(k); });
+    }
+
+    shieldFrame.count = count;
+  }
+
+  function drawUnitShield(ctx, u, power, groundY, spec, hero, flying) {
     if (!(power > 0.01)) return;
 
     const g = P(u.x, u.y);
-    // купол накрывает героя целиком: по ширине чуть больше плеч,
-    // по высоте — выше антенны шлема
-    const RX = 36;
-    const RY = 48;
-    const baseY = g.y - 3;
+    const size = shieldSize(spec, hero);
+    const RX = size.rx;
+    const RY = size.ry;
+    const baseY = groundY;
     const cy = baseY - RY * 0.52;
     const pulse = 0.5 + 0.5 * Math.sin(t * 5.4 + ((u.id || 0) * 0.7));
     const a = Math.max(0, Math.min(1, power));
     const prev = ctx.globalAlpha;
+    const grid = hero ? SHIELD_HEX : SHIELD_HEX_MID;
+    const gl = shieldGridLod(hero);
 
     shieldStats.drawn++;
+    shieldStats.cells += gl === 2 ? grid.length : (gl === 1 ? SHIELD_HEX_MID.length : 0);
+    if (!(shieldStats.minRx > 0) || RX < shieldStats.minRx) shieldStats.minRx = RX;
+    if (RX > shieldStats.maxRx) shieldStats.maxRx = RX;
 
-    // пятно энергии на земле
-    ctx.globalAlpha = prev * a * 0.22;
-    ctx.fillStyle = PAL.cold;
-    ctx.beginPath();
-    ctx.ellipse(g.x, baseY, RX * 0.98, RX * 0.26, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // пятно энергии на земле (у летающих — под куполом, а не на грунте)
+    if (!flying) {
+      ctx.globalAlpha = prev * a * 0.22;
+      ctx.fillStyle = PAL.cold;
+      ctx.beginPath();
+      ctx.ellipse(g.x, baseY, RX * 0.98, RX * 0.26, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // тело купола: верхняя полусфера. Заливка плоская: сетка и кромка
     // дают объём, а градиент каждый кадр стоил бы лишнего времени.
@@ -6822,56 +7408,64 @@ CC.Render = (function () {
     ctx.closePath();
     ctx.fill();
 
-    // гексагональная сетка: 13 ячеек, поворачивается и пульсирует
-    const hs = RX * 0.275;
-    const rot = Math.sin(t * 0.35 + (u.id || 0) * 0.2) * 0.14;
-    const cr = Math.cos(rot);
-    const sr = Math.sin(rot);
+    // гексагональная сетка: поворачивается и пульсирует
+    if (gl > 0) {
+      const cells = gl === 2 ? SHIELD_HEX : SHIELD_HEX_MID;
+      const hs = RX * 0.275;
+      const rot = Math.sin(t * 0.35 + (u.id || 0) * 0.2) * 0.14;
+      const cr = Math.cos(rot);
+      const sr = Math.sin(rot);
 
-    // сетку обрезаем по куполу: ячейки у кромки не торчат наружу
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(g.x, baseY, RX, RY, 0, Math.PI, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-
-    ctx.strokeStyle = '#e2fffb';
-    ctx.lineWidth = 1.05;
-    ctx.globalAlpha = prev * a * (0.36 + 0.22 * pulse);
-    ctx.beginPath();
-    for (let i = 0; i < SHIELD_HEX.length; i++) {
-      const cell = SHIELD_HEX[i];
-      const lx = cell.x * hs;
-      const ly = cell.y * hs;
-      const hx = g.x + lx * cr - ly * sr;
-      const hy = cy + lx * sr + ly * cr;
-      const pts = cell.pts;
-      for (let k = 0; k < 6; k++) {
-        const px = hx + pts[k].x * hs;
-        const py = hy + pts[k].y * hs;
-        if (k === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+      // полную сетку обрезаем по куполу: ячейки у кромки не торчат наружу
+      if (gl === 2) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(g.x, baseY, RX, RY, 0, Math.PI, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
       }
-      ctx.closePath();
-    }
-    ctx.stroke();
-    ctx.restore();
 
-    // внутренние меридианы — купол читается объёмным
-    ctx.globalAlpha = prev * a * (0.1 + 0.08 * pulse);
-    ctx.strokeStyle = PAL.glass;
-    ctx.lineWidth = 0.9;
-    ctx.beginPath();
-    ctx.ellipse(g.x, baseY, RX * 0.58, RY * 0.86, 0, Math.PI, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(g.x, baseY, RX * 0.24, RY * 0.94, 0, Math.PI, Math.PI * 2);
-    ctx.stroke();
+      ctx.strokeStyle = '#e2fffb';
+      ctx.lineWidth = 1.05;
+      ctx.globalAlpha = prev * a * (0.36 + 0.22 * pulse);
+      ctx.beginPath();
+      for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        const lx = cell.x * hs;
+        const ly = cell.y * hs;
+        const hx = g.x + lx * cr - ly * sr;
+        const hy = cy + lx * sr + ly * cr;
+        const pts = cell.pts;
+        for (let k = 0; k < 6; k++) {
+          const px = hx + pts[k].x * hs;
+          const py = hy + pts[k].y * hs;
+          if (k === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+      }
+      ctx.stroke();
+
+      if (gl === 2) ctx.restore();
+    }
+
+    // внутренние меридианы — купол читается объёмным (у героя и на близком LOD)
+    if (gl === 2) {
+      ctx.globalAlpha = prev * a * (0.1 + 0.08 * pulse);
+      ctx.strokeStyle = PAL.glass;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.ellipse(g.x, baseY, RX * 0.58, RY * 0.86, 0, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(g.x, baseY, RX * 0.24, RY * 0.94, 0, Math.PI, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // яркая кромка: тонкая бирюза плюс мягкое свечение
     ctx.globalAlpha = prev * a * (0.22 + 0.18 * pulse);
     ctx.strokeStyle = PAL.glass;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = gl > 0 ? 4 : 3;
     ctx.beginPath();
     ctx.ellipse(g.x, baseY, RX, RY, 0, Math.PI, Math.PI * 2);
     ctx.stroke();
@@ -6891,26 +7485,76 @@ CC.Render = (function () {
     ctx.ellipse(g.x, baseY, RX, RX * 0.22, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    // расходящаяся волна: один эллипс на кадр, без частиц
-    const wave = (t * 0.55 + ((u.id || 0) * 0.13)) % 1;
-    ctx.globalAlpha = prev * a * (1 - wave) * 0.34;
-    ctx.strokeStyle = PAL.glass;
-    ctx.lineWidth = 1.1;
+    // расходящаяся волна по куполу — только у героя, чтобы не плодить дуги
+    if (hero) {
+      const wave = (t * 0.55 + ((u.id || 0) * 0.13)) % 1;
+      ctx.globalAlpha = prev * a * (1 - wave) * 0.34;
+      ctx.strokeStyle = PAL.glass;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.ellipse(g.x, baseY, RX * (0.55 + 0.6 * wave), RX * 0.22 * (0.55 + 0.6 * wave),
+        0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // три искры на поверхности — деталь крупного купола
+    if (hero && gl === 2) {
+      ctx.globalAlpha = prev * a * 0.9;
+      for (let i = 0; i < 3; i++) {
+        const ang = t * 1.15 + i * (Math.PI * 2 / 3);
+        ctx.fillStyle = i === 1 ? PAL.gold : '#eafffb';
+        ctx.beginPath();
+        ctx.arc(g.x + Math.cos(ang) * RX * 0.88,
+          cy + Math.sin(ang) * RY * 0.5, 1.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.globalAlpha = prev;
+  }
+
+  // Волна от героя в момент активации: показывает, кого накрыл щит.
+  // Один кадр — два эллипса, без частиц и без градиентов.
+  function drawShieldWave(ctx) {
+    if (!shieldWave.on) return;
+
+    const age = (t - shieldWave.t0) / 0.42;
+    if (age >= 1) { shieldWave.on = false; return; }
+    if (age < 0) return;
+
+    const g = P(shieldWave.x, shieldWave.y);
+    if (!pointVisible(g.x, g.y, 180)) return;
+
+    const e = 1 - Math.pow(1 - age, 3);
+    const r = 0.35 + (shieldWave.r - 0.35) * e;
+    const rx = r * TW;
+    const ry = r * TH;
+    const fade = Math.pow(1 - age, 1.4);
+    const prev = ctx.globalAlpha;
+
+    shieldStats.wave = 1;
+
+    // мягкое пятно внутри кольца
+    ctx.globalAlpha = prev * fade * 0.09;
+    ctx.fillStyle = PAL.cold;
     ctx.beginPath();
-    ctx.ellipse(g.x, baseY, RX * (0.55 + 0.6 * wave), RX * 0.22 * (0.55 + 0.6 * wave),
-      0, 0, Math.PI * 2);
+    ctx.ellipse(g.x, g.y - 1, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // широкое свечение и чёткая кромка
+    ctx.globalAlpha = prev * fade * 0.20;
+    ctx.strokeStyle = PAL.glass;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(g.x, g.y - 1, rx, ry, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    // три искры на поверхности
-    ctx.globalAlpha = prev * a * 0.9;
-    for (let i = 0; i < 3; i++) {
-      const ang = t * 1.15 + i * (Math.PI * 2 / 3);
-      ctx.fillStyle = i === 1 ? PAL.gold : '#eafffb';
-      ctx.beginPath();
-      ctx.arc(g.x + Math.cos(ang) * RX * 0.88,
-        cy + Math.sin(ang) * RY * 0.5, 1.1, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.globalAlpha = prev * fade * 0.7;
+    ctx.strokeStyle = '#eafffb';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(g.x, g.y - 1, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
 
     ctx.globalAlpha = prev;
   }
@@ -6976,10 +7620,13 @@ CC.Render = (function () {
       ctx.restore();
     }
 
-    // щит сержанта — только вектор, поверх спрайта и под полоской здоровья
-    if (hero && !u.dead) {
-      const shield = heroShieldPower(u);
-      if (shield > 0) drawHeroShield(ctx, u, shield);
+    // щит — только вектор, поверх спрайта и под полоской здоровья.
+    // Купол получает любой свой живой юнит с активным shieldUntil.
+    if (!u.dead) {
+      const shield = unitShieldable(u) ? unitShieldPower(u) : 0;
+      if (shield > 0.01) {
+        drawUnitShield(ctx, u, shield, p.y - lift - 3, spec, hero, flying);
+      }
     }
 
     // полоска здоровья — тонкая, только у раненых
@@ -7684,7 +8331,7 @@ CC.Render = (function () {
   function debrisColor(type) {
     if (type === 'townhall' || type === 'barracks') return 5;
     if (type === 'goldmine' || type === 'storage') return 6;
-    if (type === 'elixir') return 7;
+    if (type === 'elixir' || type === 'estorage') return 7;
     return 0;
   }
 
@@ -8512,6 +9159,7 @@ CC.Render = (function () {
     goldmine: [64, 66, 68, 72, 78, 84, 88, 100, 106, 116],
     elixir: [56, 58, 60, 64, 66, 70, 74, 84, 90, 98],
     storage: [46, 48, 50, 56, 64, 68, 72, 82, 88, 98],
+    estorage: [40, 42, 44, 50, 53, 64, 66, 69, 72, 78],
     mine: [26, 27, 28, 29, 30, 33, 34, 36, 37, 39],
     spring: [32, 33, 34, 36, 38, 41, 42, 44, 46, 49],
     airmine: [42, 43, 44, 46, 47, 50, 51, 52, 54, 56],
@@ -8628,6 +9276,12 @@ CC.Render = (function () {
     trapStats.hidden = 0;
     trapStats.drawn = 0;
     shieldStats.drawn = 0;
+    shieldStats.wave = 0;
+    shieldStats.cells = 0;
+    shieldStats.minRx = 0;
+    shieldStats.maxRx = 0;
+    shieldFrame.count = 0;
+    shieldNow = 0;
     setLod(view.scale);
     updateWorldView(view);
 
@@ -8656,7 +9310,9 @@ CC.Render = (function () {
       drawDeployZone(ctx, S);
       drawCollapses(ctx);
       drawCorpses(ctx);
+      trackShieldFrame(S);
       drawEntities(ctx, S.buildings || [], S.units || [], S.traps || []);
+      drawShieldWave(ctx);
       drawIndicators(ctx, S.buildings || [], true);
       drawShots(ctx, S);
       drawFx(ctx, S);
@@ -9920,9 +10576,17 @@ CC.Render = (function () {
     __traps: function () {
       return { hidden: trapStats.hidden, drawn: trapStats.drawn };
     },
-    // купол героя: сколько щитов нарисовано в последнем кадре (tools)
+    // купола: сколько нарисовано в последнем кадре, сколько активно,
+    // была ли волна активации и сколько ячеек сетки ушло в кадр (tools)
     __shield: function () {
-      return { drawn: shieldStats.drawn };
+      return {
+        drawn: shieldStats.drawn,
+        total: shieldFrame.count,
+        wave: shieldStats.wave,
+        cells: shieldStats.cells,
+        minRx: shieldStats.minRx,
+        maxRx: shieldStats.maxRx
+      };
     },
     // счётчики псевдо-3D спрайтов войск: сколько канв запечено и сколько
     // обращений попало в готовый кэш. Ключ — тип|уровень|направление|кадр.
@@ -9948,6 +10612,16 @@ CC.Render = (function () {
     // инструментам: погасить живые частицы перед чистой сценой
     __clearParticles: function () {
       for (let i = 0; i < pLife.length; i++) pLife[i] = 0;
+    },
+    // счётчики спрайтов построек: сколько запечено и сколько взято из кэша.
+    // Лестница уровней живёт в одном Map: ключ — тип|уровень|lod|пятно.
+    __buildSprites: function () {
+      return {
+        bakes: spriteBakes.count,
+        hits: spriteBakes.hits,
+        cached: spriteCache.size,
+        keys: Array.from(spriteCache.keys())
+      };
     },
     // стройплощадка: сколько каркасов испечено и сколько лежит в кэше.
     // Прогресс в ключ не входит, поэтому при его изменении bakes не растёт.

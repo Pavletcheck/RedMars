@@ -1553,8 +1553,17 @@ body {
 .cc-icon[data-type="storage"] {
   --ico: #ece0c6;
   --ico-a: #ffcf4a;
-  --ico-m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Crect x='4.4' y='7' width='15.2' height='14.4' rx='2'/%3E%3Cpath d='M4.4 8Q4.4 3 12 3t7.6 5z'/%3E%3Crect x='3.2' y='20' width='17.6' height='1.8'/%3E%3C/g%3E%3C/svg%3E");
-  --ico-ac: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 8.6 16 11v5l-4 2.4L8 16v-5zM12 11l1.9 1.2v3.2L12 16.6l-1.9-1.2v-3.2z'/%3E%3C/svg%3E");
+  --ico-m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Cpath d='M5.2 12.4q0-3.4 4.1-3.4t4.1 3.4v5.6q0 3-4.1 3t-4.1-3z'/%3E%3Cpath d='M12.8 15.2q0-2.8 3.4-2.8t3.4 2.8v3.4q0 2.6-3.4 2.6t-3.4-2.6z'/%3E%3Crect x='8' y='8.2' width='2.6' height='1.9' rx='.4'/%3E%3Crect x='15.2' y='11.8' width='2.2' height='1.5' rx='.4'/%3E%3Crect x='2.6' y='19.6' width='18.8' height='2' rx='.5'/%3E%3C/g%3E%3C/svg%3E");
+  --ico-ac: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Ccircle cx='9.2' cy='16.4' r='2.2'/%3E%3Ccircle cx='6.2' cy='18.6' r='1.1'/%3E%3Ccircle cx='16.2' cy='17.8' r='1.5'/%3E%3Cpath d='M18.2 13.2l2 1.6-1 2.4-2-.7-.6-2.2z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Накопитель энергии: батарейная стойка, а не бак реактора.
+   Холодный лавандовый силуэт, фиолетовые полосы заряда и клеммы. */
+.cc-icon[data-type="estorage"] {
+  --ico: #e5e0f2;
+  --ico-a: #8f7bff;
+  --ico-m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Crect x='5' y='5.6' width='14' height='15.4' rx='2.2'/%3E%3Crect x='7.7' y='2.4' width='3.2' height='3.6' rx='.9'/%3E%3Crect x='13.1' y='2.4' width='3.2' height='3.6' rx='.9'/%3E%3Crect x='3.2' y='9.4' width='1.8' height='4.8' rx='.9'/%3E%3Crect x='19' y='9.4' width='1.8' height='4.8' rx='.9'/%3E%3Crect x='4.2' y='21.2' width='15.6' height='1.6' rx='.8'/%3E%3C/g%3E%3C/svg%3E");
+  --ico-ac: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23000'%3E%3Crect x='7.4' y='8.4' width='9.2' height='1.7' rx='.85'/%3E%3Crect x='7.4' y='11.6' width='9.2' height='1.7' rx='.85'/%3E%3Cpath d='M13.4 14.8 10.4 18.8h2.2l-1 3 3.4-4.4h-2.2z'/%3E%3C/g%3E%3C/svg%3E");
 }
 
 .cc-icon[data-type="barracks"] {

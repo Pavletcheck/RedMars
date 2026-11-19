@@ -147,7 +147,7 @@
 
   <!-- Способность героя: щит на 3 секунды, один раз за бой. Кнопка и Q. -->
   <button class="hero-shield hidden" id="hero-shield" type="button"
-          title="Щит 3 с · 1 раз за бой (Q)" aria-label="Щит героя: 3 секунды, один раз за бой">🛡 Щит 3 с</button>
+          title="Щит 3 с на союзников · 1 раз за бой (Q)" aria-label="Щит героя: 3 секунды неуязвимости союзникам в радиусе 2.5, один раз за бой">🛡 Щит 3 с</button>
 
   <div class="selbar hidden" id="selbar">
     <div class="selbar__head">
@@ -242,6 +242,7 @@
         <button class="shop__tab is-active" data-shop-tab="build">Постройки</button>
         <button class="shop__tab" data-shop-tab="exchange">Обмен</button>
       </div>
+      <div class="exchange-rate hidden" id="exchange-rate"></div>
       <div class="carousel carousel_shop">
         <button class="carousel__arrow carousel__arrow_prev" id="shop-prev" type="button"
                 data-carousel="shop" data-dir="-1" title="Предыдущая постройка" aria-label="Предыдущая постройка">‹</button>

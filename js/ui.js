@@ -11,6 +11,7 @@ CC.UI = (function () {
   const cancelBtn = document.getElementById('cancel-btn');
   const shopEl = document.getElementById('shop');
   const shopGrid = document.getElementById('shop-grid');
+  const exchangeRate = document.getElementById('exchange-rate');
   const shopNote = document.getElementById('shop-note');
   const shopX = document.getElementById('shop-x');
   const shopTabs = document.getElementById('shop-tabs');
@@ -2338,7 +2339,9 @@ CC.UI = (function () {
   }
 
   function exchangeCardHtml(res, count) {
-    const rate = CC.GEMS.exchange[res];
+    const rate = CC.gemExchange
+      ? CC.gemExchange(res, CC.Game.townhallLevel())
+      : CC.GEMS.exchange[res];
     const amount = rate * count;
     const name = res === 'gold' ? 'руды' : 'энергии';
     const icon = res === 'gold' ? '🔩' : '⚡';
@@ -2364,11 +2367,33 @@ CC.UI = (function () {
       ' data-gem-res="' + res + '" data-gem-count="' + count + '"' +
       (enough ? '' : ' disabled') + ' title="' + title + '">' +
       '<span class="shop-card__icon">' + icon + '</span>' +
-      '<span class="shop-card__name">' + amount + ' ' + name + '</span>' +
+      '<span class="shop-card__name">' + fmtNum(amount) + ' ' + name + '</span>' +
+      '<span class="shop-card__desc">за ' + platAcc(count) + '</span>' +
       '<span class="shop-card__count"><span class="ico ico-platinum" aria-hidden="true"></span>' +
       platText(count) + '</span>' +
       req +
       '</button>';
+  }
+
+  // Текущий курс терминала: отдельная строка над каруселью, чтобы она
+  // не уезжала вместе с карточками при горизонтальной прокрутке.
+  function exchangeRateText() {
+    const th = CC.Game.townhallLevel();
+    const gold = CC.gemExchange ? CC.gemExchange('gold', th) : CC.GEMS.exchange.gold;
+    const elixir = CC.gemExchange ? CC.gemExchange('elixir', th) : CC.GEMS.exchange.elixir;
+    return 'Курс на TH' + th + ': 1 платина = ' + fmtNum(gold) +
+      ' руды · ' + fmtNum(elixir) + ' энергии';
+  }
+
+  function syncExchangeRate() {
+    if (!exchangeRate) return;
+    const show = shopTab === 'exchange';
+    if (exchangeRate.classList && exchangeRate.classList.toggle) {
+      exchangeRate.classList.toggle('hidden', !show);
+    }
+    if (!show) return;
+    const text = exchangeRateText();
+    if (exchangeRate.textContent !== text) exchangeRate.textContent = text;
   }
 
   function exchangeHtml() {
@@ -2383,14 +2408,28 @@ CC.UI = (function () {
   function syncShop() {
     if (!shopOpen || !shopGrid) return;
 
-    // На TH1 почти весь терминал закрыт, а первое задание просит открыть
-    // именно его. Подсказываем, что доступно и что даст центр 2.
+    syncExchangeRate();
+
+    // Подсказка терминала: сначала — про нулевой лимит ресурса (нет склада),
+    // затем — обычный онбординг TH1.
     if (shopNote) {
-      const show = shopTab === 'build' && CC.Game.townhallLevel() === 1;
-      const hint = 'На 1 уровне доступны центр и турель. Улучши центр до 2,' +
-        ' чтобы открыть лазерную вышку, 3-й бур и мину';
-      if (show && shopNote.textContent !== hint) shopNote.textContent = hint;
-      shopNote.classList.toggle('hidden', !show);
+      let hint = '';
+      if (shopTab === 'build') {
+        const missing = [];
+        if (CC.Game.cap('gold') <= 0) missing.push('Поставь хранилище руды — 400 руды');
+        if (CC.Game.cap('elixir') <= 0) missing.push('Поставь хранилище энергии — 400 руды');
+        if (missing.length) hint = missing.join(' · ');
+        else if (CC.Game.townhallLevel() === 1) {
+          hint = 'На 1 уровне доступны центр и турель. Улучши центр до 2,' +
+            ' чтобы открыть лазерную вышку, 3-й бур и мину';
+        }
+      }
+      if (hint) {
+        if (shopNote.textContent !== hint) shopNote.textContent = hint;
+        shopNote.classList.remove('hidden');
+      } else {
+        shopNote.classList.add('hidden');
+      }
     }
 
     const sig = shopTab + '|' +
@@ -2862,8 +2901,15 @@ CC.UI = (function () {
     } else if (type === 'elixir') {
       parts.push('Добыча ' + s.production + ' энергии/с');
       if (s.extractCap) parts.push('в реакторе ' + Math.floor(s.stored) + ' из ' + s.extractCap);
-    } else if (type === 'storage') parts.push('Хранит ' + s.capGold + ' руды и ' + s.capElixir + ' энергии');
-    else if (type === 'barracks') {
+    } else if (type === 'storage') {
+      parts.push('Хранит руду');
+      parts.push('лимит ' + fmtNum(s.capGold));
+      parts.push('вклад в общий ' + fmtNum(CC.Game.cap('gold')));
+    } else if (type === 'estorage') {
+      parts.push('Хранит энергию');
+      parts.push('лимит ' + fmtNum(s.capElixir));
+      parts.push('вклад в общий ' + fmtNum(CC.Game.cap('elixir')));
+    } else if (type === 'barracks') {
       parts.push('Мест в армии +' + s.capacity);
       parts.push('тренирует параллельно');
     }
@@ -2966,6 +3012,7 @@ CC.UI = (function () {
     let note = '';
     let gotoTh = false;
     let gotoStorage = false;
+    let storageRes = '';
 
     if (busy) {
       sig = 'busy:' + busy.to + ':' + (speed ? speed.gems : 0) + ':' + gems;
@@ -3007,6 +3054,7 @@ CC.UI = (function () {
         note = check.reason;
         price = priceText(cost);
         gotoStorage = true;
+        storageRes = check.resource || '';
       } else if (check.reason === 'Максимальный уровень') {
         sig = 'max';
         disabled = true;
@@ -3056,7 +3104,12 @@ CC.UI = (function () {
 
     if (selGotoStorage) {
       selGotoStorage.classList.toggle('hidden', !gotoStorage);
-      if (gotoStorage) selGotoStorage.textContent = 'К хранилищу';
+      if (gotoStorage) {
+        selGotoStorage.textContent = storageRes === 'elixir'
+          ? 'К складу энергии'
+          : 'К складу руды';
+        selGotoStorage.dataset.res = storageRes;
+      }
     }
   }
 
@@ -3255,7 +3308,7 @@ CC.UI = (function () {
         '<span class="tcard__lock" aria-hidden="true">🔒</span>' +
         icon +
         '<span class="tcard__name">' + d.name + '</span>' +
-        '<span class="tcard__desc">Щит 3 с · 1 раз за бой</span>' +
+        '<span class="tcard__desc">Щит 3 с на союзников · 1 раз за бой</span>' +
         '<span class="tcard__cost">с центра ' + minTh + '</span>' +
         '</div>';
     }
@@ -3264,16 +3317,30 @@ CC.UI = (function () {
     const up = CC.Game.heroUpInfo();
     const cost = CC.Game.heroUpgradeCost();
     const check = CC.Game.canUpgradeHero();
-    const ability = (H.ability && H.ability.hint) || 'Щит 3 с · 1 раз за бой';
+    const ability = (H.ability && H.ability.hint) || 'Щит 3 с на союзников · 1 раз за бой';
 
     let extra;
     if (up) {
+      // Кнопка ускорения показывает цену с учётом потолка (не больше 80).
+      const speed = CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
+      const gems = CC.Game.gems();
+      const gemsOk = !speed || gems >= speed.gems;
+      const speedBtn = speed
+        ? '<button class="tcard__hire tcard__speed" data-hero-speed="1"' +
+          (gemsOk ? '' : ' disabled') +
+          ' title="' + (gemsOk
+            ? 'Завершить прокачку мгновенно'
+            : 'Нужно ещё ' + platText(speed.gems - gems)) + '">' +
+          '<span class="ico ico-platinum" aria-hidden="true"></span>' +
+          ' Ускорить за ' + speed.gems + '</button>'
+        : '';
       extra = '<span class="tcard__meta">Ур. ' + lvl + ' → ' + up.to +
         ' · ' + formatTime(up.left) + '</span>' +
         '<i class="hero-card__bar"><b style="width:' +
         Math.round(up.progress * 100) + '%"></b></i>' +
         '<span class="tcard__actions">' +
         '<button class="tcard__hire" disabled title="Идёт прокачка">Идёт</button>' +
+        speedBtn +
         '</span>';
     } else {
       const price = cost
@@ -3317,8 +3384,10 @@ CC.UI = (function () {
     const th = CC.Game.townhallLevel();
     const maxLvl = (CC.TROOP_LEVEL && CC.TROOP_LEVEL.max) || 10;
     const heroUp = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
+    const heroSpeed = heroUp && CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
     const heroSig = 'hero:' + CC.Game.heroLevel() + ':' +
       (heroUp ? heroUp.to + ':' + Math.ceil(heroUp.left) : 'idle') + ':' +
+      (heroSpeed ? heroSpeed.gems : 0) + ':' + CC.Game.gems() + ':' +
       (CC.Game.heroUpgradeCost ? JSON.stringify(CC.Game.heroUpgradeCost()) : '');
     const armySig = CC.ARMY_ORDER.map(function (t) {
       const need = CC.troopUnlock ? CC.troopUnlock(t) : 1;
@@ -3537,6 +3606,20 @@ CC.UI = (function () {
   }
 
   function onSelbarClick(e) {
+    // Ускорение прокачки героя платиной: отдельная кнопка в его карточке.
+    const heroSpeedBtn = e.target.closest('[data-hero-speed]');
+    if (heroSpeedBtn) {
+      const res = CC.Game.speedUpHero();
+      if (res.error) toast(res.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgradeDone');
+        toast('Сержант — ур. ' + res.level);
+      }
+      invalidate();
+      sync();
+      return;
+    }
+
     // Прокачка героя: отдельная кнопка в его карточке ангара.
     const heroUpBtn = e.target.closest('[data-hero-up]');
     if (heroUpBtn) {
@@ -3674,7 +3757,13 @@ CC.UI = (function () {
     }
 
     if (act === 'goto-storage') {
-      const st = CC.Base.list().find(function (b) { return b.type === 'storage'; });
+      const want = selGotoStorage && selGotoStorage.dataset
+        ? selGotoStorage.dataset.res : '';
+      const type = want === 'elixir' ? 'estorage' : 'storage';
+      const st = CC.Base.list().find(function (b) { return b.type === type; }) ||
+        CC.Base.list().find(function (b) {
+          return b.type === 'storage' || b.type === 'estorage';
+        });
       if (st) {
         state.selected = st.id;
         cache.uTimer = null;
@@ -4355,7 +4444,7 @@ CC.UI = (function () {
         heroEl.title = (CC.TROOPS.hero ? CC.TROOPS.hero.name : 'Сержант') +
           ' · ур. ' + (level || 0) + ' · ' +
           ((CC.HERO && CC.HERO.ability && CC.HERO.ability.hint) ||
-            'Щит 3 с · 1 раз за бой');
+            'Щит 3 с на союзников · 1 раз за бой');
       }
     }
 
@@ -4370,7 +4459,7 @@ CC.UI = (function () {
         ? 'Щит уже использован · один раз за бой'
         : (!S.hero
           ? 'Сначала высади Сержанта'
-          : 'Щит 3 с · 1 раз за бой (Q)');
+          : 'Щит 3 с на союзников в радиусе 2.5 · 1 раз за бой (Q)');
       if (heroShieldBtn.title !== title) heroShieldBtn.title = title;
     }
 
@@ -5069,6 +5158,12 @@ CC.UI = (function () {
     syncOffline();
     syncSound();
 
+    // Миграция старого сейва не нашла места под склад энергии: сообщаем
+    // один раз, игра при этом не ломается — лимит энергии просто 0.
+    if (CC.Game.takeEstorageHint && CC.Game.takeEstorageHint()) {
+      toast('Нет места под склад энергии — освободи клетку');
+    }
+
     const upgradesDone = CC.Game.takeUpgradeDone();
     if (upgradesDone && CC.Sound) CC.Sound.play('upgradeDone');
 
@@ -5485,7 +5580,7 @@ CC.UI = (function () {
   function buildDoneText(type) {
     const name = (CC.BUILDINGS[type] || {}).name || 'Модуль';
     const fem = { cannon: 1, archer: 1, mortar: 1, mage: 1, wall: 1 };
-    const neut = { storage: 1, townhall: 1 };
+    const neut = { storage: 1, estorage: 1, townhall: 1 };
     if (fem[type]) return name + ' построена';
     if (neut[type]) return name + ' построено';
     return name + ' построен';

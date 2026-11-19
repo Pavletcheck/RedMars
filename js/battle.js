@@ -9,7 +9,7 @@ CC.Battle = (function () {
   const TROOPS = CC.TROOPS;
   const HERO = CC.HERO || {
     id: 'hero', minTh: 5, maxLevel: 10,
-    ability: { name: 'Щит', duration: 3, uses: 1 }
+    ability: { name: 'Щит', duration: 3, radius: 2.5, uses: 1 }
   };
   const LEVELS = CC.LEVELS || [];
 
@@ -189,8 +189,9 @@ CC.Battle = (function () {
       ? { gold: (lvl.loot && lvl.loot.gold) || 0, elixir: (lvl.loot && lvl.loot.elixir) || 0 }
       : { gold: 0, elixir: 0 };
 
-    // Раскладываем пул уровня по конкретным зданиям: 60% в хранилища,
-    // 25% в центр, 15% в буры/реакторы. План считается по той же
+    // Раскладываем пул уровня по конкретным зданиям: 85% руды — в склады
+    // руды, 15% — в буры; 85% энергии — в склады энергии, 15% — в реакторы.
+    // Командный центр лут не получает. План считается по той же
     // детерминированной раскладке, поэтому ключи стабильны между заходами.
     const plan = CC.Loot && CC.Loot.distribute
       ? CC.Loot.distribute(pool, layout)
@@ -1072,7 +1073,8 @@ CC.Battle = (function () {
     return !!(u && u.shieldUntil > S.time);
   }
 
-  // Способность «Щит»: 3 секунды неуязвимости, один раз за бой.
+  // Способность «Щит»: 3 секунды неуязвимости всем союзным юнитам в радиусе
+  // 2.5 тайла от героя, включая самого героя. Один раз за бой.
   function heroAbility() {
     if (!S) return { error: 'Бой не начат' };
     if (S.over) return { error: 'Бой окончен' };
@@ -1082,12 +1084,34 @@ CC.Battle = (function () {
     if (S.abilityUsed || h.abilityUsed) return { error: 'Щит уже использован' };
 
     const dur = Math.max(0.01, Number(HERO.ability && HERO.ability.duration) || 3);
-    h.shieldUntil = S.time + dur;
+    const radius = Math.max(0, Number(HERO.ability && HERO.ability.radius) || 2.5);
+    const until = S.time + dur;
+
+    // Щит получает каждый живой союзник в радиусе, герой — всегда.
+    // Дальние юниты остаются без защиты: позиция в момент активации.
+    const covered = [];
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (u.hp <= 0) continue;
+      const d = u === h ? 0 : Math.hypot(u.x - h.x, u.y - h.y);
+      if (d > radius) continue;
+      u.shieldUntil = until;
+      covered.push(u.id);
+    }
+    // Герой мог оказаться вне списка только при NaN-координатах.
+    h.shieldUntil = until;
+
     h.abilityUsed = true;
     S.abilityUsed = true;
 
     syncHeroState();
-    return { ok: true, duration: dur, until: h.shieldUntil };
+    return {
+      ok: true,
+      duration: dur,
+      until: until,
+      radius: radius,
+      covered: covered
+    };
   }
 
   function update(dt) {
