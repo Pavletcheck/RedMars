@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#bfdcb4" />
+  <title>Красный рубеж — база на Марсе</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/ui.css" />
+</head>
+<body>
+
+<div id="app" data-mode="base">
+  <canvas id="stage"></canvas>
+
+  <!-- верхний левый угол: опыт игрока, уровень кампании, звук -->
+  <div class="hud-tl">
+    <div class="player-badge" id="player-badge">
+      <b id="xp-level">1</b>
+      <div class="player-badge__body">
+        <span id="xp-label">0 / 100 XP</span>
+        <span class="player-badge__track"><i id="xp-bar"></i></span>
+      </div>
+    </div>
+    <button class="campaign-chip" id="lvl-chip" type="button" title="Уровни">Ур. 1</button>
+    <button class="campaign-chip daily-chip" id="daily-chip" type="button"
+            title="Ежедневный контракт: 5 звёзд">Контракт 0/5 ★</button>
+    <button class="campaign-chip replay-chip" id="replay-chip" type="button"
+            title="Повторы нападений на базу">⟲ Повторы</button>
+    <div class="audio-panel" id="audio-panel">
+      <button class="sound-btn" id="sound-btn" title="Звуки включены" aria-pressed="true">
+        <span class="ico ico-sound" aria-hidden="true"></span>
+      </button>
+      <button class="sound-btn sound-btn_music" id="music-btn" title="Музыка включена" aria-pressed="true">
+        <span class="ico ico-music" aria-hidden="true">♫</span>
+      </button>
+    </div>
+    <div class="volume" id="volume">
+      <button class="volume__btn" id="vol-minus" title="Тише" aria-label="Тише">−</button>
+      <span class="volume__value" id="vol-value">50%</span>
+      <button class="volume__btn" id="vol-plus" title="Громче" aria-label="Громче">+</button>
+    </div>
+    <button class="ach-btn" id="ach-btn" title="Достижения">
+      <span class="ico ico-ach" aria-hidden="true">★</span>
+    </button>
+  </div>
+
+  <!-- верх по центру: строители / уровень, армия -->
+  <div class="hud-tc">
+    <button class="builders-chip" id="builders-chip" title="Бригады строителей"><span class="ico ico-hammer" aria-hidden="true"></span><span id="builders-chip-count">0/1</span></button>
+    <span class="level-badge" id="level-badge">
+      <span class="level-badge__label">Уровень</span>
+      <b id="level-pill">1</b>
+    </span>
+    <span class="army-badge" title="Армия / мест в ангарах">
+      <span class="army-badge__icon ico ico-army" aria-hidden="true"></span>
+      <b id="hud-army-used">0</b><span id="hud-army-cap"> / 0</span>
+      <span class="army-badge__track"><i id="hud-army-bar"></i></span>
+    </span>
+    <span class="truce-chip hidden" id="truce-chip" title="Перемирие"><span class="ico ico-truce" aria-hidden="true"></span><span id="truce-text">0:00</span></span>
+  </div>
+
+  <!-- верхний правый угол: ресурсы -->
+  <div class="resbar" id="resbar">
+    <div class="res-panel res-panel_gold" title="Руда">
+      <div class="res-panel__in">
+        <span class="res-panel__icon">🔩</span>
+        <div class="res-panel__body">
+          <b class="res-panel__value" id="res-gold">0</b>
+          <span class="res-panel__cap" id="res-gold-cap">из 0</span>
+          <span class="res-panel__track"><i id="res-gold-bar"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="res-panel res-panel_elixir" title="Энергия">
+      <div class="res-panel__in">
+        <span class="res-panel__icon">⚡</span>
+        <div class="res-panel__body">
+          <b class="res-panel__value" id="res-elixir">0</b>
+          <span class="res-panel__cap" id="res-elixir-cap">из 0</span>
+          <span class="res-panel__track"><i id="res-elixir-bar"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="res-panel res-panel_gems" title="Платина">
+      <div class="res-panel__in">
+        <span class="res-panel__icon ico ico-platinum" aria-hidden="true"></span>
+        <div class="res-panel__body">
+          <b class="res-panel__value" id="res-gems">0</b>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="collect-all hidden" id="collect-all" type="button"
+          title="Собрать всё с буров и реакторов">Собрать всё</button>
+
+  <!-- боевая верхняя панель -->
+  <header class="hud">
+    <div class="hud__stat">
+      <span class="hud__label">Разрушено</span>
+      <span class="hud__value" id="pct">0%</span>
+    </div>
+    <div class="hud__stat">
+      <span class="hud__label">Время</span>
+      <span class="hud__value" id="timer">3:00</span>
+    </div>
+    <button class="icon-btn hud__finish hidden" id="btn-finish" type="button"
+            title="Завершить бой? Звёзды и добыча сохранятся">Завершить</button>
+    <button class="icon-btn" id="btn-restart" title="Начать заново">↻</button>
+  </header>
+
+  <div class="bpanel hidden" id="builders-panel">
+    <div class="bpanel__head">
+      <span>Бригады</span>
+      <b id="bpanel-count">0/1</b>
+      <button class="bpanel__x" data-builder="close" title="Закрыть">✕</button>
+    </div>
+    <div class="bpanel__list" id="bpanel-list"></div>
+    <button class="bpanel__hire hidden" id="hire-builder" data-builder="hire">Нанять бригаду</button>
+  </div>
+
+  <button class="quest-bar" id="quest-bar">
+    <span class="quest-bar__icon ico ico-quest" aria-hidden="true"></span>
+    <span class="quest-bar__text" id="quest-text">Задание: ...</span>
+    <span class="quest-bar__progress" id="quest-progress">0/6</span>
+  </button>
+
+  <div class="quest-panel hidden" id="quest-panel">
+    <div class="quest-panel__head">
+      <span>Задания</span>
+      <b id="quest-count">0/6</b>
+      <button class="quest-panel__x" data-quest="close" title="Закрыть">✕</button>
+    </div>
+    <div class="quest-list" id="quest-list"></div>
+  </div>
+
+  <div class="tip" id="tip">
+    <span class="tip__text" id="tip-text">Открой «Терминал» внизу и выбери постройку</span>
+    <button class="tip__x" id="tip-x" type="button" title="Скрыть подсказку">✕</button>
+  </div>
+
+  <div class="battle-intro hidden" id="battle-intro">
+    Выбери юнита внизу и тапни по любой свободной клетке. Для победы хватит одной звезды: 50% построек или снос центра
+  </div>
+
+  <div class="selbar hidden" id="selbar">
+    <div class="selbar__head">
+      <span class="selbar__icon cc-icon" id="sel-icon" aria-hidden="true">💣</span>
+      <span class="selbar__name" id="sel-name">Турель</span>
+      <span class="selbar__level" id="sel-level">Ур. 1</span>
+      <button class="selbar__x" data-act="cancel" title="Закрыть">✕</button>
+    </div>
+
+    <div class="selbar__stats" id="sel-stats"></div>
+
+    <div class="selbar__up" id="sel-up">
+      <span class="selbar__timer hidden" id="sel-timer"></span>
+      <span class="selbar__progress hidden" id="sel-progress"><i></i></span>
+      <button class="selbar__btn selbar__btn_go" data-act="upgrade" id="sel-upgrade">
+        Улучшить
+      </button>
+      <button class="selbar__btn selbar__btn_speed hidden" data-act="speed-up" id="sel-upgrade-speed">
+        Ускорить
+      </button>
+      <span class="selbar__price" id="sel-upgrade-cost"></span>
+    </div>
+
+    <div class="selbar__note hidden" id="sel-note"></div>
+    <button class="selbar__btn selbar__btn_th hidden" data-act="goto-th" id="sel-goto-th">К командному центру</button>
+    <button class="selbar__btn selbar__btn_th hidden" data-act="goto-storage" id="sel-goto-storage">К хранилищу</button>
+
+    <div class="selarmy hidden" id="sel-army">
+      <div class="selarmy__head">
+        <span>Ангар · армия <b id="army-cap">0/0</b></span>
+        <span class="selarmy__hint">тренируется <b id="army-queue">0 · 0 в очереди</b></span>
+      </div>
+      <button class="selbar__btn selbar__btn_speed selarmy__speed hidden" data-act="speed-train" id="speed-train">
+        Ускорить
+      </button>
+
+      <div class="carousel carousel_army">
+        <button class="carousel__arrow carousel__arrow_prev" id="train-prev" type="button"
+                data-carousel="train" data-dir="-1" title="Предыдущее войско" aria-label="Предыдущее войско">‹</button>
+        <div class="selarmy__troops carousel__track" id="train-list" tabindex="0"
+             role="listbox" aria-label="Войска в ангаре"></div>
+        <button class="carousel__arrow carousel__arrow_next" id="train-next" type="button"
+                data-carousel="train" data-dir="1" title="Следующее войско" aria-label="Следующее войско">›</button>
+      </div>
+
+      <div class="selarmy__queue" id="train-queue"></div>
+
+      <div class="troopup" id="troop-up">
+        <div class="troopup__head">
+          <span>Улучшение войск</span>
+          <span class="troopup__hint">1 слот · <b id="troop-up-hint">свободен</b></span>
+        </div>
+        <div class="troopup__list" id="troop-up-list"></div>
+      </div>
+    </div>
+
+    <div class="selbar__row">
+      <button class="selbar__btn selbar__btn_danger" data-act="remove">Убрать</button>
+    </div>
+  </div>
+
+  <footer class="army" id="army"></footer>
+
+  <!-- иконки сбора ресурсов над бурами и реакторами -->
+  <div class="collect-layer" id="collect-layer"></div>
+  <div class="collect-fx" id="collect-fx" aria-hidden="true"></div>
+
+  <div class="bottom-bar" id="bottom-bar">
+    <button class="shop-btn shop-btn_mode" id="build-btn" type="button"
+            title="Режим построек: сетка и перестановка" aria-pressed="false">Постройки</button>
+    <button class="shop-btn shop-btn_cancel hidden" id="cancel-btn" title="Отменить установку (Esc)">✗ Отмена</button>
+    <button class="shop-btn" id="shop-btn" title="Терминал построек"><span class="shop-btn__ico ico ico-shop" aria-hidden="true"></span> Терминал</button>
+    <button class="shop-btn shop-btn_arena" id="arena-btn" title="Арена: атакуй базу соперника">Арена</button>
+    <button class="mode battle-btn" id="battle-btn" data-mode="battle">В БОЙ</button>
+  </div>
+
+  <div class="build-hint hidden" id="build-hint">Перетаскивай постройки · выбери модуль в терминале</div>
+
+  <div class="place-ghost hidden" id="place-ghost">
+    <i class="place-ghost__shape" id="place-ghost-shape"></i>
+    <span class="place-ghost__icon cc-icon" id="place-ghost-icon"></span>
+  </div>
+
+  <!-- терминал построек вместо горизонтальной палитры -->
+  <div class="overlay hidden" id="shop">
+    <div class="overlay__card shop">
+      <div class="shop__head">
+        <h2 class="shop__title">Терминал</h2>
+        <button class="shop__x" id="shop-x" title="Закрыть">✕</button>
+      </div>
+      <div class="shop__tabs" id="shop-tabs">
+        <button class="shop__tab is-active" data-shop-tab="build">Постройки</button>
+        <button class="shop__tab" data-shop-tab="exchange">Обмен</button>
+      </div>
+      <div class="carousel carousel_shop">
+        <button class="carousel__arrow carousel__arrow_prev" id="shop-prev" type="button"
+                data-carousel="shop" data-dir="-1" title="Предыдущая постройка" aria-label="Предыдущая постройка">‹</button>
+        <div class="shop__grid carousel__track" id="shop-grid" tabindex="0"
+             role="listbox" aria-label="Постройки терминала"></div>
+        <button class="carousel__arrow carousel__arrow_next" id="shop-next" type="button"
+                data-carousel="shop" data-dir="1" title="Следующая постройка" aria-label="Следующая постройка">›</button>
+      </div>
+      <p class="shop__note hidden" id="shop-note"></p>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="levels">
+    <div class="overlay__card levels map-wrap">
+      <div class="levels__head">
+        <h2 class="overlay__title">Карта Марса</h2>
+        <button class="levels__x" id="levels-x" title="Закрыть">✕</button>
+      </div>
+      <p class="levels__hint">5 эпох, 50 узлов. Звёзды — лучший результат. Для прохода хватит одной: 50% построек, снос центра или 100%.</p>
+      <div class="map-scroll" id="map-scroll">
+        <div class="levels__grid map" id="levels-grid"></div>
+      </div>
+      <div class="map-card hidden" id="map-card">
+        <div class="map-card__head">
+          <b class="map-card__name" id="map-card-name"></b>
+          <span class="map-card__th" id="map-card-th"></span>
+        </div>
+        <p class="map-card__loot" id="map-card-loot"></p>
+        <p class="map-card__best" id="map-card-best"></p>
+        <button class="map-card__go" id="map-card-go" type="button" data-map-go="1">Атаковать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Арена: локальный PvP по сгенерированным базам -->
+  <div class="overlay hidden" id="arena">
+    <div class="overlay__card arena">
+      <div class="levels__head">
+        <h2 class="overlay__title">Арена</h2>
+        <button class="levels__x" id="arena-x" title="Закрыть">✕</button>
+      </div>
+      <div class="arena__stats">
+        <span class="arena__stat"><span>Рейтинг</span><b id="arena-rating">1000</b></span>
+        <span class="arena__stat"><span>Победы</span><b id="arena-wins">0</b></span>
+        <span class="arena__stat"><span>Поражения</span><b id="arena-losses">0</b></span>
+      </div>
+      <p class="levels__hint">Выбери базу соперника. Первое убийство отдаёт весь пул, повтор — долю по разрушениям.</p>
+      <div class="arena__list" id="arena-list"></div>
+      <p class="arena__note hidden" id="arena-note"></p>
+      <button class="overlay__btn overlay__btn_ghost arena__find" id="arena-find" type="button">
+        Найти других
+      </button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="arena-result">
+    <div class="overlay__card result-card">
+      <div class="overlay__stars" id="arena-stars"></div>
+      <h2 class="overlay__title" id="arena-result-title">Победа</h2>
+      <p class="overlay__text" id="arena-result-text"></p>
+      <p class="overlay__daily hidden" id="arena-result-daily"></p>
+      <p class="overlay__loot" id="arena-result-loot"></p>
+      <p class="overlay__army" id="arena-result-army"></p>
+      <p class="overlay__lost hidden" id="arena-result-lost"></p>
+      <p class="overlay__hint hidden" id="arena-result-hint"></p>
+      <button class="overlay__btn" id="btn-arena-again" type="button">Ещё бой</button>
+      <button class="overlay__btn overlay__btn_ghost" id="btn-arena-base" type="button">На базу</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="achievements">
+    <div class="overlay__card achievements">
+      <div class="levels__head">
+        <h2 class="overlay__title">Достижения</h2>
+        <button class="levels__x" id="ach-x" title="Закрыть">✕</button>
+      </div>
+      <div class="ach-list" id="ach-list"></div>
+      <p class="ach-footer" id="ach-footer">Забрано 0 из 0</p>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="daily">
+    <div class="overlay__card daily-card">
+      <div class="levels__head">
+        <h2 class="overlay__title">Контракт дня</h2>
+        <button class="levels__x" id="daily-x" title="Закрыть">✕</button>
+      </div>
+      <p class="daily-card__stars" id="daily-stars">☆☆☆☆☆</p>
+      <p class="overlay__text" id="daily-text"></p>
+      <p class="overlay__loot" id="daily-reward"></p>
+      <p class="overlay__hint" id="daily-hint"></p>
+      <button class="overlay__btn" id="btn-daily-claim" type="button">Забрать</button>
+      <button class="overlay__btn overlay__btn_ghost" id="btn-daily-close" type="button">Закрыть</button>
+    </div>
+  </div>
+
+  <div class="zoom" id="zoom-bar">
+    <button class="zoom__btn" data-zoom="in" title="Приблизить">+</button>
+    <button class="zoom__btn" data-zoom="out" title="Отдалить">−</button>
+    <button class="zoom__btn zoom__btn_reset" data-zoom="reset" title="Всё поле">◎</button>
+  </div>
+
+  <div class="overlay hidden" id="overlay">
+    <div class="overlay__card result-card">
+      <div class="overlay__stars" id="stars"></div>
+      <h2 class="overlay__title" id="overlay-title">Победа</h2>
+      <p class="overlay__reason" id="overlay-reason"></p>
+      <p class="overlay__text" id="overlay-text"></p>
+      <p class="overlay__daily hidden" id="overlay-daily"></p>
+      <p class="overlay__loot" id="overlay-loot"></p>
+      <p class="overlay__army" id="overlay-army"></p>
+      <p class="overlay__lost hidden" id="overlay-lost"></p>
+      <p class="overlay__hint hidden" id="overlay-hint"></p>
+      <button class="overlay__btn" id="btn-again">Ещё раз</button>
+      <button class="overlay__btn overlay__btn_ghost" id="btn-tobase">На базу</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="offline">
+    <div class="overlay__card">
+      <h2 class="overlay__title">Пока тебя не было</h2>
+      <p class="overlay__text" id="offline-text"></p>
+      <p class="overlay__loot" id="offline-loot"></p>
+      <p class="overlay__hint" id="offline-hint">Забери добычу иконками над бурами — на склад попадёт только собранное.</p>
+      <button class="overlay__btn" id="btn-offline">Понятно</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="raid">
+    <div class="overlay__card">
+      <h2 class="overlay__title">На твою базу напали</h2>
+      <p class="overlay__text" id="raid-text"></p>
+      <p class="overlay__loot" id="raid-loot"></p>
+      <p class="overlay__hint" id="raid-verdict"></p>
+      <p class="overlay__hint" id="raid-truce"></p>
+      <button class="overlay__btn" id="btn-raid-ok">Понятно</button>
+      <button class="overlay__btn overlay__btn_ghost" id="btn-raid-replays" type="button">Повторы</button>
+    </div>
+  </div>
+
+  <!-- Повторы набегов на базу: список последних пяти и просмотр боя -->
+  <div class="overlay hidden" id="replays">
+    <div class="overlay__card replays-card">
+      <div class="levels__head">
+        <h2 class="overlay__title">Повторы</h2>
+        <button class="levels__x" id="replays-x" title="Закрыть">✕</button>
+      </div>
+      <p class="levels__hint">Последние 5 нападений на твою базу.</p>
+      <div class="replay-list" id="replay-list"></div>
+      <p class="replays-empty hidden" id="replays-empty">На базу пока не нападали</p>
+    </div>
+  </div>
+
+  <div class="replay-banner hidden" id="replay-banner">
+    <b class="replay-banner__title">Повтор нападения</b>
+    <div class="replay-banner__speed">
+      <button class="replay-banner__btn is-active" id="replay-speed-1" type="button" data-replay-speed="1">1×</button>
+      <button class="replay-banner__btn" id="replay-speed-2" type="button" data-replay-speed="2">2×</button>
+    </div>
+    <button class="replay-banner__close" id="replay-close" type="button">Закрыть</button>
+  </div>
+
+  <div class="overlay hidden" id="replay-end">
+    <div class="overlay__card result-card">
+      <div class="overlay__stars" id="replay-stars"></div>
+      <h2 class="overlay__title" id="replay-end-title">Повтор завершён</h2>
+      <p class="overlay__text" id="replay-end-text"></p>
+      <button class="overlay__btn" id="replay-exit" type="button">Выйти</button>
+    </div>
+  </div>
+
+  <div class="overlay tab-lock hidden" id="tab-lock">
+    <div class="overlay__card">
+      <h2 class="overlay__title">Игра открыта в другой вкладке</h2>
+      <p class="overlay__text">Чтобы не потерять прогресс, эта вкладка поставлена на паузу.</p>
+      <p class="overlay__hint">Закрой другую вкладку и продолжи здесь — страница перезагрузится и снова станет главной.</p>
+      <button class="overlay__btn" id="btn-tab-take">Продолжить здесь</button>
+    </div>
+  </div>
+
+  <!-- своё подтверждение вместо window.confirm: нативные диалоги в iframe блокируют -->
+  <div class="overlay hidden" id="ask">
+    <div class="overlay__card ask-card" role="dialog" aria-modal="true"
+         aria-labelledby="ask-title" aria-describedby="ask-text">
+      <h2 class="overlay__title" id="ask-title">Подтверждение</h2>
+      <p class="overlay__text" id="ask-text"></p>
+      <div class="ask-card__actions">
+        <button class="overlay__btn ask-card__ok" id="ask-ok" type="button">Подтвердить</button>
+        <button class="overlay__btn overlay__btn_ghost ask-card__cancel" id="ask-cancel" type="button">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- стартовая заставка «Колония»: сцену целиком рисует canvas
+       (CC.Render.drawIntro), DOM оставляет только титул и кнопку пропуска -->
+  <div id="intro" class="intro hidden" aria-hidden="true">
+    <canvas id="intro-canvas" class="intro__canvas"></canvas>
+    <div class="intro__title">
+      <span class="intro__title-sub">СЕКТОР 7 · МАРС</span>
+      <span class="intro__title-main">КРАСНЫЙ РУБЕЖ</span>
+    </div>
+    <div class="intro__actions">
+      <label class="intro__opt">
+        <input class="intro__opt-input" id="intro-skip-next" type="checkbox">
+        <span class="intro__opt-text">Пропустить в следующий раз</span>
+      </label>
+      <button class="intro__skip" type="button">Пропустить</button>
+    </div>
+  </div>
+
+  <!-- заглушка портретной ориентации на тач-устройствах -->
+  <div class="rotate hidden" id="rotate">
+    <div class="rotate__card">
+      <div class="rotate__icon" aria-hidden="true">⟳</div>
+      <p class="rotate__title">Поверните телефон</p>
+      <p class="rotate__text">Игра идёт горизонтально — так видно больше и удобнее играть</p>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/iso.js"></script>
+<script src="js/path.js"></script>
+<script src="js/base.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/pvp.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

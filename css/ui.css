@@ -1,0 +1,4307 @@
+/* Интерфейс игры: HUD по углам, панели, карточки, окна.
+   Сцена и canvas — в style.css. */
+
+:root {
+  --ui-dark: #3d2a17;
+  --ui-dark-2: #2b1c0d;
+  --ui-line: #5b4024;
+  --ui-cream: #f7e7c6;
+  --ui-cream-2: #e7c993;
+  --ui-text: #3a2812;
+  --ui-muted: #7c6646;
+  --ui-green: #63a84e;
+  --ui-green-2: #3f7c31;
+  --ui-gold: #f0be45;
+  --ui-gold-2: #c78b18;
+  --ui-elixir: #b45ad6;
+  --ui-elixir-2: #7d2e9e;
+  --ui-attack: #ef6a28;
+  --ui-attack-2: #c43a16;
+}
+
+* { box-sizing: border-box; }
+
+.hidden { display: none !important; }
+
+/* ---------- полноэкранная сцена ----------
+   style.css ограничивал #app шириной 900px и центрировал колонкой.
+   На площадке игра живёт в iframe, поэтому размер — 100% от контейнера. */
+html, body { width: 100%; height: 100%; }
+
+#app {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  margin: 0;
+}
+
+#stage { width: 100%; height: 100%; }
+
+/* ---------- заглушка «поверните телефон» ---------- */
+
+.rotate {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 226, 140, .14), transparent 60%),
+    linear-gradient(160deg, #4a3319, #2b1c0d 70%);
+}
+
+.rotate__card {
+  width: min(360px, 100%);
+  padding: 24px 22px;
+  border: 1px solid var(--hud-line);
+  border-radius: 20px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    0 6px 0 var(--ui-dark-2),
+    0 18px 36px rgba(0, 0, 0, .4);
+}
+
+.rotate__icon {
+  font-size: 3.2rem;
+  line-height: 1;
+  color: #c78b18;
+  animation: rotate-hint 2.4s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+  0%, 20% { transform: rotate(0deg); }
+  50%, 70% { transform: rotate(90deg); }
+  100% { transform: rotate(90deg); }
+}
+
+.rotate__title {
+  margin: 14px 0 6px;
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--ui-text);
+}
+
+.rotate__text {
+  margin: 0;
+  font-size: .8rem;
+  line-height: 1.4;
+  color: var(--ui-muted);
+}
+
+/* ---------- общий вид объёмной панели ---------- */
+
+.panel-bevel {
+  border: 1px solid var(--hud-line);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    inset 0 -3px 0 rgba(120, 80, 30, .18),
+    0 4px 0 var(--ui-dark-2),
+    0 7px 11px rgba(35, 22, 8, .28);
+}
+
+/* ---------- верх слева: опыт игрока, кампания, звук ---------- */
+
+.hud-tl {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* уровень кампании: отдельная кнопка под панелью опыта */
+.campaign-chip {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2);
+  /* literal: в марсианской теме --ui-text светлый, а фон чипа кремовый */
+  color: #3a2812;
+  font: inherit;
+  font-size: .62rem;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.campaign-chip.is-done {
+  border-color: #2f6423;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.sound-btn {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2),
+    0 5px 8px rgba(35, 22, 8, .25);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ui-text);
+}
+
+.sound-btn.is-muted { color: #a2937b; filter: grayscale(.35); }
+
+/* Иконки без эмодзи: на iOS они иногда рисуются пустыми квадратами. */
+.ico {
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.ico-sound {
+  position: relative;
+  width: 18px;
+  height: 16px;
+  color: currentColor;
+}
+
+.ico-sound::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.ico-sound::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 9px solid currentColor;
+}
+
+.ico-music,
+.ico-ach {
+  font-size: 1rem;
+  font-weight: 900;
+  color: currentColor;
+}
+
+/* Платина: размер и место в строке. Сам значок рисует style.css —
+   здесь только выравнивание, чтобы пустой span не ломал подпись. */
+.ico-platinum {
+  width: 1em;
+  height: 1em;
+  margin: 0 .12em;
+  vertical-align: -.12em;
+}
+
+/* Текстовые эмодзи заменены простыми CSS-фигурами: одинаково на всех ОС. */
+.ico-hammer {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  vertical-align: -2px;
+}
+.ico-hammer::before {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 2px;
+  width: 10px;
+  height: 5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: rotate(-38deg);
+}
+.ico-hammer::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 5px;
+  width: 3px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: rotate(-38deg);
+  transform-origin: top center;
+}
+
+.ico-army {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.ico-army::before,
+.ico-army::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 1px;
+  width: 2px;
+  height: 13px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.ico-army::before { transform: rotate(42deg); }
+.ico-army::after { transform: rotate(-42deg); }
+
+.ico-truce {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+.ico-truce::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.ico-quest {
+  position: relative;
+  width: 16px;
+  height: 16px;
+}
+.ico-quest::before {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 10px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+}
+.ico-quest::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 5px;
+  width: 5px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 4px 0 currentColor;
+}
+
+.ico-shop {
+  position: relative;
+  width: 18px;
+  height: 16px;
+}
+.ico-shop::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  width: 12px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 3px 3px;
+  transform: skewX(-8deg);
+}
+.ico-shop::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  bottom: 1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 7px 0 0 currentColor;
+}
+
+/* дуга звука справа: спикер читается даже на маленькой кнопке */
+.sound-btn::after {
+  content: '';
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  width: 6px;
+  height: 12px;
+  margin-top: -6px;
+  border: 2px solid currentColor;
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  opacity: .8;
+  pointer-events: none;
+}
+
+.sound-btn.is-muted .ico-sound,
+.sound-btn.is-muted .ico-music,
+.sound-btn.is-muted::after { opacity: .35; }
+
+/* ---------- панель звука: музыка, эффекты, громкость ---------- */
+
+.audio-panel {
+  display: flex;
+  gap: 6px;
+}
+
+.sound-btn_music {
+  font-size: .95rem;
+}
+
+/* у ноты своя иконка, дуга звука ей не нужна */
+.sound-btn_music::after { display: none; }
+
+.sound-btn_music.is-muted {
+  opacity: .55;
+  filter: grayscale(.8);
+}
+
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2);
+}
+
+.volume__btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 2px solid var(--ui-dark);
+  border-radius: 9px;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.volume__btn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.volume__value {
+  min-width: 34px;
+  text-align: center;
+  font-size: .62rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text);
+}
+
+[data-mode="battle"] .hud-tl { gap: 6px; }
+
+/* ---------- верх по центру: строители / уровень, армия ---------- */
+
+.hud-tc {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.builders-chip {
+  min-height: 44px;
+  padding: 0 11px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .45),
+    inset 0 -3px 0 rgba(30, 80, 20, .3),
+    0 3px 0 #2c5a22,
+    0 5px 8px rgba(30, 50, 20, .28);
+  color: #fff;
+  font: inherit;
+  font-size: .7rem;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.builders-chip.is-busy {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .5),
+    inset 0 -3px 0 rgba(120, 70, 5, .3),
+    0 3px 0 #7d530a,
+    0 5px 8px rgba(50, 35, 5, .28);
+  color: #432b00;
+  text-shadow: none;
+}
+
+.level-badge {
+  display: none;
+  min-height: 32px;
+  padding: 0 10px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2);
+}
+
+.level-badge__label {
+  font-size: .52rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.level-badge b {
+  font-size: .84rem;
+  font-weight: 900;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-mode="battle"] .builders-chip { display: none; }
+[data-mode="battle"] .level-badge { display: flex; }
+
+.army-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 22px;
+  padding: 0 8px 3px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 999px;
+  background: rgba(44, 30, 14, .82);
+  color: #ffe9b8;
+  font-size: .58rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.army-badge__icon { font-size: .64rem; }
+.army-badge b { font-size: .62rem; }
+.army-badge span { font-size: .54rem; color: #d8be8d; }
+
+.army-badge__track {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .18);
+  overflow: hidden;
+}
+
+.army-badge__track i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #8fd078;
+  transition: width .3s linear;
+}
+
+/* ---------- верх справа: ресурсы ---------- */
+
+.resbar {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 150px;
+  pointer-events: none;
+}
+
+.res-panel {
+  padding: 3px;
+}
+
+.res-panel__in {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 5px;
+}
+
+.res-panel__icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: .72rem;
+  line-height: 1;
+}
+
+.res-panel__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.res-panel__value {
+  font-size: .92rem;
+  font-weight: 900;
+  line-height: 1.02;
+  color: #3a2408;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.res-panel__cap {
+  font-size: .53rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #7a5a24;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.res-panel_elixir .res-panel__cap { color: #6a3d80; }
+
+/* гемы: зелёный ромб, без полосы заполнения */
+.res-panel_gems .res-panel__in {
+}
+
+.res-panel_gems .res-panel__icon {
+  border-color: #2f6423;
+}
+
+.res-panel_gems .res-panel__value { color: #245018; }
+
+.res-panel__track {
+  display: block;
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: rgba(70, 40, 10, .26);
+  overflow: hidden;
+}
+
+.res-panel__track i {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width .35s linear;
+}
+
+.res-panel_elixir .res-panel__track i {
+}
+
+/* ---------- боевая панель ---------- */
+
+.hud {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 72px);
+  left: 8px;
+  right: 166px;
+  z-index: 5;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  pointer-events: none;
+}
+
+[data-mode="base"] .hud { display: none; }
+
+.hud__stat {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 3px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2);
+}
+
+.hud__label {
+  font-size: .48rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+  line-height: 1;
+}
+
+.hud__value {
+  font-size: .88rem;
+  font-weight: 900;
+  line-height: 1.14;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-btn {
+  margin-left: auto;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 900;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.icon-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ui-dark-2); }
+
+/* «Завершить» — досрочный финал боя. Кнопка живёт в HUD и уходит с экрана,
+   как только бой окончен. Высота не ниже 40 px на любом экране. */
+.hud .icon-btn { margin-left: 0; }
+
+.hud .hud__finish {
+  width: auto;
+  min-width: 48px;
+  height: 48px;
+  padding: 0 12px;
+  margin-left: auto;
+  font-size: .66rem;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+[data-mode="base"] .hud__finish { display: none; }
+
+/* На самом узком телефоне жертвуем подписями HUD, а не площадью кнопки. */
+.is-narrow .hud { gap: 3px; }
+.is-narrow .hud__stat { padding: 3px 5px; }
+.is-narrow .hud__label { display: none; }
+.is-narrow .hud .icon-btn {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+}
+.is-narrow .hud .hud__finish {
+  width: auto;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 4px;
+  font-size: .54rem;
+}
+
+/* ---------- подсказка ---------- */
+
+.tip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 4px 6px 4px 14px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 14px;
+  background: rgba(48, 33, 16, .9);
+  color: #ffe9b8;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  transition: opacity .3s;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.tip__text {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.tip__x {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 233, 184, .35);
+  border-radius: 10px;
+  background: rgba(90, 62, 28, .55);
+  color: #ffe9b8;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 900;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.tip__x:active { transform: translateY(1px); }
+
+[data-mode="base"] .tip {
+  top: auto;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 150px);
+}
+[data-mode="battle"] .tip { top: calc(env(safe-area-inset-top, 0px) + 120px); }
+[data-mode="base"].is-short .tip { bottom: calc(env(safe-area-inset-bottom, 0px) + 144px); }
+[data-mode="battle"] .tip__x { display: none; }
+.tip.hidden { opacity: 0; pointer-events: none; }
+.tip.hidden .tip__x { pointer-events: none; }
+
+/* Инструкция первого сектора — отдельная строка под художественным хинтом. */
+.battle-intro {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 168px);
+  transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px));
+  padding: 8px 14px;
+  border: 2px solid rgba(255, 233, 184, .4);
+  border-radius: 12px;
+  background: rgba(48, 33, 16, .82);
+  color: #ffe9b8;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.battle-intro.hidden { display: none; }
+[data-mode="base"] .battle-intro { display: none; }
+[data-mode="battle"].is-short .battle-intro {
+  top: calc(env(safe-area-inset-top, 0px) + 156px);
+  font-size: .62rem;
+}
+
+/* ---------- низ: палитра и войска ---------- */
+
+.palette,
+.army {
+  position: absolute;
+  left: 0;
+  right: 146px;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 0 8px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  z-index: 3;
+}
+
+.palette::-webkit-scrollbar,
+.army::-webkit-scrollbar { display: none; }
+
+[data-mode="battle"] .palette { display: none; }
+[data-mode="base"] .army { display: none; }
+
+.card,
+.troop {
+  position: relative;
+  flex: 0 0 72px;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 3px 6px;
+  border: 1px solid var(--hud-line);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    inset 0 -3px 0 rgba(120, 80, 30, .2),
+    0 3px 0 var(--ui-dark-2),
+    0 5px 9px rgba(35, 22, 8, .26);
+  font: inherit;
+  cursor: pointer;
+  transition: transform .12s, border-color .12s, box-shadow .12s, opacity .12s;
+}
+
+.card:active,
+.troop:active { transform: translateY(2px); }
+
+.card.is-selected,
+.troop.is-selected {
+  border-color: var(--ui-gold);
+  transform: translateY(-5px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    0 3px 0 #8a5a0d,
+    0 0 0 3px rgba(240, 190, 69, .45),
+    0 8px 14px rgba(35, 22, 8, .25);
+}
+
+.card.is-empty,
+.troop.is-empty { opacity: .45; }
+
+.card.is-locked,
+.troop.is-locked {
+  opacity: .55;
+  filter: grayscale(.55);
+  cursor: default;
+}
+
+.troop__req {
+  max-width: 66px;
+  font-size: .46rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #6d5c41;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card__icon {
+  font-size: 1.28rem;
+  line-height: 1.05;
+  filter: drop-shadow(0 1px 1px rgba(60, 45, 20, .2));
+}
+
+.card__name,
+.troop__name {
+  max-width: 66px;
+  font-size: .56rem;
+  font-weight: 800;
+  color: var(--ui-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card__count,
+.troop__count {
+  position: absolute;
+  top: -7px;
+  right: -5px;
+  min-width: 23px;
+  padding: 1px 5px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 999px;
+  color: #3f2800;
+  font-size: .62rem;
+  font-weight: 900;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 0 rgba(70, 45, 5, .35);
+}
+
+.card.is-empty .card__count,
+.troop.is-empty .troop__count {
+  color: #5b5143;
+}
+
+.card__req {
+  font-size: .5rem;
+  font-weight: 800;
+  line-height: 1.05;
+  color: #806a49;
+  white-space: nowrap;
+}
+
+.card.is-locked .card__icon { font-size: 1.1rem; }
+
+.troop__icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid rgba(50, 30, 10, .55);
+  color: #fff;
+  font-size: 1rem;
+  box-shadow:
+    inset 0 -3px 5px rgba(0, 0, 0, .25),
+    inset 0 2px 3px rgba(255, 255, 255, .3);
+}
+
+/* ---------- магазин и липкая установка ---------- */
+
+.shop-btn {
+  position: absolute;
+  right: 152px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 6;
+  width: 132px;
+  min-height: 60px;
+  padding: 0 10px;
+  border: 1px solid var(--hud-line);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    inset 0 -3px 0 rgba(120, 80, 30, .18),
+    0 5px 0 var(--ui-dark-2),
+    0 8px 13px rgba(30, 18, 6, .3);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: .92rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.shop-btn:active {
+  transform: translateY(3px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .4), 0 2px 0 var(--ui-dark-2);
+}
+
+.shop-btn_cancel {
+  border-color: #6b1f17;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(90, 20, 10, .45);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .4),
+    inset 0 -3px 0 rgba(110, 20, 10, .3),
+    0 5px 0 #7d2a0f,
+    0 8px 13px rgba(30, 12, 4, .34);
+}
+
+/* магазин только в деревне */
+[data-mode="battle"] .shop-btn { display: none; }
+
+/* призрак постройки под курсором/пальцем */
+.place-ghost {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.place-ghost__shape {
+  position: absolute;
+  inset: 0;
+  background: rgba(94, 206, 120, .42);
+  filter: drop-shadow(0 0 4px rgba(60, 160, 80, .5));
+}
+
+.place-ghost.is-bad .place-ghost__shape {
+  background: rgba(224, 74, 62, .42);
+  filter: drop-shadow(0 0 4px rgba(180, 50, 40, .5));
+}
+
+.place-ghost__icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(.8rem, 2.2vw, 1.4rem);
+  line-height: 1;
+  opacity: .94;
+  text-shadow: 0 1px 2px rgba(30, 20, 5, .4);
+}
+
+/* модалка магазина */
+.overlay__card.shop {
+  max-width: 560px;
+}
+
+.shop {
+  max-width: 560px;
+  max-height: min(86dvh, 640px);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 12px;
+  text-align: left;
+}
+
+.shop__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.shop__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: var(--ui-text);
+}
+
+.shop__x {
+  margin-left: auto;
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 10px;
+  background: #f4e5c4;
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: .9rem;
+  cursor: pointer;
+}
+
+.shop__tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.shop__tab {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 10px;
+  background: #f1e3c2;
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.shop__tab.is-active {
+  border-color: #2f6423;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+/* ---------- карусели: общая обвязка ---------- */
+
+/* Лента карточек: свайп/колесо по горизонтали, снап к карточке.
+   Вертикальный скролл страницы не перехватываем: обработчика wheel нет. */
+.carousel {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 0;
+}
+
+.carousel__track {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.carousel__track::-webkit-scrollbar { display: none; }
+
+.carousel__arrow {
+  width: 40px;
+  min-height: 40px;
+  align-self: center;
+  padding: 0;
+  border: 2px solid var(--ui-dark);
+  border-radius: 10px;
+  background: #f1e3c2;
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: 1.2rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.carousel__arrow:active { transform: translateY(1px); }
+
+/* На телефоне стрелки не нужны: основной жест — свайп. */
+@media (max-width: 480px) {
+  .carousel { grid-template-columns: minmax(0, 1fr); }
+  .carousel__arrow { display: none; }
+}
+
+.shop__grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  scroll-padding: 2px;
+  align-items: stretch;
+}
+
+.shop__grid::-webkit-scrollbar { display: none; }
+
+/* Подсказка на TH1: почему почти всё закрыто и что откроет центр 2. */
+.shop__note {
+  flex: 0 0 auto;
+  margin: 6px 2px 0;
+  padding: 6px 8px;
+  border-left: 3px solid #c08a2a;
+  border-radius: 6px;
+  background: rgba(255, 244, 214, .75);
+  color: #5b4a2a;
+  font-size: .6rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.shop-card {
+  position: relative;
+  flex: 0 0 min(84%, 242px);
+  scroll-snap-align: start;
+  min-width: 0;
+  min-height: 132px;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto auto auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    inset 0 -3px 0 rgba(120, 80, 30, .18),
+    0 3px 0 var(--ui-dark-2);
+  font: inherit;
+  color: var(--ui-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.shop-card:active { transform: translateY(2px); }
+
+.shop-card.is-locked,
+.shop-card.is-empty {
+  opacity: .55;
+  filter: grayscale(.5);
+  cursor: default;
+}
+
+/* Не хватает ресурсов: карточка остаётся нажимаемой и показывает цену. */
+.shop-card.is-poor { opacity: .78; }
+.shop-card.is-poor .shop-card__cost { color: #a33a2a; }
+
+/* Ловушки в терминале: тёплый акцент, чтобы их не путали с башнями.
+   Размеры карточки не меняются — компактный HUD 844x390 не страдает. */
+.shop-card[data-trap="1"] .shop-card__icon {
+  background: rgba(255, 226, 178, .92);
+  border-color: rgba(168, 92, 26, .45);
+}
+.shop-card[data-trap="1"]::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c9762a;
+  box-shadow: 0 0 0 2px rgba(255, 244, 221, .85);
+}
+
+.shop-card__icon {
+  grid-row: 1 / span 5;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 252, 240, .8);
+  border: 2px solid rgba(90, 62, 28, .3);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.shop-card__name {
+  font-size: .76rem;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Короткая роль постройки. Две строки максимум, чтобы карточка не росла. */
+.shop-card__desc {
+  min-height: 2.4em;
+  font-size: .58rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ui-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.shop-card__count {
+  font-size: .66rem;
+  font-weight: 800;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-card__cost {
+  font-size: .62rem;
+  font-weight: 900;
+  color: #2f6b22;
+  white-space: nowrap;
+}
+
+.shop-card__req {
+  font-size: .6rem;
+  font-weight: 800;
+  color: #8f5d08;
+  white-space: nowrap;
+}
+
+/* ---------- большая кнопка боя ---------- */
+
+.battle-btn {
+  position: absolute;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 6;
+  width: 132px;
+  min-height: 60px;
+  padding: 0 12px;
+  border: 1px solid var(--hud-line);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .5),
+    inset 0 -4px 0 rgba(120, 30, 5, .35),
+    0 5px 0 #7d2a0f,
+    0 8px 13px rgba(30, 12, 4, .36);
+  color: #fff;
+  font: inherit;
+  font-size: 1.02rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+  line-height: 1;
+  text-shadow: 0 2px 0 rgba(100, 30, 0, .55);
+  cursor: pointer;
+}
+
+.battle-btn:active {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .35),
+    0 2px 0 #7d2a0f,
+    0 4px 7px rgba(30, 12, 4, .3);
+}
+
+/* ---------- строители (панель) ---------- */
+
+.bpanel {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 214px);
+  right: 56px;
+  width: min(280px, calc(100% - 16px));
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+}
+
+[data-mode="battle"] .bpanel { display: none; }
+
+.bpanel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .78rem;
+  font-weight: 900;
+  color: var(--ui-text);
+}
+
+.bpanel__head b {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.bpanel__x {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 8px;
+  background: #f4e5c4;
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: .68rem;
+  cursor: pointer;
+}
+
+.bpanel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 168px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.bpanel__list::-webkit-scrollbar { display: none; }
+
+.brow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 253, 244, .55);
+  border: 1px solid rgba(90, 62, 28, .18);
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+
+.brow b { color: var(--ui-text); font-variant-numeric: tabular-nums; }
+.brow_free { justify-content: center; color: #3f7a41; }
+
+/* Следующая бригада: цена и требование по центру. */
+.brow_next {
+  background: rgba(240, 220, 160, .5);
+  color: var(--ui-text);
+  font-weight: 900;
+}
+.brow_next b { display: inline-flex; align-items: center; gap: 2px; }
+.brow__hint {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: .62rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+.brow_req {
+  justify-content: flex-start;
+  font-size: .64rem;
+  color: var(--ui-muted);
+  background: rgba(255, 253, 244, .35);
+}
+
+.bpanel__hire {
+  min-height: 44px;
+  border: 1px solid var(--hud-line);
+  border-radius: 11px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 #93660d;
+  color: #3d2b04;
+  font: inherit;
+  font-size: .7rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.bpanel__hire:disabled {
+  background: #ddd3bd;
+  border-color: #8f8168;
+  box-shadow: none;
+  color: #81745e;
+  cursor: default;
+}
+
+/* ---------- задания ---------- */
+
+.quest-bar {
+  position: absolute;
+  left: 8px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+  width: min(260px, calc(100% - 16px));
+  min-height: 44px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2),
+    0 5px 8px rgba(35, 22, 8, .22);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quest-bar.is-done {
+  border-color: #3f6b2a;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 3px 0 #2c4d1e;
+}
+
+/* После заданий ведём к следующему центру: золотая цель вместо зелёной. */
+.quest-bar.is-goal {
+  border-color: #8a5a0d;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 3px 0 #6b4408;
+}
+
+.quest-bar.is-goal .quest-bar__text { color: #5b3d08; }
+
+.quest-bar__icon { flex: 0 0 auto; font-size: .78rem; line-height: 1; }
+
+.quest-bar__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .64rem;
+  font-weight: 800;
+  color: var(--ui-muted);
+}
+
+.quest-bar.is-done .quest-bar__text { color: #2f6b22; }
+
+.quest-bar__progress {
+  flex: 0 0 auto;
+  font-size: .58rem;
+  font-weight: 900;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.quest-panel {
+  position: absolute;
+  left: 8px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 142px);
+  width: min(320px, calc(100% - 16px));
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  scrollbar-width: none;
+}
+
+.quest-panel::-webkit-scrollbar { display: none; }
+
+[data-mode="battle"] .quest-bar,
+[data-mode="battle"] .quest-panel { display: none; }
+
+.quest-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .76rem;
+  font-weight: 900;
+  color: var(--ui-text);
+}
+
+.quest-panel__head b {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.quest-panel__x {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 8px;
+  background: #f4e5c4;
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: .64rem;
+  cursor: pointer;
+}
+
+.quest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.quest-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  font-size: .66rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+
+.quest-row.is-active {
+  background: rgba(255, 253, 244, .65);
+  border: 1px solid rgba(90, 62, 28, .16);
+  color: var(--ui-text);
+}
+
+.quest-row.is-link {
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+
+.quest-row.is-link:hover { background: rgba(255, 247, 226, .95); }
+.quest-row.is-link:active { transform: translateY(1px); }
+
+.quest-row.is-done { opacity: .65; }
+
+.quest-row__mark {
+  flex: 0 0 14px;
+  text-align: center;
+  color: #3f8f3a;
+}
+
+.quest-row__text { flex: 1 1 auto; min-width: 0; }
+
+.quest-row__prog {
+  flex: 0 0 auto;
+  font-size: .6rem;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.quest-row__reward {
+  flex: 0 0 auto;
+  font-size: .6rem;
+  font-weight: 900;
+  color: #a97213;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- панель постройки ---------- */
+
+.selbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
+  transform: translateX(-50%);
+  width: min(340px, calc(100% - 96px));
+  max-height: min(60vh, calc(100dvh - 260px));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  padding: 9px 10px 8px;
+  border: 1px solid var(--hud-line);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    inset 0 -3px 0 rgba(120, 80, 30, .16),
+    0 4px 0 var(--ui-dark-2),
+    0 10px 20px rgba(30, 20, 8, .32);
+  overflow-y: auto;
+  white-space: normal;
+  scrollbar-width: none;
+  z-index: 7;
+}
+
+.selbar::-webkit-scrollbar { display: none; }
+
+/* На низком ландшафте (320–390 px) панель должна прокручиваться, а не
+   схлопываться до одной строки заголовка. */
+@media (max-height: 420px) {
+  .selbar {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+    max-height: calc(100dvh - 78px);
+  }
+
+  /* В ангаре та же цифра есть в заголовке армии: не тратим высоту. */
+  .selbar:has(.selarmy:not(.hidden)) .selbar__stats { display: none; }
+  #app .tcard { min-height: 138px; }
+
+  /* Карточки выше кнопки ускорения: сначала карусель, потом остальное. */
+  .selarmy__speed { order: 5; }
+}
+
+[data-mode="battle"] .selbar { display: none; }
+
+.selbar__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selbar__head .selbar__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: .9rem;
+  font-weight: 900;
+  color: var(--ui-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* общий маркер иконки: художник цепляется к [data-type] */
+.selbar__icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 252, 240, .8);
+  border: 2px solid rgba(90, 62, 28, .3);
+  font-size: .95rem;
+  line-height: 1;
+}
+
+.selbar__icon:empty { display: none; }
+
+.selbar__level {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e4ecd7;
+  color: #3f6b2a;
+  font-size: .62rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.selbar__x {
+  margin-left: auto;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 8px;
+  background: #f1e3c2;
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: .68rem;
+  cursor: pointer;
+}
+
+.selbar__stats {
+  font-size: .72rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ui-muted);
+}
+
+.selbar__up {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.selbar__up.hidden { display: none; }
+
+.selbar__timer {
+  width: 100%;
+  font-size: .7rem;
+  font-weight: 800;
+  color: #9a6812;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Полоска прогресса стройки: 4 px, компактный HUD не раздвигает. */
+.selbar__progress {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(90, 62, 28, .18);
+  overflow: hidden;
+}
+
+.selbar__progress.hidden { display: none; }
+
+.selbar__progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width .25s linear;
+}
+
+.selbar__price {
+  font-size: .7rem;
+  font-weight: 900;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.selbar__btn {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px solid #75572d;
+  border-radius: 11px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    0 2px 0 #4b3417;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.selbar__btn:active { transform: translateY(2px); box-shadow: 0 0 0 #4b3417; }
+
+.selbar__btn_go {
+  border-color: #2f6423;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .45),
+    0 3px 0 #2c5a22;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.selbar__btn_go:disabled {
+  border-color: #8f8168;
+  box-shadow: none;
+  color: #81745e;
+  text-shadow: none;
+  cursor: default;
+}
+
+.selbar__btn:disabled { cursor: default; opacity: .75; }
+
+/* кнопка ускорения за гемы */
+.selbar__btn_speed {
+  border-color: #4f2163;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .4),
+    0 3px 0 #4f2163;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(60, 15, 80, .45);
+}
+
+.selbar__btn_speed:disabled {
+  border-color: #8f8168;
+  box-shadow: none;
+  color: #81745e;
+  text-shadow: none;
+  cursor: default;
+}
+
+.selarmy__speed {
+  align-self: flex-start;
+}
+
+.selbar__row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.selbar__note {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 253, 244, .6);
+  border: 1px solid rgba(90, 62, 28, .18);
+  color: var(--ui-muted);
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.selbar__note.is-warn {
+  background: #fdeccb;
+  border-color: #d6a65a;
+  color: #8f5d08;
+}
+
+.selbar__btn_th {
+  align-self: flex-start;
+  border-color: #2f6423;
+  background: #e3efd8;
+  color: #356b27;
+}
+
+/* ---------- тренировка в казарме ---------- */
+
+.selarmy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(90, 62, 28, .16);
+}
+
+.selarmy.hidden { display: none; }
+
+.selarmy__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+
+.selarmy__head b {
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.selarmy__hint { white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .selarmy__head { flex-wrap: wrap; }
+  .selarmy__hint { white-space: normal; }
+  #app .selarmy__hint { white-space: normal; }
+}
+
+/* На низком экране (844×390 и телефоны) сначала показываем карточки войск:
+   иначе карусель уезжает под скролл и кнопка «Нанять» обрезается. */
+@media (max-height: 620px) {
+  .selbar__head { order: -3; }
+  .selarmy { order: -2; }
+}
+
+.selarmy__troops {
+  gap: 6px;
+  padding-bottom: 2px;
+  scroll-padding: 2px;
+}
+
+.carousel_army { margin: 1px 0; }
+
+.carousel_shop {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Перекрываем компактную высоту базовой темы: в карточке теперь есть
+   описание роли, место, цена и кнопка «Нанять» (палец ≥ 40 px). */
+#app .tcard {
+  min-height: 150px;
+  padding: 7px 6px 6px;
+}
+
+#app .tcard__desc,
+#app .tcard__meta { font-family: var(--hud-font); }
+
+#app .tcard__hire {
+  font-family: var(--hud-font);
+}
+
+.tcard {
+  position: relative;
+  flex: 0 0 clamp(168px, 78%, 222px);
+  scroll-snap-align: center;
+  min-width: 0;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 7px 6px 6px;
+  border: 2px solid #75572d;
+  border-radius: 12px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 2px 0 #4b3417;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tcard.is-selected {
+  border-color: #2f6423;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 0 0 2px rgba(90, 168, 64, .55),
+    0 2px 0 #4b3417;
+}
+
+.tcard:active { transform: translateY(1px); }
+.tcard.is-off { opacity: .45; }
+
+/* Закрытое по уровню центра войско: серая карточка с замком. */
+.tcard.is-locked {
+  opacity: .62;
+  filter: grayscale(1);
+  cursor: default;
+  border-color: #6f6656;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .4), 0 2px 0 #4b4438;
+}
+
+.tcard.is-locked:active { transform: none; }
+
+.tcard__lock {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  font-size: .62rem;
+  line-height: 1;
+  filter: grayscale(0);
+}
+
+.tcard.is-locked .tcard__cost { color: #5e5647; }
+
+/* Пачка: ставит до пяти юнитов в очередь. Угол карточки, чтобы обычный
+   тап по ней оставался наймом одного бойца. */
+.tcard__batch {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #4b3417;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 900;
+  cursor: pointer;
+  z-index: 1;
+  isolation: isolate;
+}
+
+/* Видимая плашка меньше зоны нажатия: 40 px остаётся удобным для пальца,
+   но не закрывает иконку и название войска. */
+.tcard__batch::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #75572d;
+  border-radius: 8px;
+  z-index: -1;
+}
+
+.tcard__batch:active { transform: translateY(1px); }
+.tcard.is-off .tcard__batch { opacity: .5; }
+
+.tcard__icon {
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(50, 30, 10, .5);
+  color: #fff;
+  font-size: .9rem;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, .2);
+}
+
+.tcard__name {
+  max-width: 100%;
+  font-size: .58rem;
+  font-weight: 800;
+  color: var(--ui-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tcard__cost {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: .52rem;
+  font-weight: 900;
+  color: #7c4d9e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Короткая роль войска: две строки, чтобы карточка была одинаковой высоты. */
+.tcard__desc {
+  width: 100%;
+  min-height: 2.4em;
+  font-size: .56rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ui-muted);
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Место в армии, цена и время тренировки одной строкой. */
+.tcard__meta {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: .52rem;
+  font-weight: 800;
+  color: #7c4d9e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.tcard__actions {
+  width: 100%;
+  display: flex;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 3px;
+}
+
+.tcard__hire {
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 0 6px;
+  border: 2px solid #2f6423;
+  border-radius: 9px;
+  background: #e3efd8;
+  color: #2f6423;
+  font: inherit;
+  font-size: .62rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.tcard__hire:active { transform: translateY(1px); }
+.tcard.is-off .tcard__hire { opacity: .5; }
+
+.selarmy__queue {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.qrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: rgba(255, 253, 244, .55);
+  border: 1px solid rgba(90, 62, 28, .14);
+  font-size: .68rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+
+.qrow_empty {
+  justify-content: center;
+  color: #9a8a70;
+  font-weight: 600;
+}
+
+.qrow__icon { font-size: .78rem; }
+.qrow__name { flex: 1 1 auto; }
+.qrow__time { font-variant-numeric: tabular-nums; }
+
+/* Параллельная тренировка: активная строка и её ангар. */
+.qrow__slot {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(120, 90, 40, .1);
+  color: var(--ui-muted);
+  font-size: .52rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.qrow.is-active .qrow__slot {
+  background: #e3efd8;
+  color: #2f6423;
+}
+
+.qrow__x {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #b14a3e;
+  border-radius: 7px;
+  background: #fbe2dc;
+  color: #a5352a;
+  font: inherit;
+  font-size: .6rem;
+  cursor: pointer;
+}
+
+/* ---------- прокачка войск в ангаре ---------- */
+
+/* Уровень войска прямо в карточке найма: «Ур. 3». */
+.tcard__lvl {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(255, 253, 244, .84);
+  border: 1px solid rgba(90, 62, 28, .25);
+  color: #6b4a12;
+  font-size: .5rem;
+  font-weight: 900;
+  line-height: 1.2;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.troopup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(90, 62, 28, .16);
+}
+
+.troopup__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+
+.troopup__head b {
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.troopup__hint { white-space: nowrap; }
+
+.troopup__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 184px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.troopup__list::-webkit-scrollbar { display: none; }
+
+.tup {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 3px 5px;
+  border: 1px solid rgba(90, 62, 28, .14);
+  border-radius: 9px;
+  background: rgba(255, 253, 244, .55);
+}
+
+.tup.is-run {
+  padding-bottom: 9px;
+  border-color: #d6a65a;
+  background: #fdf1d4;
+}
+
+.tup__icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(50, 30, 10, .45);
+  border-radius: 50%;
+  color: #fff;
+  font-size: .78rem;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, .2);
+}
+
+.tup__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tup__name {
+  font-size: .66rem;
+  font-weight: 800;
+  color: var(--ui-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tup__lvl {
+  font-size: .54rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tup__cost {
+  font-size: .58rem;
+  font-weight: 900;
+  color: #7c4d9e;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tup__time {
+  font-size: .62rem;
+  font-weight: 900;
+  color: #9a6812;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tup__btn {
+  min-width: 78px;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 2px solid #2f6423;
+  border-radius: 9px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .45),
+    0 2px 0 #2c5a22;
+  color: #fff;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 900;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.tup__btn:active { transform: translateY(1px); }
+
+.tup__btn:disabled {
+  border-color: #8f8168;
+  box-shadow: none;
+  color: #81745e;
+  text-shadow: none;
+  cursor: default;
+}
+
+.tup__btn_speed {
+  min-width: 58px;
+  border-color: #4f2163;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .4),
+    0 2px 0 #4f2163;
+  text-shadow: 0 1px 0 rgba(60, 15, 80, .45);
+}
+
+.tup__btn_speed:disabled {
+  border-color: #8f8168;
+  box-shadow: none;
+  color: #81745e;
+  text-shadow: none;
+}
+
+.tup__bar {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  bottom: 3px;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(90, 62, 28, .16);
+  overflow: hidden;
+}
+
+.tup__bar b {
+  display: block;
+  width: 0;
+  height: 100%;
+}
+
+/* На низком экране список исследований прокручивается, а не растягивает
+   панель ангара: найм и «×5» остаются на месте. */
+@media (max-height: 420px) {
+  .troopup__list { max-height: 140px; }
+}
+
+/* ---------- зум ---------- */
+
+.zoom {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.zoom__btn {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2),
+    0 5px 8px rgba(35, 22, 8, .22);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.zoom__btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ui-dark-2); }
+.zoom__btn_reset { font-size: .92rem; }
+
+/* ---------- окна ---------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(28, 20, 10, .62);
+  z-index: 10;
+}
+
+.tab-lock { z-index: 30; }
+
+.overlay__card {
+  width: 100%;
+  max-width: 320px;
+  padding: 22px 20px;
+  border: 1px solid var(--hud-line);
+  border-radius: 20px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    inset 0 -4px 0 rgba(120, 80, 30, .16),
+    0 6px 0 var(--ui-dark-2),
+    0 20px 40px rgba(0, 0, 0, .38);
+  text-align: center;
+}
+
+.overlay__stars {
+  font-size: 1.9rem;
+  letter-spacing: .15em;
+  color: var(--ui-gold);
+  height: 2.2rem;
+  text-shadow: 0 2px 0 rgba(140, 90, 10, .35);
+}
+
+.overlay__stars .dim { color: #d6cbb2; text-shadow: none; }
+
+/* Заработанные звёзды вспыхивают по одной: --star-i даёт задержку 0/150/300 мс.
+   Анимируются только transform и opacity, поэтому контент под звёздами стоит. */
+.overlay__stars .star {
+  position: relative;
+  display: inline-block;
+  transform-origin: 50% 60%;
+  animation: star-pop .46s cubic-bezier(.2, .8, .3, 1.15) both;
+  animation-delay: calc(var(--star-i, 0) * 150ms);
+  filter: drop-shadow(0 0 6px rgba(255, 214, 92, .55));
+}
+
+.overlay__stars .star::after {
+  content: '★';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #ffe9a0;
+  opacity: 0;
+  filter: blur(5px);
+  pointer-events: none;
+  animation: star-glow .5s ease-out both;
+  animation-delay: calc(var(--star-i, 0) * 150ms + 80ms);
+}
+
+@keyframes star-pop {
+  0% { transform: scale(.4); opacity: 0; }
+  58% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes star-glow {
+  0% { opacity: 0; }
+  35% { opacity: .85; }
+  100% { opacity: 0; }
+}
+
+.overlay__title {
+  margin: 6px 0 4px;
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--ui-text);
+}
+
+.overlay__text {
+  margin: 0 0 14px;
+  font-size: .85rem;
+  color: var(--ui-muted);
+}
+
+.overlay__loot {
+  margin: -4px 0 12px;
+  font-size: .86rem;
+  font-weight: 900;
+  color: #7c3f9c;
+  font-variant-numeric: tabular-nums;
+}
+
+.overlay__army {
+  margin: -6px 0 10px;
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.overlay__army.hidden { display: none; }
+
+.overlay__lost {
+  margin: -4px 0 8px;
+  font-size: .76rem;
+  font-weight: 900;
+  color: #a5352a;
+}
+
+.overlay__hint {
+  margin: -2px 0 12px;
+  font-size: .7rem;
+  line-height: 1.35;
+  color: var(--ui-muted);
+}
+
+.overlay__btn {
+  width: 100%;
+  min-height: 50px;
+  padding: 10px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .45),
+    0 4px 0 #2c5a22;
+  color: #fff;
+  font: inherit;
+  font-size: .92rem;
+  font-weight: 900;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.overlay__btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #2c5a22; }
+
+.overlay__btn_ghost {
+  margin-top: 8px;
+  border-color: #8f8168;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ui-muted);
+  text-shadow: none;
+}
+
+.overlay__btn_ghost:active { transform: translateY(1px); box-shadow: none; }
+
+/* ---------- подтверждение (свой модал вместо window.confirm) ---------- */
+
+.ask-card {
+  max-width: 340px;
+  max-height: min(88dvh, 680px);
+  overflow-y: auto;
+}
+
+#ask { z-index: 20; }
+
+.ask-card .overlay__text {
+  white-space: pre-line;
+}
+
+.ask-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* главная кнопка не ниже 52px, отмена — не ниже 40px */
+.ask-card__ok {
+  min-height: 52px;
+}
+
+.ask-card__cancel {
+  min-height: 44px;
+  margin-top: 0;
+}
+
+/* ---------- опыт игрока и достижения ---------- */
+
+.player-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 140px;
+  padding: 4px 7px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.5), 0 3px 0 var(--ui-dark-2);
+}
+
+.player-badge > b {
+  width: 26px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: #3d2500;
+  font-size: .78rem;
+  font-weight: 900;
+}
+
+.player-badge__body { flex: 1 1 auto; min-width: 0; }
+.player-badge__body > span:first-child {
+  display: block;
+  font-size: .48rem;
+  font-weight: 800;
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+.player-badge__track {
+  display: block;
+  height: 5px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: rgba(70,45,15,.28);
+  overflow: hidden;
+}
+.player-badge__track i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+}
+
+.ach-btn {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.5), 0 3px 0 var(--ui-dark-2);
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.achievements {
+  max-width: 520px;
+  max-height: min(86dvh, 620px);
+  display: flex;
+  flex-direction: column;
+}
+
+.ach-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px;
+}
+
+.ach-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  padding: 7px 8px;
+  border: 2px solid rgba(61,42,23,.28);
+  border-radius: 10px;
+  background: rgba(255,255,255,.35);
+}
+
+.ach-row.is-done { opacity: .5; }
+.ach-row__name { font-size: .72rem; font-weight: 900; color: var(--ui-text); }
+.ach-row__desc { font-size: .56rem; color: var(--ui-muted); }
+.ach-row__track {
+  grid-column: 1 / 2;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(70,45,15,.2);
+  overflow: hidden;
+}
+.ach-row__track i {
+  display: block;
+  height: 100%;
+  width: 0;
+}
+.ach-row__prog { font-size: .54rem; font-weight: 800; color: var(--ui-muted); }
+.ach-row__claim {
+  grid-row: 1 / 3;
+  grid-column: 2 / 3;
+  align-self: center;
+  min-width: 78px;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 2px solid #2f6423;
+  border-radius: 9px;
+  color: #fff;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.ach-row__claim:disabled { opacity: .45; cursor: default; filter: grayscale(.5); }
+.ach-footer { margin: 8px 0 0; text-align: center; font-size: .65rem; font-weight: 800; color: var(--ui-muted); }
+
+@media (max-height: 420px) {
+  .player-badge { width: 128px; }
+}
+
+/* ---------- экран выбора уровня ---------- */
+
+.levels {
+  max-width: 620px;
+  max-height: min(88dvh, 680px);
+  display: flex;
+  flex-direction: column;
+}
+
+.levels__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.levels__hint {
+  margin: 0 0 10px;
+  font-size: .7rem;
+  line-height: 1.35;
+  color: var(--ui-muted);
+}
+
+.levels__grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+  padding: 3px;
+}
+
+.level-card {
+  min-height: 48px;
+  padding: 4px 2px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 10px;
+  color: var(--ui-text);
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.level-card__num {
+  font-size: .78rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.level-card__th {
+  font-size: .48rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ui-muted);
+}
+
+.level-card__stars {
+  font-size: .52rem;
+  line-height: 1;
+  color: var(--ui-gold-2);
+  letter-spacing: .02em;
+}
+
+.level-card.is-cleared {
+}
+
+.level-card.is-active {
+  border-color: #2f6423;
+  box-shadow: 0 0 0 2px rgba(99, 168, 78, .35);
+}
+
+.level-card.is-locked {
+  opacity: .45;
+  filter: grayscale(.7);
+  cursor: default;
+}
+
+.levels__x {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--hud-line);
+  border-radius: 10px;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .levels__grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+/* ---------- карта кампании ---------- */
+/* Классы для художника:
+   .map                — сетка эпох (вертикальный список)
+   .map-era            — секция эпохи (is-complete — все узлы открыты)
+   .map-era__head      — заголовок эпохи и сумма звёзд
+   .map-era__track     — дорожка узлов с линиями пути
+   .map-node           — узел: --cleared / --current / --locked / --open
+   .map-node__num      — номер узла
+   .map-node__stars    — звёзды пройденного
+   .map-node__lock     — замок закрытого
+   .map-link           — отрезок пути между узлами
+   .map-card           — карточка выбранного уровня */
+
+.map-wrap {
+  width: min(760px, calc(100vw - 24px));
+  max-height: min(94dvh, 720px);
+  padding-bottom: 8px;
+}
+
+.map-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 3px 6px;
+  overscroll-behavior: contain;
+}
+
+.map {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: visible;
+  padding: 0;
+}
+
+.map-era {
+  padding: 7px 8px 8px;
+  border: 1px solid rgba(70, 55, 30, .28);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 235, .75), rgba(238, 226, 200, .5));
+}
+
+.map-era.is-complete {
+  border-color: rgba(58, 112, 40, .55);
+  box-shadow: inset 0 0 0 1px rgba(99, 168, 78, .18);
+}
+
+.map-era__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.map-era__name {
+  font-size: .72rem;
+  font-weight: 900;
+  color: #4a3418;
+  letter-spacing: .02em;
+}
+
+.map-era__stars {
+  font-size: .6rem;
+  font-weight: 900;
+  color: #7a5a12;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.map-era__track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 1px 4px;
+  scrollbar-width: thin;
+}
+
+.map-link {
+  flex: 1 1 10px;
+  min-width: 8px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(122, 98, 55, .55), rgba(122, 98, 55, .3));
+}
+
+.map-node {
+  position: relative;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  padding: 2px 1px;
+  border: 2px solid #7c6a4a;
+  border-radius: 50%;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  font: inherit;
+  color: #3a2812;
+  background: linear-gradient(180deg, #fff8e8, #e8d8b6);
+  box-shadow: 0 2px 0 rgba(70, 50, 20, .28);
+  cursor: pointer;
+}
+
+.map-node__num {
+  font-size: .72rem;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-node__stars {
+  font-size: .46rem;
+  line-height: 1;
+  letter-spacing: .01em;
+  color: #a57612;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.map-node__lock {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #5c5346;
+  color: #f2e9d5;
+  font-size: .56rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+
+.map-node--cleared {
+  border-color: #3d7a2d;
+  background: linear-gradient(180deg, #e9ffd9, #b8dda2);
+}
+
+.map-node--current,
+.map-node--open {
+  border-color: #b57a12;
+  background: linear-gradient(180deg, #fff4c8, #f2cf74);
+}
+
+.map-node--locked {
+  opacity: .55;
+  filter: grayscale(.7);
+}
+
+.map-node.is-selected {
+  outline: 3px solid rgba(52, 102, 180, .7);
+  outline-offset: 2px;
+}
+
+.map-node--current {
+  animation: mapPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes mapPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(190, 130, 20, .45), 0 2px 0 rgba(70, 50, 20, .28); }
+  50% { box-shadow: 0 0 0 7px rgba(190, 130, 20, 0), 0 2px 0 rgba(70, 50, 20, .28); }
+}
+
+.map-card {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 2px solid #6f5a38;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff8e7, #ead9b7);
+  color: #37260f;
+}
+
+.map-card.hidden { display: none; }
+
+.map-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  grid-column: 1 / 2;
+}
+
+.map-card__name {
+  font-size: .8rem;
+  font-weight: 900;
+}
+
+.map-card__th {
+  font-size: .58rem;
+  font-weight: 800;
+  color: #765a29;
+}
+
+.map-card__loot,
+.map-card__best {
+  grid-column: 1 / 2;
+  margin: 0;
+  font-size: .62rem;
+  line-height: 1.25;
+  color: #5a431e;
+}
+
+.map-card__best { color: #8a6514; font-weight: 800; }
+
+.map-card__go {
+  grid-column: 2 / 3;
+  grid-row: 1 / 4;
+  min-width: 116px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px solid #2f6423;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #76c25a, #3d8a2a);
+  color: #fff;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 900;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.map-card__go:disabled {
+  border-color: #7b6d57;
+  background: linear-gradient(180deg, #cdc2ae, #9f937e);
+  color: #4d4232;
+  text-shadow: none;
+  cursor: default;
+}
+
+.map-card.is-locked { border-color: #8b7d66; }
+
+@media (max-width: 520px) {
+  .map-card { grid-template-columns: 1fr; }
+  .map-card__go { grid-column: 1 / 2; grid-row: auto; width: 100%; }
+  .map-era { padding: 6px 6px 7px; }
+}
+
+.is-compact .map-wrap {
+  max-height: calc(100dvh - 8px);
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.is-compact .levels__hint { margin-bottom: 6px; font-size: .62rem; }
+.is-compact .map-era { padding: 5px 6px 6px; }
+.is-compact .map-era__head { margin-bottom: 4px; }
+.is-compact .map-node { flex-basis: 42px; width: 42px; height: 42px; }
+.is-compact .map-card { margin-top: 4px; padding: 6px 8px; }
+.is-compact .map-card__go { min-height: 40px; }
+
+/* ---------- повторы набегов ---------- */
+
+.replay-chip {
+  color: #3a2812;
+}
+
+[data-mode="battle"] .replay-chip { display: none; }
+
+.replays-card {
+  width: min(430px, calc(100vw - 24px));
+  max-height: min(88dvh, 560px);
+  display: flex;
+  flex-direction: column;
+}
+
+.replay-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.replay-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(70, 55, 30, .3);
+  border-radius: 12px;
+  background: rgba(255, 250, 236, .75);
+}
+
+.replay-row__main {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.replay-row__attacker {
+  font-size: .7rem;
+  font-weight: 900;
+  color: #3e2c12;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replay-row__date {
+  flex: 0 0 auto;
+  font-size: .56rem;
+  color: #7a6747;
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-row__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  grid-column: 1 / 2;
+  font-size: .58rem;
+  color: #5c4826;
+}
+
+.replay-row__pct { font-weight: 900; }
+.replay-row__stars { color: #a57612; letter-spacing: .02em; }
+.replay-row__loot { color: #4a6b2e; font-weight: 800; }
+
+.replay-row__btn {
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
+  min-width: 88px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 2px solid #2f6423;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #76c25a, #3d8a2a);
+  color: #fff;
+  font: inherit;
+  font-size: .64rem;
+  font-weight: 900;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.replays-empty {
+  margin: 8px 0 2px;
+  font-size: .72rem;
+  font-weight: 800;
+  color: var(--ui-muted);
+  text-align: center;
+}
+
+.replays-empty.hidden { display: none; }
+
+.replay-banner {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  transform: translateX(-50%);
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 12px);
+  padding: 5px 7px;
+  border: 2px solid #5c3a1c;
+  border-radius: 14px;
+  background: rgba(48, 29, 14, .92);
+  color: #ffe9c2;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, .35);
+}
+
+.replay-banner.hidden { display: none; }
+
+.replay-banner__title {
+  font-size: .68rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.replay-banner__speed {
+  display: flex;
+  gap: 3px;
+}
+
+.replay-banner__btn,
+.replay-banner__close {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid #8c6a3c;
+  border-radius: 10px;
+  background: #6e4a25;
+  color: #ffe9c2;
+  font: inherit;
+  font-size: .64rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.replay-banner__btn.is-active {
+  background: #b47a1e;
+  border-color: #f0bd55;
+  color: #241506;
+}
+
+.replay-banner__close {
+  background: #8f3c2c;
+  border-color: #d9876f;
+}
+
+/* В просмотре нет армии, терминала и подсказок — только бой и плашка. */
+.is-replay .hud-tl,
+.is-replay .hud-tc,
+.is-replay .resbar,
+.is-replay .bottom-bar,
+.is-replay .army,
+.is-replay .battle-intro,
+.is-replay .tip,
+.is-replay .quest-bar,
+.is-replay .zoom {
+  display: none !important;
+}
+
+.is-compact .replay-banner {
+  top: calc(env(safe-area-inset-top, 0px) + 4px);
+  gap: 4px;
+  padding: 3px 5px;
+}
+
+.is-compact .replay-banner__title { font-size: .58rem; }
+.is-compact .replay-banner__btn,
+.is-compact .replay-banner__close { min-height: 40px; }
+
+/* ---------- тост ---------- */
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 120px;
+  transform: translate(-50%, 10px);
+  max-width: calc(100% - 24px);
+  padding: 9px 16px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 999px;
+  background: rgba(48, 33, 16, .94);
+  color: #ffe9b8;
+  font-size: .76rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity .2s, transform .2s;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- иконки сбора над бурами и реакторами ---------- */
+
+/* Слой не ловит клики: кнопки внутри включают pointer-events сами,
+   поэтому тап мимо иконки по-прежнему работает по полю. */
+.collect-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.collect {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ui-text);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: .35;
+  transition: opacity .25s linear;
+}
+
+.collect:active { transform: translate(-50%, -50%) translateY(1px); }
+
+/* Видимая часть — только круглая иконка ресурса. Размер задаётся из ui.js
+   по зуму камеры (26–40 px), хитбокс кнопки остаётся 40×40. */
+.collect__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid rgba(50, 30, 10, .55);
+  box-shadow:
+    inset 0 -3px 5px rgba(0, 0, 0, .25),
+    inset 0 2px 3px rgba(255, 255, 255, .35),
+    0 2px 5px rgba(20, 12, 4, .4);
+  font-size: 18px;
+  line-height: 1;
+  transition: width .12s linear, height .12s linear, font-size .12s linear;
+}
+
+.collect[data-res="elixir"] .collect__icon {
+  border-color: rgba(79, 33, 99, .65);
+  box-shadow:
+    inset 0 -3px 5px rgba(30, 0, 45, .3),
+    inset 0 2px 3px rgba(255, 255, 255, .35),
+    0 2px 5px rgba(30, 12, 40, .4);
+}
+
+/* Число — мелкая подпись без фона: визуально иконка не превращается
+   в плашку, хитбокс от неё не растёт. */
+.collect__count {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff6d8;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .9),
+    0 0 3px rgba(0, 0, 0, .8);
+  pointer-events: none;
+}
+
+/* Полный накопитель заметнее: тонкая золотая обводка и пульсация.
+   Размер иконки не меняется, поэтому база не «прыгает». */
+.collect.is-full .collect__icon {
+  border-color: #ffe27a;
+  box-shadow:
+    inset 0 -3px 5px rgba(0, 0, 0, .22),
+    inset 0 2px 3px rgba(255, 255, 255, .45),
+    0 0 0 2px rgba(255, 210, 80, .6),
+    0 2px 6px rgba(20, 12, 4, .4);
+  animation: collect-pulse 1.6s ease-in-out infinite;
+}
+
+.collect.is-full .collect__count { color: #ffe27a; }
+
+@keyframes collect-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 -3px 5px rgba(0, 0, 0, .22),
+      inset 0 2px 3px rgba(255, 255, 255, .45),
+      0 0 0 2px rgba(255, 210, 80, .6),
+      0 2px 6px rgba(20, 12, 4, .4);
+  }
+  50% {
+    box-shadow:
+      inset 0 -3px 5px rgba(0, 0, 0, .22),
+      inset 0 2px 3px rgba(255, 255, 255, .45),
+      0 0 0 5px rgba(255, 210, 80, .12),
+      0 2px 6px rgba(20, 12, 4, .4);
+  }
+}
+
+/* ---------- полёт ресурса к панели при сборе ---------- */
+
+/* Слой только для частиц: не ловит клики и не влияет на раскладку. */
+.collect-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Частица живёт в своём translate3d: старт, дуга, финиш. Ни left/top,
+   ни размеры не анимируются, поэтому кадры не вызывают reflow. */
+.collect-fx__p {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: collect-fx-fly var(--dur, 420ms) cubic-bezier(.2, .7, .3, 1) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+.collect-fx__p_gold {
+  border-radius: 3px;
+  background: linear-gradient(135deg, #ffe9a0, #f0b93a 55%, #b97a12);
+  box-shadow: 0 0 6px rgba(255, 205, 80, .7);
+}
+
+.collect-fx__p_elixir {
+  border-radius: 2px;
+  background: linear-gradient(135deg, #f4d3ff, #c06ee8 55%, #7d2fa8);
+  box-shadow: 0 0 6px rgba(205, 120, 255, .75);
+  clip-path: polygon(58% 0, 24% 48%, 47% 48%, 35% 100%, 78% 40%, 54% 40%);
+}
+
+@keyframes collect-fx-fly {
+  0% {
+    transform: translate3d(var(--sx, 0), var(--sy, 0), 0) scale(.55);
+    opacity: 0;
+  }
+  14% { opacity: 1; }
+  58% {
+    transform: translate3d(var(--mx, 0), var(--my, 0), 0) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--ex, 0), var(--ey, 0), 0) scale(.3);
+    opacity: 0;
+  }
+}
+
+/* ---------- пульс значения после прилёта ---------- */
+
+.res-panel { position: relative; }
+
+.res-panel__value.is-gain {
+  transform-origin: left center;
+  animation: res-gain-pop .58s ease-out both;
+}
+
+.res-gain {
+  position: absolute;
+  right: 7px;
+  top: 3px;
+  z-index: 1;
+  color: #ffd76a;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .65);
+  pointer-events: none;
+  animation: res-gain-float .78s ease-out both;
+}
+
+.res-gain_elixir { color: #dfaaff; }
+
+@keyframes res-gain-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); }
+  100% { transform: scale(1); }
+}
+
+@keyframes res-gain-float {
+  0% { opacity: 0; transform: translateY(5px); }
+  22% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-14px); }
+}
+
+/* ---------- узкие экраны ---------- */
+
+.is-narrow .resbar { width: 150px; }
+.is-narrow .res-panel__value { font-size: .84rem; }
+.is-narrow .res-panel__cap { font-size: .5rem; }
+.is-narrow .res-panel__icon { flex-basis: 22px; width: 22px; height: 22px; }
+.is-narrow .hud { right: 166px; }
+.is-narrow .palette, .is-narrow .army { right: 142px; }
+.is-narrow .card, .is-narrow .troop { flex-basis: 68px; min-height: 72px; }
+.is-narrow .card__name, .is-narrow .troop__name { font-size: .54rem; max-width: 62px; }
+
+.is-wide .resbar { width: 150px; }
+.is-wide .hud { right: 166px; }
+.is-wide .res-panel__value { font-size: 1rem; }
+.is-wide .palette, .is-wide .army { right: 170px; }
+.is-wide .card, .is-wide .troop { flex-basis: 80px; min-height: 82px; }
+.is-wide .card__icon { font-size: 1.4rem; }
+.is-wide .card__name, .is-wide .troop__name { font-size: .62rem; max-width: 72px; }
+
+/* ---------- ландшафт: HUD жмётся к углам, поле шире ---------- */
+
+/* Слева сверху опыт, кампания и звук в строку — экономим высоту на телефоне лёжа */
+.is-landscape .hud-tl {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: calc(50% - 50px);
+}
+
+/* На узком ландшафте верхний левый блок переносится в несколько строк,
+   чтобы не залезать на центральный HUD и панель ресурсов. */
+@media (max-width: 560px) {
+  .is-landscape .hud-tl {
+    max-width: 41%;
+  }
+  /* На телефоне панель строителей уходит к правому краю: 56 px для
+     неё там слишком дороги. */
+  .bpanel { right: 8px; }
+}
+
+/* На низких экранах (телефон лёжа) элементы чуть компактнее,
+   но все кнопки остаются не меньше 40 px. */
+.is-short .resbar { gap: 4px; }
+.is-short .res-panel__in { padding: 3px 5px; }
+
+/* На широком мониторе палитра не растягивается на полэкрана: карточки
+   идут от левого края, боевая кнопка — у правого. */
+.is-wide .palette,
+.is-wide .army { padding-left: 12px; }
+
+.is-landscape .palette,
+.is-landscape .army { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); }
+
+/* ---------- нижняя панель: Постройки, Терминал, В бой ---------- */
+
+/* Три кнопки в один ряд. На 320 px они сжимаются поровну, высота и
+   площадь нажатия не меняются. */
+.bottom-bar {
+  position: absolute;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 6;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: min(396px, calc(100% - 16px));
+}
+
+.bottom-bar .shop-btn,
+.bottom-bar .battle-btn {
+  position: static;
+  right: auto;
+  bottom: auto;
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bottom-bar .shop-btn {
+  font-size: clamp(.64rem, 2.4vw, .92rem);
+}
+
+.bottom-bar .battle-btn {
+  font-size: clamp(.76rem, 2.8vw, 1.02rem);
+}
+
+.shop-btn_mode {
+  min-height: 60px;
+  border-color: #1f4a5a;
+  color: #0d3240;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    inset 0 -3px 0 rgba(20, 70, 90, .25),
+    0 5px 0 #22596d,
+    0 8px 13px rgba(10, 30, 40, .3);
+  text-shadow: none;
+}
+
+.shop-btn_mode.is-active {
+  border-color: #2f6423;
+  color: #fff;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .5),
+    inset 0 -3px 0 rgba(30, 80, 20, .3),
+    0 5px 0 #2c5a22,
+    0 8px 13px rgba(30, 50, 20, .28);
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+/* одна строка-напоминание в режиме построек, над нижней панелью */
+.build-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: calc(100% - 16px);
+  padding: 4px 10px;
+  border: 2px solid var(--ui-dark);
+  border-radius: 999px;
+  background: rgba(44, 30, 14, .88);
+  color: #ffe9b8;
+  font-size: clamp(.54rem, 2.1vw, .7rem);
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.is-landscape .build-hint {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 78px);
+}
+
+[data-mode="battle"] .build-hint { display: none; }
+
+/* в бою из нижней панели остаётся только большая кнопка */
+[data-mode="battle"] .bottom-bar { width: 132px; }
+
+/* ---------- компактный HUD: телефон лёжа, высота ≤ 430 px ----------
+   Одна строка сверху, короткие ресурсы без «из N», низкая нижняя панель.
+   Поле в центре остаётся свободным: подсказка не дублирует задание. */
+
+.is-compact .hud-tl {
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  left: 6px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100% - 156px);
+}
+
+.is-compact .player-badge {
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.is-compact .player-badge > b {
+  width: 22px;
+  height: 26px;
+  font-size: .72rem;
+}
+
+/* Длинную шкалу опыта в компактном режиме не показываем. */
+.is-compact .player-badge__body { display: none; }
+
+.is-compact .campaign-chip {
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: .58rem;
+}
+
+.is-compact .sound-btn,
+.is-compact .ach-btn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+}
+
+.is-compact .volume { display: none; }
+
+.is-compact .resbar {
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  right: 6px;
+  width: 150px;
+  gap: 3px;
+}
+
+/* Под ресурсами и «Собрать всё», иначе панель накрывает колонку. */
+.is-compact .bpanel {
+  top: calc(env(safe-area-inset-top, 0px) + 172px);
+  max-height: 156px;
+  gap: 2px;
+  padding: 5px;
+}
+
+/* Список сжимается под кнопку найма, а не вылезает за нижнюю панель. */
+.is-compact .bpanel__list { max-height: none; min-height: 48px; }
+.is-compact .brow { padding: 2px 6px; font-size: .635rem; }
+.is-compact .brow__hint { margin-top: 0; font-size: .54rem; }
+.is-compact .bpanel__hire { min-height: 40px; }
+
+/* Когда покупка доступна, в компакте прячем строку «свободно»:
+   занятость и так видна в шапке 0/1, а следующая бригада должна быть целиком. */
+.is-compact .bpanel.is-hireable .brow_free { display: none; }
+
+.is-compact .res-panel__in {
+  padding: 2px 4px;
+  gap: 4px;
+}
+
+.is-compact .res-panel__icon {
+  flex-basis: 20px;
+  width: 20px;
+  height: 20px;
+  font-size: .66rem;
+}
+
+.is-compact .res-panel__value { font-size: .8rem; }
+
+/* На коротком экране «из N» и полоски убираем: остаются только числа. */
+.is-compact .res-panel__cap,
+.is-compact .res-panel__track { display: none; }
+
+/* Подсказка онбординга дублировала полоску задания и закрывала базу. */
+.is-compact[data-mode="base"] .tip { display: none !important; }
+
+.is-compact[data-mode="battle"] .tip {
+  display: none;
+}
+
+.is-compact[data-mode="battle"] .battle-intro {
+  top: calc(env(safe-area-inset-top, 0px) + 104px);
+  max-width: 70%;
+  font-size: .6rem;
+}
+
+/* Зум-кнопки на телефоне не нужны: есть пинч и двойной тап. */
+.is-compact .zoom { display: none; }
+
+.is-compact .bottom-bar {
+  left: auto;
+  right: 6px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+  width: min(560px, calc(100% - 12px));
+  gap: 5px;
+}
+
+.is-compact .bottom-bar .shop-btn,
+.is-compact .bottom-bar .battle-btn {
+  min-height: 52px;
+  height: 52px;
+  padding: 0 5px;
+}
+
+.is-compact .bottom-bar .battle-btn { min-height: 52px; }
+.is-compact .bottom-bar .shop-btn__ico { display: none; }
+
+/* В бою из нижней панели остаётся одна кнопка, а не растянутая четвёрка. */
+.is-compact[data-mode="battle"] .bottom-bar { width: 132px; }
+
+/* Полоска задания — не больше 45% ширины и в одну строку. */
+.is-compact[data-mode="base"] .quest-bar {
+  left: 6px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
+  width: min(260px, calc(45% - 2px));
+  min-height: 40px;
+  padding: 0 8px;
+}
+
+.is-compact .quest-bar__text,
+.is-compact .quest-bar__progress { white-space: nowrap; }
+
+.is-compact .build-hint { bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+
+/* ---------- арена: локальный PvP ---------- */
+
+.shop-btn_arena {
+  border-color: #4f2163;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .4),
+    inset 0 -3px 0 rgba(60, 15, 80, .28),
+    0 5px 0 #4f2163,
+    0 8px 13px rgba(40, 10, 55, .3);
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(60, 15, 80, .45);
+}
+
+/* Четыре кнопки в нижней панели на 320 px: эмодзи у терминала прячем,
+   чтобы подпись не обрезалась, а высота нажатия остаётся прежней. */
+@media (max-width: 380px) {
+  .bottom-bar { gap: 6px; }
+  .bottom-bar .shop-btn,
+  .bottom-bar .battle-btn { padding: 0 4px; }
+  .bottom-bar .shop-btn__ico { display: none; }
+}
+
+/* На средних и широких экранах панели даём больше места: четыре подписи
+   должны влезать целиком, а не превращаться в «Постро…» и «Тер…». */
+@media (min-width: 560px) {
+  .bottom-bar { width: min(560px, calc(100% - 16px)); }
+}
+
+.bottom-bar .shop-btn_arena {
+  font-size: clamp(.64rem, 2.4vw, .92rem);
+}
+
+.arena {
+  max-width: 620px;
+  max-height: min(88dvh, 660px);
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.arena__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.arena__stat {
+  flex: 1 1 96px;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 9px;
+  border: 1px solid rgba(127, 233, 255, .22);
+  border-radius: 10px;
+  background: rgba(10, 20, 24, .55);
+  min-width: 0;
+}
+
+.arena__stat span {
+  font-size: .5rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #93a9ae;
+  white-space: nowrap;
+}
+
+.arena__stat b {
+  font-size: .94rem;
+  font-weight: 900;
+  color: #eafcff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 10px rgba(70, 224, 200, .22);
+}
+
+.arena__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  padding: 2px;
+  scrollbar-width: none;
+}
+
+.arena__list::-webkit-scrollbar { display: none; }
+
+.arena-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 2px solid #3a5a64;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(127, 233, 255, .16),
+    inset 0 0 0 1px rgba(70, 224, 200, .1),
+    0 3px 0 #0c1519,
+    0 4px 10px rgba(5, 10, 12, .35);
+}
+
+.arena-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.arena-card__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: .72rem;
+  font-weight: 900;
+  color: #eafcff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arena-card__rating {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid rgba(127, 233, 255, .25);
+  border-radius: 999px;
+  background: rgba(70, 224, 200, .12);
+  color: #7fe9ff;
+  font-size: .58rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.arena-card__meta {
+  font-size: .6rem;
+  font-weight: 700;
+  color: #93a9ae;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arena-card__loot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: .62rem;
+  font-weight: 900;
+  color: #ffcf4a;
+  font-variant-numeric: tabular-nums;
+}
+
+.arena-card__loot span:last-child { color: #d6a6ff; }
+
+.arena-card__btn {
+  margin-top: 2px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 2px solid #2f6423;
+  border-radius: 10px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .45),
+    0 3px 0 #2c5a22;
+  color: #fff;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 900;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+  cursor: pointer;
+}
+
+.arena-card__btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #2c5a22; }
+
+.arena-card__btn:disabled {
+  border-color: #8f8168;
+  box-shadow: none;
+  color: #81745e;
+  text-shadow: none;
+  cursor: default;
+}
+
+.arena__note {
+  margin: 6px 0 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: #fdeccb;
+  border: 1px solid #d6a65a;
+  color: #8f5d08;
+  font-size: .66rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.arena__note.hidden { display: none; }
+
+.arena__find {
+  flex: 0 0 auto;
+  margin-top: 8px;
+  min-height: 44px;
+}
+
+@media (max-width: 420px) {
+  .arena { padding: 14px 12px; }
+  .arena__stat { flex-basis: 76px; }
+  .arena-card__name { font-size: .68rem; }
+}
+
+/* ---------- контракт дня, перемирие и «Собрать всё» ---------- */
+
+.daily-chip {
+  min-height: 40px;
+  border-color: #3b2457;
+  color: #2f1846;
+}
+
+.daily-chip.is-ready {
+  border-color: #2f6423;
+  color: #10300a;
+  animation: dailyPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dailyPulse {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* Кнопка «Собрать всё» под панелью ресурсов: не раздувает HUD и не
+   перекрывает базу — стоит в той же правой колонке. */
+.collect-all {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 168px);
+  right: 8px;
+  z-index: 6;
+  width: 150px;
+  min-height: 40px;
+  padding: 0 6px;
+  border-radius: 12px;
+  color: #3a2812;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 900;
+  line-height: 1.05;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.collect-all.hidden { display: none; }
+
+.collect-all.is-full {
+  color: #7d530a;
+}
+
+.collect-all:active { transform: translateY(2px); }
+
+[data-mode="battle"] .collect-all { display: none; }
+
+.is-wide .collect-all { width: 150px; }
+.is-narrow .collect-all { width: 150px; }
+
+/* Компактная шапка на 844×390 держит панель ресурсов 150 px — кнопка
+   под ней повторяет её ширину. Правило идёт последним, чтобы победить
+   .is-wide у телефона лёжа. */
+.is-compact .collect-all {
+  top: calc(env(safe-area-inset-top, 0px) + 126px);
+  right: 6px;
+  width: 150px;
+  min-height: 40px;
+  font-size: .56rem;
+}
+
+/* Перемирие после набега: компактная строка в верхней зоне. */
+.truce-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 2px solid #24401c;
+  border-radius: 999px;
+  background: rgba(47, 90, 37, .9);
+  color: #e9ffd9;
+  font-size: .56rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.truce-chip.hidden { display: none; }
+
+[data-mode="battle"] .truce-chip { display: none; }
+
+/* Причина звёзд в окне результата. */
+.overlay__reason {
+  margin: -6px 0 10px;
+  font-size: .7rem;
+  font-weight: 800;
+  color: #a5352a;
+}
+
+.overlay__reason.is-win { color: #2f7a22; }
+
+/* Строка прогресса ежедневного контракта в окне результата. */
+.overlay__daily {
+  margin: -8px 0 10px;
+  font-size: .66rem;
+  font-weight: 800;
+  color: #7c3f9c;
+}
+
+.overlay__daily.hidden { display: none; }
+
+.daily-card {
+  max-width: 360px;
+  max-height: calc(100% - 12px);
+  overflow-y: auto;
+}
+
+.daily-card__stars {
+  margin: 4px 0 8px;
+  font-size: 1.7rem;
+  letter-spacing: .2em;
+  color: var(--ui-gold);
+  text-shadow: 0 2px 0 rgba(140, 90, 10, .3);
+}
+
+/* На телефоне лёжа окно контракта должно влезать целиком, без прокрутки. */
+.is-compact .daily-card {
+  padding: 12px 14px 10px;
+}
+
+.is-compact .daily-card .overlay__title {
+  margin: 0 0 2px;
+  font-size: 1.05rem;
+}
+
+.is-compact .daily-card__stars {
+  margin: 0 0 4px;
+  font-size: 1.35rem;
+}
+
+.is-compact .daily-card .overlay__text,
+.is-compact .daily-card .overlay__loot,
+.is-compact .daily-card .overlay__hint {
+  margin: 0 0 6px;
+  font-size: .66rem;
+}
+
+.is-compact .daily-card .overlay__btn {
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 8px 10px;
+}
+
+/* Окно результата: на 844×390 три звезды, причина и контракт не должны
+   выталкивать кнопки за экран. */
+.result-card {
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+}
+
+.is-compact .result-card {
+  padding: 14px 16px 12px;
+}
+
+.is-compact .result-card .overlay__stars {
+  height: auto;
+  margin-bottom: 2px;
+  font-size: 1.5rem;
+}
+
+.is-compact .result-card .overlay__title {
+  margin: 2px 0;
+  font-size: 1.15rem;
+}
+
+.is-compact .result-card .overlay__reason,
+.is-compact .result-card .overlay__text,
+.is-compact .result-card .overlay__daily,
+.is-compact .result-card .overlay__loot,
+.is-compact .result-card .overlay__army,
+.is-compact .result-card .overlay__lost,
+.is-compact .result-card .overlay__hint {
+  margin: 0 0 6px;
+  font-size: .68rem;
+}
+
+.is-compact .result-card .overlay__btn {
+  min-height: 44px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+}
+
+/* ---------- reduced motion: без полётов и вспышек ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay__stars .star,
+  .overlay__stars .star::after,
+  .res-panel__value.is-gain,
+  .res-gain,
+  .collect-fx__p,
+  .collect.is-full .collect__icon {
+    animation: none !important;
+  }
+
+  /* Звёзды сразу видны: победное окно не «оживает» по кадрам. */
+  .overlay__stars .star {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+
+  /* Частицы не создаются из JS; правило — страховка для старых вкладок. */
+  .collect-fx__p { display: none; }
+
+  .res-gain { opacity: 1; }
+}
+
+/* ---------- заставка «Колония»: canvas + титул + пропуск ----------
+   Сцену целиком рисует CC.Render.drawIntro на #intro-canvas.
+   ui.css отвечает только за слой canvas, появление титула и фейды,
+   а длительности приходят из CC.INTRO через переменные --intro-*. */
+
+.intro__canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #05070d;
+}
+
+/* Старый подстрочник из style.css больше не нужен: текст есть в разметке. */
+.intro__title::before { content: none; }
+
+.intro__title-main,
+.intro__title-sub { display: block; }
+
+.intro__title-sub {
+  margin: 0 0 .95em;
+  font-size: clamp(8px, 1.55vmin, 13px);
+  font-weight: 600;
+  letter-spacing: .46em;
+  color: #a9bcc1;
+  text-shadow: 0 0 10px rgba(110, 230, 220, .3);
+}
+
+/* Титул появляется вместе с фазой reveal и держится до конца сцены. */
+.intro.is-reveal .intro__title {
+  animation: introTitleIn var(--intro-reveal, 1200ms) cubic-bezier(.2, .7, .25, 1) both;
+}
+
+.intro.is-title .intro__title {
+  animation: introTitleOut var(--intro-title, 800ms) cubic-bezier(.2, .7, .25, 1) both;
+}
+
+@keyframes introTitleIn {
+  0% { opacity: 0; transform: translate(-50%, -44%) scale(.96); }
+  35% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes introTitleOut {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  65% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -52%) scale(1.02); }
+}
+
+/* reduced-motion: сцена не анимируется, только короткий фейд оверлея. */
+.intro.is-reduced {
+  animation: introReducedFade var(--intro-reduced, 400ms) linear both;
+}
+
+.intro.is-reduced .intro__title {
+  opacity: 1;
+  animation: none;
+}
+
+@keyframes introReducedFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Пропуск и галочка «Пропустить в следующий раз» — одна группа
+   в правом верхнем углу. Хит-зона галочки — вся подпись, не ниже 44px. */
+.intro__actions {
+  position: absolute;
+  top: auto;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+}
+
+.intro__actions .intro__skip {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+}
+
+/* style.css ставит галочку отдельно в правый нижний угол; возвращаем её
+   в общую группу к «Пропустить», чтобы элементы стояли рядом. */
+#intro .intro__actions .intro__opt {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: auto;
+}
+
+.intro__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid rgba(70, 224, 200, .32);
+  border-radius: 10px;
+  background: rgba(10, 16, 20, .78);
+  color: #dbeceb;
+  font-family: var(--hud-font, "Segoe UI", system-ui, sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .55);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.intro__opt-input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #46e0c8;
+  cursor: pointer;
+}
+
+.intro__opt-text { white-space: nowrap; }
+
+.intro__opt:focus-within {
+  outline: 2px solid #ffcf4a;
+  outline-offset: 3px;
+}
+
+/* Кнопка пропуска: не ниже 44px, палец должен попадать без прицела. */
+.intro__skip { min-height: 44px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .intro.is-reveal .intro__title,
+  .intro.is-title .intro__title {
+    opacity: 1;
+    animation: none;
+    transform: translate(-50%, -50%);
+  }
+
+  .intro__canvas { animation: none !important; }
+}
