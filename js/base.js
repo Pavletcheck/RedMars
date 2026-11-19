@@ -63,6 +63,9 @@ CC.Base = (function () {
   let nextId = 1;
   let occ = new Int16Array(G * G).fill(-1);
   let preview = null; // {id,x,y} — только для рендера, данные базы не меняет
+  // true — раскладка собрана из CC.LAYOUT (новый старт/сброс), false —
+  // прочитана из сейва. По этому флагу Game отличает новичка от старого сейва.
+  let fromSave = false;
 
   /* ---------- размеры и сетка ---------- */
 
@@ -151,8 +154,16 @@ CC.Base = (function () {
     if (!fits(type, x, y)) return { error: 'Здесь занято' };
 
     const now = Date.now();
-    const cost = CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 };
-    const time = CC.placeTime ? CC.placeTime(type) : 0;
+    // Обучение Сержанта: текущий шаг ставит только своё здание бесплатно
+    // и за 5 секунд. Любое другое здание — по обычной цене и времени.
+    const lesson = CC.Game && CC.Game.tutorialPlace
+      ? CC.Game.tutorialPlace(type) : null;
+    const cost = lesson
+      ? { gold: 0, elixir: 0 }
+      : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 });
+    const time = lesson
+      ? lesson.seconds
+      : (CC.placeTime ? CC.placeTime(type) : 0);
     const st = CC.Game && CC.Game.state ? CC.Game.state : null;
 
     // Постановка платная: проверяем ресурсы до всех изменений.
@@ -206,12 +217,16 @@ CC.Base = (function () {
         CC.Game.addStat('placed', 1);
         if (type === 'wall') CC.Game.addStat('wallsPlaced', 1);
       }
+      // Шаг обучения закрывается сразу после постановки, чтобы следующее
+      // такое же здание уже считалось обычной ценой.
+      if (CC.Game.checkQuests) CC.Game.checkQuests();
     }
     save();
     return {
       ok: true,
       id: it.id,
       spent: { gold: cost.gold, elixir: cost.elixir },
+      lesson: !!lesson,
       build: build
     };
   }
@@ -270,6 +285,7 @@ CC.Base = (function () {
     });
     nextId = items.length + 1;
     preview = null;
+    fromSave = false;
     rebuild();
   }
 
@@ -324,6 +340,7 @@ CC.Base = (function () {
 
     items = kept;
     preview = null;
+    fromSave = true;
     nextId = Math.max(maxId + 1, data.nextId | 0, kept.length + 1);
     rebuild();
   }
@@ -399,6 +416,10 @@ CC.Base = (function () {
     itemAt: itemAt,
     count: count,
     left: left,
+    fromSave: function () { return fromSave; },
+    isDefaultStart: function () {
+      return !fromSave && items.length === 1 && items[0].type === 'townhall';
+    },
     place: place,
     insert: insert,
     remove: remove,
@@ -428,18 +449,81 @@ CC.Game = (function () {
   };
   const MAX_TH = CC.MAX_TH || 10;
 
-  /* Цепочка онбординга. config.js не трогаем: там остались старые
-     определения для совместимости, а порядок шагов живёт здесь.
-     Бой стоит третьим шагом, чтобы игрок стрелял уже на второй минуте,
-     а не после трёх апгрейдов. Награда у всех шагов одинаковая. */
+  /* Цепочка обучения Сержанта. Каждый шаг — квест с наградой 1 платина
+     (GEMS.perQuest). Первые семь шагов ставят по одному зданию и получают
+     бесплатную постановку за 5 секунд, дальше — тренировка, бой, сектор и
+     два улучшения. Порядок менять нельзя: checkQuests ведёт строго сверху вниз.
+     Поле place — тип здания для бесплатной постановки, goal — проверка шага. */
   const QUESTS = [
-    { id: 'shop', text: 'Открой терминал сборки', reward: 200 },
-    { id: 'fill', text: 'Заполни армию', reward: 200 },
-    { id: 'level1', text: 'Пройди первый сектор', reward: 200 },
-    { id: 'th2', text: 'Улучши командный центр до 2 уровня', reward: 200, target: 2 },
-    { id: 'place2', text: 'Поставь вторую турель', reward: 200, target: 2 },
-    { id: 'cannon2', text: 'Улучши турель до 2 уровня', reward: 200, target: 2 }
+    {
+      id: 'placeCannon', text: 'Поставь турель',
+      hint: 'Первый рубеж. Бьёт по земле.', place: 'cannon'
+    },
+    {
+      id: 'placeArcher', text: 'Поставь лазерную башню',
+      hint: 'Дальше и сильнее турели.', place: 'archer'
+    },
+    {
+      id: 'placeGoldmine', text: 'Поставь бур',
+      hint: 'Копит руду в свой буфер; собирай тапом.', place: 'goldmine'
+    },
+    {
+      id: 'placeElixir', text: 'Поставь реактор',
+      hint: 'Даёт энергию.', place: 'elixir'
+    },
+    {
+      id: 'placeStorage', text: 'Поставь склад руды',
+      hint: 'Без него руда не хранится.', place: 'storage'
+    },
+    {
+      id: 'placeEstorage', text: 'Поставь склад энергии',
+      hint: 'Без него энергия не хранится.', place: 'estorage'
+    },
+    {
+      id: 'placeBarracks', text: 'Поставь ангар',
+      hint: 'Тренирует войска и даёт места в армии.', place: 'barracks'
+    },
+    {
+      id: 'train5', text: 'Натренируй 5 штурмовиков',
+      hint: 'Открой ангар, выбери штурмовика и жми «Нанять» или «×5». ' +
+        'Очередь тренировки идёт сама; на L1 ангара — 20 мест, энергия ' +
+        'списывается за каждого бойца.', goal: 'train', target: 5
+    },
+    {
+      id: 'battle', text: 'В бой',
+      hint: 'Выбери войско внизу и тапни по любой свободной клетке рядом ' +
+        'с базой. Цель — 50% построек, снос центра или 100% разрушения. ' +
+        'За победу дают звёзды и добычу.', goal: 'battle', target: 1
+    },
+    {
+      id: 'level1', text: 'Пройди первый сектор',
+      hint: 'Выбери войско внизу и тапни по свободной клетке рядом с базой. ' +
+        'Цель — 50% построек, снос центра или 100% разрушения. ' +
+        'Доведи бой до победы: за неё дают звёзды и добычу.',
+      goal: 'level1', target: 1
+    },
+    {
+      id: 'th2', text: 'Улучши командный центр до 2 уровня',
+      hint: 'Тапни по командному центру и нажми «Улучшить до ур. 2».',
+      goal: 'th2', target: 2
+    },
+    {
+      id: 'cannon2', text: 'Улучши турель до 2 уровня',
+      hint: 'Тапни по турели и нажми «Улучшить до ур. 2».',
+      goal: 'cannon2', target: 2
+    }
   ];
+  // Поля, с которых начинается миграция старых сейвов: старые id цепочки
+  // превращаются в выполненные шаги новой, прогресс не сбрасывается.
+  const QUEST_MIGRATION = {
+    shop: 'placeCannon',
+    place2: 'placeCannon',
+    fill: 'train5',
+    train: 'train5',
+    level1: 'level1',
+    th2: 'th2',
+    cannon2: 'cannon2'
+  };
   const ACHS = CC.ACHIEVEMENTS || [];
   const GEMS = CC.GEMS || {
     start: 50, perQuest: 1, perLevel: 1,
@@ -487,6 +571,7 @@ CC.Game = (function () {
   let st = fresh();
   let move = null; // активный перенос: меняем только превью, не Base
   let questRewardEvent = null;
+  let tutorialEvent = null;
   let levelUpEvent = 0;
   let pendingOffline = null;
   let noEstorageEvent = false;
@@ -527,6 +612,12 @@ CC.Game = (function () {
     return out;
   }
 
+  // Состояние обучения Сержанта. Новый сейв начинается с активным обучением,
+  // старый — с done=true (см. load()). cargo — первый груз 800/800 уже выдан.
+  function freshTutorial() {
+    return { done: false, skipped: false, cargo: false };
+  }
+
   function fresh() {
     return {
       gold: ECON.startGold,
@@ -546,6 +637,11 @@ CC.Game = (function () {
       trained: 0,
       shopOpened: false,
       questsDone: [],
+      // Обучение Сержанта: пока не пройдено и не пропущено, первые шаги
+      // ставятся бесплатно за 5 секунд. battleStarted — шаг «В бой» уже
+      // засчитан, чтобы возврат в деревню не откатывал прогресс.
+      tutorial: freshTutorial(),
+      battleStarted: false,
       levels: {},
       upgrades: {},
       // Идущие стройки: id → { startedAt, endAt, time }. Старый сейв без поля
@@ -892,31 +988,52 @@ CC.Game = (function () {
     capCache = null;
   }
 
-  function caps() {
-    if (capCache) return capCache;
+  // Ёмкость одного склада по его типу и уровню. Ровно та же формула, что
+  // в caps(): ранец набега должен списывать ресурсы по фактическим складам.
+  function storageCapOf(type, lvl) {
+    const l = Math.max(1, Math.floor(num(lvl, 1)));
+    if (type === 'storage') {
+      const base = (ECON.storageCap || {}).gold || 0;
+      const grow = (UP.storage || {}).cap || 0;
+      return base * (1 + grow * (l - 1));
+    }
+    if (type === 'estorage') {
+      const base = (ECON.storageCap || {}).elixir || 0;
+      const grow = (UP.estorage || {}).cap || 0;
+      return base * (1 + grow * (l - 1));
+    }
+    return 0;
+  }
 
+  // Все готовые склады: суммарная ёмкость и количество по ресурсам.
+  // Стройплощадки не считаем — они ещё не хранят.
+  function storageTotals() {
     const list = CC.Base.list();
-    const storeG = ECON.storageCap.gold || 0;
-    const storeE = ECON.storageCap.elixir || 0;
-    const growG = (UP.storage || {}).cap || 0;
-    const growE = (UP.estorage || {}).cap || 0;
-    // Командный центр ёмкости не даёт: только готовые склады своего типа.
-    let gold = 0;
-    let elixir = 0;
+    const out = {
+      gold: { cap: 0, count: 0 },
+      elixir: { cap: 0, count: 0 }
+    };
 
     for (let i = 0; i < list.length; i++) {
       const it = list[i];
       if (isBuilding(it.id)) continue;
-      if (it.type === 'storage') {
-        gold += storeG * (1 + growG * (level(it.id) - 1));
-      } else if (it.type === 'estorage') {
-        elixir += storeE * (1 + growE * (level(it.id) - 1));
-      }
+      if (it.type !== 'storage' && it.type !== 'estorage') continue;
+      const res = it.type === 'storage' ? 'gold' : 'elixir';
+      out[res].cap += storageCapOf(it.type, level(it.id));
+      out[res].count++;
     }
 
+    return out;
+  }
+
+  function caps() {
+    if (capCache) return capCache;
+
+    const totals = storageTotals();
+
     capCache = {
-      gold: Math.round(gold),
-      elixir: Math.round(elixir)
+      gold: Math.round(totals.gold.cap),
+      elixir: Math.round(totals.elixir.cap)
     };
     return capCache;
   }
@@ -1179,6 +1296,66 @@ CC.Game = (function () {
     };
   }
 
+  /* Покупка ресурса за платину: наборы 1/10/100 с бонусом к курсу.
+     Платина списывается всегда, ресурс начисляется по свободному месту:
+     что не влезло — возвращаем в lost, чтобы интерфейс сказал «Не влезло N».
+     Полный склад не продаём вовсе. */
+  function buyResource(res, count) {
+    if (res !== 'gold' && res !== 'elixir') {
+      return { error: 'Неизвестный ресурс' };
+    }
+
+    const n = Math.floor(Number(count) || 0);
+    if (n < 1) return { error: 'Неверное количество' };
+
+    const amount = CC.resBuyAmount
+      ? CC.resBuyAmount(res, n, townhallLevel())
+      : 0;
+    if (!amount) return { error: 'Курс не задан' };
+
+    if (st.gems < n) {
+      const no = noGems(n);
+      no.code = 'no-gems';
+      no.amount = amount;
+      return no;
+    }
+
+    const capNow = cap(res);
+    const held = res === 'gold' ? st.gold : st.elixir;
+    const free = Math.max(0, Math.floor(capNow - held));
+    if (free <= 0) {
+      return {
+        error: 'Склад полон',
+        code: 'full',
+        full: true,
+        res: res,
+        amount: amount,
+        free: 0,
+        gems: gemsNow()
+      };
+    }
+
+    st.gems -= n;
+    addStat('gemsSpent', n);
+
+    const add = Math.min(amount, free);
+    const got = res === 'gold' ? credit(add, 0) : credit(0, add);
+    const added = res === 'gold' ? got.gold : got.elixir;
+    save();
+
+    return {
+      ok: true,
+      spent: n,
+      gems: gemsNow(),
+      res: res,
+      amount: amount,
+      got: added,
+      // Не влезло: остаток сверх свободного места.
+      lost: Math.max(0, amount - added),
+      free: free
+    };
+  }
+
   /* ---------- набеги на деревню ---------- */
 
   // Снимок базы для боя: тип, координаты и реальный уровень постройки.
@@ -1271,26 +1448,68 @@ CC.Game = (function () {
       }
     }
 
-    const theft = RAIDS.theft || { low: 0.1, mid: 0.2, hall: 0.3 };
     const percent = Math.max(0, Math.min(100, Math.floor(sim.percent || 0)));
     if (!sim.thDead) addStat('defended', 1);
 
-    // Ни одной разрушенной постройки — уносить нечего. Иначе игрок
-    // терял ресурсы даже при «оборона справилась» с 0%.
-    const share = percent <= 0
-      ? 0
-      : (sim.thDead
-        ? theft.hall
-        : (percent >= 50 ? theft.mid : theft.low));
+    // Кража привязана к складам: считаем, какую ёмкость руды и энергии
+    // нападавшие выбили. Доля потери = выбитая ёмкость / вся ёмкость этого
+    // ресурса. Оба склада ресурса снесены — уносится весь запас (100%),
+    // один из двух — примерно половина. Складов нет — грабить нечего.
+    const totals = storageTotals();
+    const destroyed = Array.isArray(sim.destroyed) ? sim.destroyed : [];
+    const seen = {};
+    let deadGoldCap = 0;
+    let deadElixirCap = 0;
+    let deadGold = 0;
+    let deadElixir = 0;
 
-    const stolenGold = Math.min(st.gold, Math.floor(st.gold * share));
-    const stolenElixir = Math.min(st.elixir, Math.floor(st.elixir * share));
+    for (let i = 0; i < destroyed.length; i++) {
+      const b = destroyed[i];
+      if (!b || !b.type) continue;
+      if (b.type !== 'storage' && b.type !== 'estorage') continue;
+      const key = b.key || (b.type + ':' + b.x + ':' + b.y);
+      if (seen[key]) continue;
+      seen[key] = 1;
+
+      const capOf = storageCapOf(b.type, b.level);
+      if (b.type === 'storage') {
+        deadGoldCap += capOf;
+        deadGold++;
+      } else {
+        deadElixirCap += capOf;
+        deadElixir++;
+      }
+    }
+
+    // Снимок мог прийти из старого сейва или заглушки — ёмкость не может
+    // превышать то, что реально стоит на базе.
+    if (deadGoldCap > totals.gold.cap) deadGoldCap = totals.gold.cap;
+    if (deadElixirCap > totals.elixir.cap) deadElixirCap = totals.elixir.cap;
+    if (deadGold > totals.gold.count) deadGold = totals.gold.count;
+    if (deadElixir > totals.elixir.count) deadElixir = totals.elixir.count;
+
+    const goldShare = totals.gold.cap > 0
+      ? Math.max(0, Math.min(1, deadGoldCap / totals.gold.cap))
+      : 0;
+    const elixirShare = totals.elixir.cap > 0
+      ? Math.max(0, Math.min(1, deadElixirCap / totals.elixir.cap))
+      : 0;
+
+    // 100% — забираем весь запас без остатка от округления. Иначе floor:
+    // в сейве ресурсы могут быть дробными из-за производства.
+    const stolenGold = goldShare >= 1
+      ? st.gold
+      : Math.min(st.gold, Math.floor(st.gold * goldShare));
+    const stolenElixir = elixirShare >= 1
+      ? st.elixir
+      : Math.min(st.elixir, Math.floor(st.elixir * elixirShare));
 
     st.gold -= stolenGold;
     st.elixir -= stolenElixir;
 
     // Передышка: снос центра — 8 ч, крупная кража (≥20%) — 6 ч, иначе 2 ч.
-    // Таймер идёт от момента набега и сохраняется в сейве.
+    // Долю берём фактическую: максимум по руде и энергии.
+    const share = Math.max(goldShare, elixirShare);
     let truceMs = TRUCE.minorMs;
     if (sim.thDead) truceMs = TRUCE.thMs;
     else if (share >= TRUCE.major - 1e-9) truceMs = TRUCE.majorMs;
@@ -1311,6 +1530,12 @@ CC.Game = (function () {
       stolen: {
         gold: Math.max(0, Math.floor(stolenGold)),
         elixir: Math.max(0, Math.floor(stolenElixir))
+      },
+      // Сколько складов было и сколько снесено: окно набега и история
+      // объясняют, почему украли именно столько.
+      storages: {
+        gold: { total: totals.gold.count, destroyed: deadGold },
+        elixir: { total: totals.elixir.count, destroyed: deadElixir }
       },
       truce: {
         until: st.raidTruceUntil,
@@ -1349,6 +1574,14 @@ CC.Game = (function () {
   function pendingRaidInfo() {
     const p = st.pendingRaid;
     if (!p) return null;
+    const storages = p.storages || {};
+    function pack(v) {
+      const o = v && typeof v === 'object' ? v : {};
+      return {
+        total: Math.max(0, Math.floor(num(o.total, 0))),
+        destroyed: Math.max(0, Math.floor(num(o.destroyed, 0)))
+      };
+    }
     return {
       at: p.at,
       percent: p.percent,
@@ -1356,6 +1589,7 @@ CC.Game = (function () {
       thLevel: p.thLevel,
       traps: p.traps || { total: 0, triggered: 0 },
       stolen: { gold: p.stolen.gold, elixir: p.stolen.elixir },
+      storages: { gold: pack(storages.gold), elixir: pack(storages.elixir) },
       hasHall: CC.Base.count('townhall') > 0
     };
   }
@@ -3029,33 +3263,163 @@ CC.Game = (function () {
 
   /* ---------- задания ---------- */
 
+  // Индекс активного шага цепочки: первый незакрытый квест. -1 — всё готово.
+  function activeQuestIndex() {
+    for (let i = 0; i < QUESTS.length; i++) {
+      if (st.questsDone.indexOf(QUESTS[i].id) === -1) return i;
+    }
+    return -1;
+  }
+
+  function activeQuestDef() {
+    const i = activeQuestIndex();
+    return i < 0 ? null : QUESTS[i];
+  }
+
+  // Обучение активно, пока не пройдено и не пропущено. После последнего
+  // шага Сержант уходит, но квесты остаются доступными в панели.
+  function tutorialOn() {
+    const t = st.tutorial;
+    return !!t && !t.done && !t.skipped;
+  }
+
   function questProgress(id) {
-    if (id === 'shop') return { current: st.shopOpened ? 1 : 0, target: 1 };
-    if (id === 'fill') {
-      // Цель — первые 20 мест из новой вместимости ангаров, а не весь
-      // растущий лимит: иначе шаг требовал бы добивать 40/60 и больше.
-      const target = Math.min(20, capacity());
-      return { current: Math.min(target, armyUsed()), target: target };
+    const def = QUESTS.find(function (q) { return q.id === id; });
+    if (!def) return { current: 0, target: 1 };
+
+    if (def.place) {
+      return { current: Math.min(1, count(def.place)), target: 1 };
     }
-    if (id === 'train') return { current: Math.min(5, st.trained | 0), target: 5 };
-    if (id === 'th2') return { current: Math.min(2, townhallLevel()), target: 2 };
-    if (id === 'place2') {
-      return { current: Math.min(2, count('cannon')), target: 2 };
+
+    const target = def.target || 1;
+    if (id === 'train5') {
+      // Засчитываем и завершённую тренировку, и уже стоящую в армии пятёрку:
+      // так прогресс не теряется при загрузке старого сейва.
+      const n = Math.max(st.trained | 0, st.army.barb | 0);
+      return { current: Math.min(target, n), target: target };
     }
-    if (id === 'cannon2') {
-      const list = CC.Base.list();
-      let lvl = 0;
-      for (let i = 0; i < list.length; i++) {
-        if (list[i].type === 'cannon') {
-          lvl = Math.max(lvl, level(list[i].id));
-        }
-      }
-      return { current: Math.min(2, lvl), target: 2 };
+    if (id === 'battle') {
+      return { current: st.battleStarted ? 1 : 0, target: 1 };
     }
     if (id === 'level1') {
       return { current: st.cleared.indexOf(0) === -1 ? 0 : 1, target: 1 };
     }
-    return { current: 0, target: 1 };
+    if (id === 'th2') return { current: Math.min(2, townhallLevel()), target: 2 };
+    if (id === 'cannon2') {
+      const list = CC.Base.list();
+      let lvl = 0;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].type === 'cannon') lvl = Math.max(lvl, level(list[i].id));
+      }
+      return { current: Math.min(2, lvl), target: 2 };
+    }
+    return { current: 0, target: target };
+  }
+
+  // Бесплатная постановка только для здания текущего шага. Вызывается из
+  // CC.Base.place(): {free, seconds} или null для обычной цены и времени.
+  function tutorialPlace(type) {
+    if (!tutorialOn()) return null;
+    const def = activeQuestDef();
+    if (!def || def.place !== type) return null;
+    if (count(type) >= (def.target || 1)) return null;
+    return { free: true, seconds: 5, type: type, id: def.id };
+  }
+
+  // Данные для панели Сержанта и подсказок. active=false — панель не нужна.
+  function tutorialInfo() {
+    const def = activeQuestDef();
+    const t = st.tutorial || freshTutorial();
+    const on = tutorialOn();
+    if (!on || !def) {
+      return {
+        active: false, done: !!t.done, skipped: !!t.skipped,
+        step: def ? QUESTS.length : QUESTS.length,
+        total: QUESTS.length, id: null, text: '', hint: '',
+        place: null, goal: null, primary: ''
+      };
+    }
+    const idx = QUESTS.indexOf(def);
+    let primary = 'Поставить';
+    if (def.place) primary = 'Поставить';
+    else if (def.goal === 'train') primary = 'В ангар';
+    else if (def.goal === 'battle' || def.goal === 'level1') primary = 'В бой';
+    else if (def.goal === 'th2') primary = 'К центру';
+    else if (def.goal === 'cannon2') primary = 'К турели';
+
+    return {
+      active: true,
+      done: !!t.done,
+      skipped: !!t.skipped,
+      step: idx + 1,
+      total: QUESTS.length,
+      id: def.id,
+      text: def.text,
+      hint: def.hint || '',
+      place: def.place || null,
+      goal: def.goal || (def.place ? 'place' : null),
+      primary: primary
+    };
+  }
+
+  // Пропуск обучения: снимаем бесплатные постановки, но квесты остаются
+  // обычными. Даём 800/800 напрямую (лимитов ещё нет), чтобы игрок не
+  // оказался без ресурсов и без складов. Повторный вызов безопасен.
+  function skipTutorial() {
+    if (!st.tutorial || st.tutorial.done || st.tutorial.skipped) {
+      return { ok: false, already: true };
+    }
+    st.tutorial.skipped = true;
+    st.tutorial.done = true;
+    st.gold = Math.max(st.gold, ECON.tutorialGold || 800);
+    st.elixir = Math.max(st.elixir, ECON.tutorialElixir || 800);
+    tutorialEvent = {
+      type: 'skip',
+      gold: ECON.tutorialGold || 800,
+      elixir: ECON.tutorialElixir || 800
+    };
+    save();
+    return { ok: true, gold: ECON.tutorialGold || 800,
+      elixir: ECON.tutorialElixir || 800 };
+  }
+
+  // Первый груз после двух складов. Ждём, пока склады достроятся: иначе
+  // credit() при нулевых лимитах сжёг бы ресурсы. Событие читает UI.
+  function maybeTutorialCargo() {
+    const t = st.tutorial;
+    if (!t || t.cargo || t.done || t.skipped) return false;
+    if (st.questsDone.indexOf('placeEstorage') === -1) return false;
+
+    const gcap = cap('gold');
+    const ecap = cap('elixir');
+    if (gcap <= 0 || ecap <= 0) return false;
+
+    const got = credit(ECON.tutorialGold || 800, ECON.tutorialElixir || 800);
+    t.cargo = true;
+    tutorialEvent = {
+      type: 'cargo',
+      gold: got.gold,
+      elixir: got.elixir,
+      lost: got.lost
+    };
+    save();
+    return true;
+  }
+
+  // Разовый расход события обучения для тоста/диалога.
+  function takeTutorialEvent() {
+    const e = tutorialEvent;
+    tutorialEvent = null;
+    return e;
+  }
+
+  // Шаг «В бой»: запоминаем первый вход в бой, чтобы квест не откатился.
+  function markBattleStarted() {
+    if (st.battleStarted) return false;
+    st.battleStarted = true;
+    checkQuests();
+    save();
+    return true;
   }
 
   // Терминал открывают по-настоящему: отметка нужна для первого задания.
@@ -3077,15 +3441,19 @@ CC.Game = (function () {
 
       const p = questProgress(def.id);
       const shown = Math.min(p.current, p.target);
-      // Армия меняется каждым наймом, поэтому текст шага считаем на лету.
-      const text = def.id === 'fill'
-        ? 'Заполни армию: ' + shown + ' / ' + p.target
+      // Тренировка меняется каждым наймом — текст считаем на лету.
+      const text = def.id === 'train5'
+        ? 'Натренируй 5 штурмовиков: ' + shown + ' / ' + p.target
         : def.text;
 
       return {
         id: def.id,
         text: text,
         reward: def.reward || 0,
+        gems: def.gems !== undefined ? def.gems : (GEMS.perQuest || 0),
+        hint: def.hint || '',
+        place: def.place || null,
+        goal: def.goal || (def.place ? 'place' : null),
         done: done,
         active: active,
         progress: shown,
@@ -3095,6 +3463,7 @@ CC.Game = (function () {
   }
 
   // Награды выдаются один раз: факт выполнения хранится в st.questsDone.
+  // Обучение даёт по 1 плате за шаг (GEMS.perQuest), руду не начисляет.
   function checkQuests() {
     let changed = false;
 
@@ -3108,7 +3477,7 @@ CC.Game = (function () {
       st.questsDone.push(def.id);
       addXp(25);
 
-      const gemReward = GEMS.perQuest || 0;
+      const gemReward = def.gems !== undefined ? def.gems : (GEMS.perQuest || 0);
 
       if (def.reward || gemReward) {
         const got = credit(def.reward || 0, 0);
@@ -3122,6 +3491,14 @@ CC.Game = (function () {
 
       changed = true;
     }
+
+    // Обучение закончено, когда закрыт последний шаг. Первый груз ждёт
+    // готовности обоих складов, поэтому проверяется на каждом тике.
+    if (st.tutorial && !st.tutorial.done && activeQuestIndex() < 0) {
+      st.tutorial.done = true;
+      changed = true;
+    }
+    if (maybeTutorialCargo()) changed = true;
 
     if (changed) save();
   }
@@ -3456,6 +3833,8 @@ CC.Game = (function () {
         trained: st.trained,
         shopOpened: st.shopOpened,
         questsDone: st.questsDone,
+        tutorial: st.tutorial,
+        battleStarted: !!st.battleStarted,
         levels: st.levels,
         upgrades: st.upgrades,
         builds: st.builds,
@@ -3752,6 +4131,19 @@ CC.Game = (function () {
 
     s.trained = Math.max(0, Math.floor(num(d.trained, 0)));
     s.shopOpened = !!d.shopOpened;
+    s.battleStarted = d.battleStarted === true || d.battleStarted === 1;
+
+    // Обучение: новый сейв без поля — старый игрок, обучение не показываем.
+    // Явное поле читаем как есть, чтобы пропуск и завершение сохранялись.
+    if (d.tutorial && typeof d.tutorial === 'object') {
+      s.tutorial = {
+        done: d.tutorial.done === true || d.tutorial.done === 1,
+        skipped: d.tutorial.skipped === true || d.tutorial.skipped === 1,
+        cargo: d.tutorial.cargo === true || d.tutorial.cargo === 1
+      };
+    } else {
+      s.tutorial.done = true;
+    }
 
     if (Array.isArray(d.questsDone)) {
       for (let i = 0; i < d.questsDone.length; i++) {
@@ -3762,6 +4154,12 @@ CC.Game = (function () {
         // выполнения сохраняем: сейв не должен «сбрасывать» прогресс.
         s.questsDone.push(id);
       }
+    }
+    // Миграция старых квестов в выполненные шаги новой цепочки.
+    for (const oldId in QUEST_MIGRATION) {
+      if (s.questsDone.indexOf(oldId) === -1) continue;
+      const next = QUEST_MIGRATION[oldId];
+      if (s.questsDone.indexOf(next) === -1) s.questsDone.push(next);
     }
 
     if (LEVELS.length) {
@@ -3803,6 +4201,14 @@ CC.Game = (function () {
     if (d.pendingRaid && typeof d.pendingRaid === 'object') {
       const p = d.pendingRaid;
       const stolen = p.stolen && typeof p.stolen === 'object' ? p.stolen : {};
+      const storages = p.storages && typeof p.storages === 'object' ? p.storages : {};
+      function packStorage(v) {
+        const o = v && typeof v === 'object' ? v : {};
+        return {
+          total: Math.max(0, Math.floor(num(o.total, 0))),
+          destroyed: Math.max(0, Math.floor(num(o.destroyed, 0)))
+        };
+      }
       s.pendingRaid = {
         at: num(p.at, Date.now()),
         percent: Math.max(0, Math.min(100, Math.floor(num(p.percent, 0)))),
@@ -3811,6 +4217,12 @@ CC.Game = (function () {
         stolen: {
           gold: Math.max(0, Math.floor(num(stolen.gold, 0))),
           elixir: Math.max(0, Math.floor(num(stolen.elixir, 0)))
+        },
+        // Старый сейв без разбивки складов читается как «данных нет»:
+        // ресурсы в stolen уже фактические, окно не падает.
+        storages: {
+          gold: packStorage(storages.gold),
+          elixir: packStorage(storages.elixir)
         }
       };
     }
@@ -3869,9 +4281,11 @@ CC.Game = (function () {
     for (let y = 0; y < CC.GRID; y++) {
       for (let x = 0; x < CC.GRID; x++) {
         if (!CC.Base.fits('barracks', x, y)) continue;
-        const res = CC.Base.place('barracks', x, y);
-        if (!res.ok) continue;
-        if (st.builds && st.builds[res.id]) delete st.builds[res.id];
+        // Готовая постройка без цены и таймера: миграция не должна
+        // упираться в нулевые лимиты и списывать ресурсы ветерана.
+        const it = CC.Base.insert('barracks', x, y);
+        if (!it) continue;
+        if (st.builds && st.builds[it.id]) delete st.builds[it.id];
         return true;
       }
     }
@@ -4041,6 +4455,23 @@ CC.Game = (function () {
     const migrating = !(data && typeof data === 'object');
     st = migrating ? fresh() : normalize(data);
 
+    // Новичок (в том числе сейв только с раскладкой-центром) проходит
+    // обучение. Старая раскладка с постройками — ветеран: обучение не
+    // показываем, квесты не сбрасываем.
+    const onlyCenter = CC.Base.list().length === 1 &&
+      CC.Base.list()[0] && CC.Base.list()[0].type === 'townhall';
+    if (migrating) st.tutorial.done = !onlyCenter;
+    // Старая раскладка без сейва деревни: сохраняем прежний стартовый запас
+    // и отряд, иначе ветеран остался бы без ресурсов и армии.
+    if (migrating && !onlyCenter) {
+      st.gold = Math.max(st.gold, ECON.startLegacyGold || 800);
+      st.elixir = Math.max(st.elixir, ECON.startLegacyElixir || 800);
+      if (!st.army.barb) st.army.barb = 12;
+      // У такой раскладки нет сейва квестов: не запускаем обучение заново
+      // и не выдаём награды за уже стоящие здания.
+      st.questsDone = QUESTS.map(function (q) { return q.id; });
+    }
+
     // Герой всегда согласован с текущим центром: на TH5+ он есть,
     // ниже — закрыт. Это же правило чинит сейв, где TH снесли/подняли.
     const heroMaxLoad = heroMaxLevel();
@@ -4048,9 +4479,9 @@ CC.Game = (function () {
     else if (!(st.heroLevel >= 1)) st.heroLevel = 1;
     else if (st.heroLevel > heroMaxLoad) st.heroLevel = heroMaxLoad;
 
-    // Старому сейву без ангары добавляем её, чтобы армии было где жить.
-    // Если свободного места нет — армию не выдаём вовсе.
-    if (migrating && !ensureBarracks()) st.army = copyArmy({});
+    // Старому сейву без ангара добавляем её, чтобы армии было где жить.
+    // Новый старт (только центр) не трогаем: ангар выдаёт обучение.
+    if (migrating && !onlyCenter && !ensureBarracks()) st.army = copyArmy({});
 
     // Общий склад старого сейва стал складом руды: энергию хранить негде,
     // поэтому без estorage лимит энергии был бы 0. Ставим второй склад
@@ -4104,6 +4535,7 @@ CC.Game = (function () {
     st.lastSeen = Date.now();
     pendingOffline = null;
     questRewardEvent = null;
+    tutorialEvent = null;
     levelUpEvent = 0;
     upgradeDoneEvent = 0;
     buildDoneEvent = [];
@@ -4261,6 +4693,11 @@ CC.Game = (function () {
     isFull: isFull,
     invalidateCaps: invalidateCaps,
     quests: quests,
+    tutorial: tutorialInfo,
+    tutorialPlace: tutorialPlace,
+    skipTutorial: skipTutorial,
+    takeTutorialEvent: takeTutorialEvent,
+    markBattleStarted: markBattleStarted,
     xpForLevel: xpForLevel,
     levelAt: levelAt,
     playerLevel: playerLevel,
@@ -4302,6 +4739,7 @@ CC.Game = (function () {
     queueSpeedCost: queueSpeedCost,
     speedUpQueue: speedUpQueue,
     exchangeGems: exchangeGems,
+    buyResource: buyResource,
     defenseDescriptor: defenseDescriptor,
     raidDue: raidDue,
     runRaid: runRaid,

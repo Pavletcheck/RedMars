@@ -61,9 +61,10 @@
     <span class="truce-chip hidden" id="truce-chip" title="Перемирие"><span class="ico ico-truce" aria-hidden="true"></span><span id="truce-text">0:00</span></span>
   </div>
 
-  <!-- верхний правый угол: ресурсы -->
+  <!-- верхний правый угол: ресурсы. Панели — кнопки покупки за платину -->
   <div class="resbar" id="resbar">
-    <div class="res-panel res-panel_gold" title="Руда">
+    <button class="res-panel res-panel_gold" id="res-gold-panel" type="button"
+            title="Купить руду за платину">
       <div class="res-panel__in">
         <span class="res-panel__icon">🔩</span>
         <div class="res-panel__body">
@@ -72,8 +73,9 @@
           <span class="res-panel__track"><i id="res-gold-bar"></i></span>
         </div>
       </div>
-    </div>
-    <div class="res-panel res-panel_elixir" title="Энергия">
+    </button>
+    <button class="res-panel res-panel_elixir" id="res-elixir-panel" type="button"
+            title="Купить энергию за платину">
       <div class="res-panel__in">
         <span class="res-panel__icon">⚡</span>
         <div class="res-panel__body">
@@ -82,15 +84,16 @@
           <span class="res-panel__track"><i id="res-elixir-bar"></i></span>
         </div>
       </div>
-    </div>
-    <div class="res-panel res-panel_gems" title="Платина">
+    </button>
+    <button class="res-panel res-panel_gems" id="res-gems-panel" type="button"
+            title="Платина за рубли">
       <div class="res-panel__in">
         <span class="res-panel__icon ico ico-platinum" aria-hidden="true"></span>
         <div class="res-panel__body">
           <b class="res-panel__value" id="res-gems">0</b>
         </div>
       </div>
-    </div>
+    </button>
   </div>
 
   <button class="collect-all hidden" id="collect-all" type="button"
@@ -124,17 +127,38 @@
   <button class="quest-bar" id="quest-bar">
     <span class="quest-bar__icon ico ico-quest" aria-hidden="true"></span>
     <span class="quest-bar__text" id="quest-text">Задание: ...</span>
-    <span class="quest-bar__progress" id="quest-progress">0/6</span>
+    <span class="quest-bar__progress" id="quest-progress">0/12</span>
   </button>
 
   <div class="quest-panel hidden" id="quest-panel">
     <div class="quest-panel__head">
       <span>Задания</span>
-      <b id="quest-count">0/6</b>
+      <b id="quest-count">0/12</b>
       <button class="quest-panel__x" data-quest="close" title="Закрыть">✕</button>
     </div>
     <div class="quest-list" id="quest-list"></div>
   </div>
+
+  <!-- Сержант ведёт новичка по первым шагам. Портрет — класс
+       .sergeant__portrait, художник может заменить заглушку 🎖️ картинкой. -->
+  <aside class="sergeant hidden" id="sergeant" aria-live="polite">
+    <div class="sergeant__portrait" aria-hidden="true">
+      <span class="sergeant__face">🎖️</span>
+    </div>
+    <div class="sergeant__body">
+      <div class="sergeant__head">
+        <b class="sergeant__name">Сержант</b>
+        <span class="sergeant__step" id="sergeant-step">1/12</span>
+      </div>
+      <p class="sergeant__text" id="sergeant-text">Первый рубеж. Бьёт по земле.</p>
+      <p class="sergeant__hint hidden" id="sergeant-hint"></p>
+      <div class="sergeant__actions">
+        <button class="sergeant__btn sergeant__btn_go" id="sergeant-go" type="button">Поставить</button>
+        <button class="sergeant__btn" id="sergeant-next" type="button">Далее</button>
+        <button class="sergeant__btn sergeant__btn_skip" id="sergeant-skip" type="button">Пропустить обучение</button>
+      </div>
+    </div>
+  </aside>
 
   <div class="tip" id="tip">
     <span class="tip__text" id="tip-text">Открой «Терминал» внизу и выбери постройку</span>
@@ -238,11 +262,6 @@
         <h2 class="shop__title">Терминал</h2>
         <button class="shop__x" id="shop-x" title="Закрыть">✕</button>
       </div>
-      <div class="shop__tabs" id="shop-tabs">
-        <button class="shop__tab is-active" data-shop-tab="build">Постройки</button>
-        <button class="shop__tab" data-shop-tab="exchange">Обмен</button>
-      </div>
-      <div class="exchange-rate hidden" id="exchange-rate"></div>
       <div class="carousel carousel_shop">
         <button class="carousel__arrow carousel__arrow_prev" id="shop-prev" type="button"
                 data-carousel="shop" data-dir="-1" title="Предыдущая постройка" aria-label="Предыдущая постройка">‹</button>
@@ -252,6 +271,42 @@
                 data-carousel="shop" data-dir="1" title="Следующая постройка" aria-label="Следующая постройка">›</button>
       </div>
       <p class="shop__note hidden" id="shop-note"></p>
+    </div>
+  </div>
+
+  <!-- Покупка ресурса за платину: три набора в карусели -->
+  <div class="overlay hidden" id="buyres">
+    <div class="overlay__card shop buy-card">
+      <div class="shop__head">
+        <h2 class="shop__title" id="buyres-title">Купить руду</h2>
+        <button class="shop__x" id="buyres-x" title="Закрыть">✕</button>
+      </div>
+      <p class="buy__rate" id="buyres-rate"></p>
+      <div class="carousel carousel_shop">
+        <button class="carousel__arrow carousel__arrow_prev" id="buyres-prev" type="button"
+                data-carousel="buyres" data-dir="-1" title="Предыдущий набор" aria-label="Предыдущий набор">‹</button>
+        <div class="shop__grid carousel__track buy__grid" id="buyres-grid" tabindex="0"
+             role="listbox" aria-label="Наборы ресурсов"></div>
+        <button class="carousel__arrow carousel__arrow_next" id="buyres-next" type="button"
+                data-carousel="buyres" data-dir="1" title="Следующий набор" aria-label="Следующий набор">›</button>
+      </div>
+      <p class="buy__note hidden" id="buyres-note"></p>
+      <button class="overlay__btn overlay__btn_ghost buy__topup" id="buyres-topup" type="button">
+        Пополнить платину
+      </button>
+    </div>
+  </div>
+
+  <!-- Платина за рубли: витрина, оплата пока не подключена -->
+  <div class="overlay hidden" id="buyplat">
+    <div class="overlay__card shop buy-card">
+      <div class="shop__head">
+        <h2 class="shop__title">Платина за рубли</h2>
+        <button class="shop__x" id="buyplat-x" title="Закрыть">✕</button>
+      </div>
+      <p class="overlay__hint">Оплата появится после подключения площадки</p>
+      <div class="buy__rub" id="buyplat-grid"></div>
+      <p class="buy__note" id="buyplat-note"></p>
     </div>
   </div>
 

@@ -11,10 +11,8 @@ CC.UI = (function () {
   const cancelBtn = document.getElementById('cancel-btn');
   const shopEl = document.getElementById('shop');
   const shopGrid = document.getElementById('shop-grid');
-  const exchangeRate = document.getElementById('exchange-rate');
   const shopNote = document.getElementById('shop-note');
   const shopX = document.getElementById('shop-x');
-  const shopTabs = document.getElementById('shop-tabs');
   const ghostEl = document.getElementById('place-ghost');
   const ghostShape = document.getElementById('place-ghost-shape');
   const ghostIcon = document.getElementById('place-ghost-icon');
@@ -56,6 +54,10 @@ CC.UI = (function () {
   const resElixirBar = document.getElementById('res-elixir-bar');
   const resGems = document.getElementById('res-gems');
   const resbar = document.getElementById('resbar');
+  // Кликабельные панели ресурсов в правом верхнем углу.
+  const resGoldPanel = document.getElementById('res-gold-panel');
+  const resElixirPanel = document.getElementById('res-elixir-panel');
+  const resGemsPanel = document.getElementById('res-gems-panel');
   const hudArmyUsed = document.getElementById('hud-army-used');
   const hudArmyCap = document.getElementById('hud-army-cap');
   const hudArmyBar = document.getElementById('hud-army-bar');
@@ -109,6 +111,14 @@ CC.UI = (function () {
   const questProgressEl = document.getElementById('quest-progress');
   const questCount = document.getElementById('quest-count');
   const questList = document.getElementById('quest-list');
+  // Панель Сержанта: портрет, текст шага и три кнопки.
+  const sergeantEl = document.getElementById('sergeant');
+  const sergeantStep = document.getElementById('sergeant-step');
+  const sergeantText = document.getElementById('sergeant-text');
+  const sergeantHint = document.getElementById('sergeant-hint');
+  const sergeantGo = document.getElementById('sergeant-go');
+  const sergeantNext = document.getElementById('sergeant-next');
+  const sergeantSkip = document.getElementById('sergeant-skip');
   const soundBtn = document.getElementById('sound-btn');
   const musicBtn = document.getElementById('music-btn');
   const volValue = document.getElementById('vol-value');
@@ -194,6 +204,21 @@ CC.UI = (function () {
   const replayStars = document.getElementById('replay-stars');
   const replayExit = document.getElementById('replay-exit');
 
+  // Покупка ресурсов и платины из панелей HUD.
+  const buyResEl = document.getElementById('buyres');
+  const buyResTitle = document.getElementById('buyres-title');
+  const buyResRate = document.getElementById('buyres-rate');
+  const buyResGrid = document.getElementById('buyres-grid');
+  const buyResNote = document.getElementById('buyres-note');
+  const buyResX = document.getElementById('buyres-x');
+  const buyResPrev = document.getElementById('buyres-prev');
+  const buyResNext = document.getElementById('buyres-next');
+  const buyResTopup = document.getElementById('buyres-topup');
+  const buyPlatEl = document.getElementById('buyplat');
+  const buyPlatGrid = document.getElementById('buyplat-grid');
+  const buyPlatNote = document.getElementById('buyplat-note');
+  const buyPlatX = document.getElementById('buyplat-x');
+
   const cards = {};
   const cache = {};
   // Иконки сбора: пул элементов по id постройки, чтобы не пересоздавать DOM.
@@ -205,7 +230,11 @@ CC.UI = (function () {
   let buildersOpen = false;
   let questOpen = false;
   let shopOpen = false;
-  let shopTab = 'build';
+  let buyResOpen = false;
+  let buyPlatOpen = false;
+  let buyResKind = 'gold';   // какой ресурс открыт в окне покупки
+  let buyResNoteText = '';   // сообщение после покупки (без баланса)
+  let buyResNoteKind = '';   // short / full / partial / error — для data-note
   let levelsOpen = false;
   let achOpen = false;
   let drag = null;
@@ -214,6 +243,9 @@ CC.UI = (function () {
   // Подсказка-задание: закрытая крестиком не возвращается до смены шага.
   let tipStep = null;
   let tipClosedStep = null;
+  let sergeantMore = false;       // «Далее» раскрывает подробную подсказку
+  let sergeantHintStep = null;    // для какого шага уже настроена панель
+  let hangarHintStep = null;      // шаг, для которого показан совет об очереди
   let introDone = false;      // инструкция первого боя показана
   let introNeedsPos = false;  // позицию считаем после смены data-mode
   let trainAfterBattle = false; // в окне результата армия пуста
@@ -245,8 +277,52 @@ CC.UI = (function () {
 
   /* ---------- запуск ---------- */
 
+  let hudPanelsBound = false;
+
+  // Клики по панелям ресурсов и окнам покупки. Вынесено из init(), чтобы
+  // тесты могли подключить только эти обработчики без сборки HUD боя.
+  function bindHudPanels() {
+    if (hudPanelsBound) return;
+    hudPanelsBound = true;
+
+    if (resGoldPanel) {
+      resGoldPanel.addEventListener('click', function () { openBuyResource('gold'); });
+    }
+    if (resElixirPanel) {
+      resElixirPanel.addEventListener('click', function () { openBuyResource('elixir'); });
+    }
+    if (resGemsPanel) {
+      resGemsPanel.addEventListener('click', function () { openBuyPlatinum(); });
+    }
+
+    if (buyResX) {
+      buyResX.addEventListener('click', function () { closeBuyResource(); sync(); });
+    }
+    if (buyResEl) {
+      buyResEl.addEventListener('click', function (e) {
+        if (e.target === buyResEl) { closeBuyResource(); sync(); }
+      });
+    }
+    if (buyResGrid) buyResGrid.addEventListener('click', onBuyResClick);
+    if (buyResPrev) buyResPrev.addEventListener('click', function () { scrollCarousel(buyResGrid, -1); });
+    if (buyResNext) buyResNext.addEventListener('click', function () { scrollCarousel(buyResGrid, 1); });
+    if (buyResTopup) {
+      buyResTopup.addEventListener('click', function () { openBuyPlatinum(); });
+    }
+    if (buyPlatX) {
+      buyPlatX.addEventListener('click', function () { closeBuyPlatinum(); sync(); });
+    }
+    if (buyPlatEl) {
+      buyPlatEl.addEventListener('click', function (e) {
+        if (e.target === buyPlatEl) { closeBuyPlatinum(); sync(); }
+      });
+    }
+    if (buyPlatGrid) buyPlatGrid.addEventListener('click', onBuyPlatClick);
+  }
+
   function init() {
     buildArmy();
+    bindHudPanels();
 
     if (CC.Sound) {
       document.addEventListener('pointerdown', function () { CC.Sound.unlock(); }, true);
@@ -360,7 +436,6 @@ CC.UI = (function () {
       });
     }
     if (shopGrid) shopGrid.addEventListener('click', onShopClick);
-    if (shopTabs) shopTabs.addEventListener('click', onShopTabsClick);
 
     if (levelBadge) levelBadge.addEventListener('click', openLevels);
     if (lvlChip) lvlChip.addEventListener('click', openLevels);
@@ -530,6 +605,32 @@ CC.UI = (function () {
       sync();
     });
 
+    if (sergeantGo) {
+      sergeantGo.addEventListener('click', function (e) {
+        e.preventDefault();
+        sergeantPrimary();
+      });
+    }
+    if (sergeantNext) {
+      sergeantNext.addEventListener('click', function (e) {
+        e.preventDefault();
+        sergeantMore = !sergeantMore;
+        syncSergeant();
+      });
+    }
+    if (sergeantSkip) {
+      sergeantSkip.addEventListener('click', function (e) {
+        e.preventDefault();
+        const res = CC.Game.skipTutorial ? CC.Game.skipTutorial() : { ok: false };
+        if (res.ok) {
+          toast('Обучение пропущено · +' + fmtNum(res.gold) + ' руды и +' +
+            fmtNum(res.elixir) + ' энергии');
+          if (CC.Sound) CC.Sound.play('questDone');
+        }
+        sync();
+      });
+    }
+
     if (tipX) {
       tipX.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -595,7 +696,6 @@ CC.UI = (function () {
       });
     }
 
-    setShopTab('build');
     setMode('base');
   }
 
@@ -660,6 +760,8 @@ CC.UI = (function () {
     if (mode === 'battle') {
       overlayShown = false;
       overlayEl.classList.add('hidden');
+      // Первый вход в бой закрывает шаг «В бой» и не откатывается назад.
+      if (CC.Game.markBattleStarted) CC.Game.markBattleStarted();
       CC.Battle.reset(chosenLevel());
       retryReadyAt = Date.now() + 2000;
       cache.pct = cache.time = cache.level = null;
@@ -667,7 +769,12 @@ CC.UI = (function () {
         if (k !== 'pct' && k !== 'time' && k !== 'level') delete cache[k];
       });
       const lvl = CC.LEVELS[chosenLevel()];
-      showTip((lvl && lvl.hint) || 'Выбери войско внизу и тапни по любой свободной клетке');
+      // Во время обучения вместо подсказки сектора объясняем высадку и цель.
+      const tut = CC.Game.tutorial ? CC.Game.tutorial() : null;
+      const lesson = tut && tut.active &&
+        (tut.goal === 'battle' || tut.goal === 'level1') ? tut.hint : '';
+      showTip(lesson || (lvl && lvl.hint) ||
+        'Выбери войско внизу и тапни по любой свободной клетке');
     } else {
       // вернулись в деревню — окно результата боя больше не нужно
       overlayShown = false;
@@ -1378,6 +1485,8 @@ CC.UI = (function () {
     closeLevels();
     closeAchievements();
     closeArena();
+    closeBuyResource();
+    closeBuyPlatinum();
 
     dailyOpen = true;
     cache.dailySig = null;
@@ -1420,7 +1529,7 @@ CC.UI = (function () {
   // не всплывали поверх кнопок модальных окон.
   function anyOverlayOpen() {
     if (shopOpen || levelsOpen || achOpen || dailyOpen || arenaOpen ||
-        replaysOpen || askState) return true;
+        replaysOpen || buyResOpen || buyPlatOpen || askState) return true;
     if (overlayShown) return true;
     if (replayEnd && !replayEnd.classList.contains('hidden')) return true;
     if (offlineEl && !offlineEl.classList.contains('hidden')) return true;
@@ -1662,6 +1771,23 @@ CC.UI = (function () {
   /* ---------- задания ---------- */
 
   function syncQuests() {
+    // События обучения: первый груз и пропуск. Показываем тостом, чтобы
+    // не блокировать сцену отдельным модальным окном на 844×390.
+    const tutEvent = CC.Game.takeTutorialEvent ? CC.Game.takeTutorialEvent() : null;
+    if (tutEvent) {
+      if (tutEvent.type === 'cargo') {
+        const lost = tutEvent.lost &&
+          ((tutEvent.lost.gold || 0) + (tutEvent.lost.elixir || 0) > 0);
+        toast('Первый груз: +' + fmtNum(tutEvent.gold) + ' руды и +' +
+          fmtNum(tutEvent.elixir) + ' энергии' +
+          (lost ? ' · склад почти полон' : ''));
+      } else if (tutEvent.type === 'skip') {
+        toast('Обучение пропущено · +' + fmtNum(tutEvent.gold) + ' руды и +' +
+          fmtNum(tutEvent.elixir) + ' энергии');
+      }
+      if (CC.Sound) CC.Sound.play('questDone');
+    }
+
     const reward = CC.Game.takeQuestReward();
     if (reward) {
       if (CC.Sound) {
@@ -1738,7 +1864,7 @@ CC.UI = (function () {
         '<span class="quest-row__mark">' + (q.done ? '✓' : '○') + '</span>' +
         '<span class="quest-row__text">' + q.text + '</span>' +
         '<span class="quest-row__prog">' + q.progress + '/' + q.target + '</span>' +
-        '<span class="quest-row__reward">+' + q.reward + '</span>' +
+        '<span class="quest-row__reward" title="Платина">+' + (q.gems || 0) + ' ◆</span>' +
         '</div>';
     }).join('');
   }
@@ -1770,7 +1896,17 @@ CC.UI = (function () {
     }
 
     const full = parts.length > 0 && fullGold && fullElixir;
-    offlineText.textContent = '';
+    // Если пока игрока не было базу ограбили, «Пока тебя не было» говорит
+    // об этом теми же фактическими цифрами, что и окно набега.
+    let raidText = '';
+    const raid = CC.Game.pendingRaidInfo ? CC.Game.pendingRaidInfo() : null;
+    if (raid) {
+      const taken = [];
+      if (raid.stolen.gold > 0) taken.push(fmtNum(raid.stolen.gold) + ' руды');
+      if (raid.stolen.elixir > 0) taken.push(fmtNum(raid.stolen.elixir) + ' энергии');
+      if (taken.length) raidText = 'На базу напали — увели ' + taken.join(', ') + '.';
+    }
+    offlineText.textContent = raidText;
     offlineLoot.textContent = parts.length
       ? (cappedAway ? 'Начислено за ' : 'За ') + span +
         ' буры накопили ' + parts.join(', ') + (full ? ' (полны)' : '')
@@ -1925,6 +2061,8 @@ CC.UI = (function () {
     closeBuilders();
     closeLevels();
     closeDaily();
+    closeBuyResource();
+    closeBuyPlatinum();
     shopOpen = true;
     if (CC.Game.markShopOpened) CC.Game.markShopOpened();
     if (shopEl) shopEl.classList.remove('hidden');
@@ -1947,6 +2085,8 @@ CC.UI = (function () {
     closeDaily();
     closeArena();
     closeReplays();
+    closeBuyResource();
+    closeBuyPlatinum();
 
     // На карте подсвечен выбранный для боя уровень; после выхода с поля боя
     // он уже равен прогрессу (setMode('base') вызывает resetSelected).
@@ -2275,24 +2415,35 @@ CC.UI = (function () {
     }
 
     const full = !locked && have >= limit;
-    const price = CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 };
+    // Здание текущего шага Сержанта ставится бесплатно за 5 секунд —
+    // карточка честно показывает «Бесплатно · 0:05».
+    const lesson = !locked && !full && CC.Game.tutorialPlace
+      ? CC.Game.tutorialPlace(type) : null;
+    const price = lesson
+      ? { gold: 0, elixir: 0 }
+      : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 });
     const poorGold = CC.Game.gold() < price.gold;
     const poorElixir = CC.Game.elixir() < price.elixir;
-    const poor = !locked && !full && (poorGold || poorElixir);
+    const poor = !locked && !full && !lesson && (poorGold || poorElixir);
     const cls = 'shop-card' + (locked ? ' is-locked' : '') +
-      (full ? ' is-empty' : '') + (poor ? ' is-poor' : '');
+      (full ? ' is-empty' : '') + (poor ? ' is-poor' : '') +
+      (lesson ? ' is-lesson' : '');
     const icon = locked ? '🔒' : CC.ICONS[type];
     // уровень открытия/текущий и состояние — зацепки для стилей художника
-    const cardState = locked ? 'locked' : (full || poor ? 'insufficient' : 'available');
+    const cardState = locked ? 'locked' : (lesson ? 'lesson' :
+      (full || poor ? 'insufficient' : 'available'));
     const cardLevel = locked ? needTh : th;
     const count = '<span class="shop-card__count">' + have + ' / ' + limit + '</span>';
-    const ptime = CC.Game.placeTime ? CC.Game.placeTime(type) : 0;
-    const costText = placePriceText(price) + (ptime > 0 ? ' · ' + formatTime(ptime) : '');
+    const ptime = lesson ? lesson.seconds
+      : (CC.Game.placeTime ? CC.Game.placeTime(type) : 0);
+    const costText = (lesson ? 'Бесплатно' : placePriceText(price)) +
+      (ptime > 0 ? ' · ' + formatTime(ptime) : '');
     const cost = '<span class="shop-card__cost">' + costText + '</span>';
     const req = locked ? '<span class="shop-card__req">с командного центра ' + needTh + '</span>' : '';
     let title;
     if (locked) title = lockReason;
     else if (full) title = 'Лимит исчерпан';
+    else if (lesson) title = 'Сержант: бесплатно за ' + lesson.seconds + ' с';
     else if (poor) {
       const lack = [];
       if (poorGold) lack.push('ещё ' + fmtNum(price.gold - CC.Game.gold()) + ' руды');
@@ -2319,110 +2470,261 @@ CC.UI = (function () {
     return parts.length ? parts.join(' · ') : '—';
   }
 
-  function setShopTab(tab) {
-    shopTab = tab === 'exchange' ? 'exchange' : 'build';
-
-    if (shopTabs && shopTabs.querySelectorAll) {
-      shopTabs.querySelectorAll('[data-shop-tab]').forEach(function (btn) {
-        btn.classList.toggle('is-active', btn.dataset.shopTab === shopTab);
-      });
-    }
-
+  // Совместимость со старыми инструментами: вкладок в терминале больше нет,
+  // всегда показываем постройки. UI обмен не использует.
+  function setShopTab() {
     cache.shopSig = null;
+    return 'build';
   }
 
-  function onShopTabsClick(e) {
-    const btn = e.target.closest('[data-shop-tab]');
-    if (!btn) return;
-    setShopTab(btn.dataset.shopTab);
-    sync();
-  }
+  /* ---------- покупка ресурсов за платину ---------- */
 
-  function exchangeCardHtml(res, count) {
-    const rate = CC.gemExchange
-      ? CC.gemExchange(res, CC.Game.townhallLevel())
-      : CC.GEMS.exchange[res];
-    const amount = rate * count;
+  // Карточка набора: 1/10/100 платины с бонусом к курсу.
+  function buyResCardHtml(res, count) {
+    const amount = CC.resBuyAmount
+      ? CC.resBuyAmount(res, count, CC.Game.townhallLevel())
+      : 0;
+    const bonus = CC.resBuyBonus ? CC.resBuyBonus(count) : 1;
     const name = res === 'gold' ? 'руды' : 'энергии';
     const icon = res === 'gold' ? '🔩' : '⚡';
-    const gems = CC.Game.gems();
-    const cap = res === 'gold' ? CC.Game.cap('gold') : CC.Game.cap('elixir');
-    const held = res === 'gold' ? CC.Game.gold() : CC.Game.elixir();
-    const free = Math.max(0, Math.floor(cap - held));
-    const fits = amount <= free;
-    const enoughGems = gems >= count;
-    const enough = fits && enoughGems;
-    const missing = count - gems;
+    const bonusText = bonus > 1
+      ? ' · +' + Math.round((bonus - 1) * 100) + '%'
+      : '';
 
-    let title;
-    if (!fits) title = 'Хранилища полны: влезет ' + free;
-    else if (!enoughGems) title = 'Нужно ещё ' + platText(missing);
-    else title = 'Обменять ' + platText(count) + ' на ' + amount + ' ' + name;
-
-    let req = '';
-    if (!fits) req = '<span class="shop-card__req">хранилище полон: влезет ' + free + '</span>';
-    else if (!enoughGems) req = '<span class="shop-card__req">нужно ещё ' + platText(missing) + '</span>';
-
-    return '<button class="shop-card exchange-card' + (enough ? '' : ' is-locked') + '"' +
-      ' data-gem-res="' + res + '" data-gem-count="' + count + '"' +
-      (enough ? '' : ' disabled') + ' title="' + title + '">' +
+    return '<button class="shop-card buy-offer" type="button"' +
+      ' data-buy-res="' + res + '" data-buy-gems="' + count + '"' +
+      ' data-bonus="' + bonus + '"' +
+      ' title="' + fmtNum(amount) + ' ' + name + ' за ' + platText(count) + '">' +
       '<span class="shop-card__icon">' + icon + '</span>' +
-      '<span class="shop-card__name">' + fmtNum(amount) + ' ' + name + '</span>' +
-      '<span class="shop-card__desc">за ' + platAcc(count) + '</span>' +
-      '<span class="shop-card__count"><span class="ico ico-platinum" aria-hidden="true"></span>' +
-      platText(count) + '</span>' +
-      req +
+      '<span class="shop-card__name">+' + fmtNum(amount) + ' ' + name + '</span>' +
+      '<span class="shop-card__desc">' + platText(count) + bonusText + '</span>' +
+      '<span class="shop-card__count">Купить</span>' +
       '</button>';
   }
 
-  // Текущий курс терминала: отдельная строка над каруселью, чтобы она
-  // не уезжала вместе с карточками при горизонтальной прокрутке.
-  function exchangeRateText() {
+  function buyResHtml(res) {
+    const packs = (CC.RES_BUY && CC.RES_BUY.packs) || [1, 10, 100];
+    return packs.map(function (n) { return buyResCardHtml(res, n); }).join('');
+  }
+
+  function buyRateText(res) {
     const th = CC.Game.townhallLevel();
-    const gold = CC.gemExchange ? CC.gemExchange('gold', th) : CC.GEMS.exchange.gold;
-    const elixir = CC.gemExchange ? CC.gemExchange('elixir', th) : CC.GEMS.exchange.elixir;
-    return 'Курс на TH' + th + ': 1 платина = ' + fmtNum(gold) +
-      ' руды · ' + fmtNum(elixir) + ' энергии';
+    const rate = CC.gemExchange ? CC.gemExchange(res, th) : 0;
+    return 'Курс TH' + th + ': 1 платина = ' + fmtNum(rate) +
+      (res === 'gold' ? ' руды' : ' энергии');
   }
 
-  function syncExchangeRate() {
-    if (!exchangeRate) return;
-    const show = shopTab === 'exchange';
-    if (exchangeRate.classList && exchangeRate.classList.toggle) {
-      exchangeRate.classList.toggle('hidden', !show);
+  // Перерисовать окно покупки ресурса и подпись про платину.
+  function syncBuyResource() {
+    if (!buyResOpen) return;
+
+    const res = buyResKind === 'elixir' ? 'elixir' : 'gold';
+    const th = CC.Game.townhallLevel();
+    const sig = res + '|th' + th + '|g' + CC.Game.gems() +
+      '|gc' + Math.round(CC.Game.cap('gold')) +
+      '|ec' + Math.round(CC.Game.cap('elixir')) +
+      '|gold' + Math.round(CC.Game.gold()) +
+      '|elixir' + Math.round(CC.Game.elixir());
+
+    if (buyResTitle) {
+      buyResTitle.textContent = res === 'gold' ? 'Купить руду' : 'Купить энергию';
     }
-    if (!show) return;
-    const text = exchangeRateText();
-    if (exchangeRate.textContent !== text) exchangeRate.textContent = text;
+
+    if (buyResGrid && cache.buyResSig !== sig) {
+      cache.buyResSig = sig;
+      const scroll = buyResGrid.scrollLeft || 0;
+      buyResGrid.innerHTML = buyResHtml(res);
+      if (scroll) buyResGrid.scrollLeft = scroll;
+    }
+
+    const gems = CC.Game.gems();
+    const balance = 'Платина: ' + platText(gems);
+    const held = res === 'elixir' ? CC.Game.elixir() : CC.Game.gold();
+    const full = Math.floor(CC.Game.cap(res) - held) <= 0;
+    const text = buyResNoteText || (full ? 'Склад полон' : balance);
+    const kind = buyResNoteText
+      ? (buyResNoteKind || 'error')
+      : (full ? 'full' : 'balance');
+    const hasMsg = !!buyResNoteText || full;
+
+    if (buyResNote) {
+      if (buyResNote.textContent !== text) buyResNote.textContent = text;
+      // CSS-префиксы «Часть не влезет · » / «Склад полон · » вешаются на
+      // классы карточки. Текст самодостаточен, поэтому не даём им
+      // приклеиться к подписи: общаемся с CSS через data-note.
+      buyResNote.setAttribute('data-note', kind);
+      if (buyResNote.dataset) buyResNote.dataset.note = kind;
+      buyResNote.classList.remove('hidden');
+    }
+
+    // Когда note занят сообщением, баланс не теряется — показываем его
+    // отдельной строкой рядом с курсом (шапка окна).
+    if (buyResRate) {
+      const rate = buyRateText(res);
+      buyResRate.textContent = hasMsg ? rate + ' · ' + balance : rate;
+    }
+
+    if (buyResEl && buyResEl.querySelector) {
+      const box = buyResEl.querySelector('.buy-card');
+      if (box && box.classList) {
+        box.classList.remove('has-partial');
+        box.classList.remove('has-full');
+      }
+    }
   }
 
-  function exchangeHtml() {
-    const out = [];
-    [1, 10, 50].forEach(function (n) {
-      out.push(exchangeCardHtml('gold', n));
-      out.push(exchangeCardHtml('elixir', n));
-    });
-    return out.join('');
+  function openBuyResource(res) {
+    if (CC.App.mode !== 'base') return false;
+    if (drag) dragCancel();
+    cancelArm();
+    closeQuest();
+    closeBuilders();
+    closeShop();
+    closeLevels();
+    closeDaily();
+    closeArena();
+    closeReplays();
+    closeBuyPlatinum();
+
+    buyResKind = res === 'elixir' ? 'elixir' : 'gold';
+    buyResNoteText = '';
+    buyResNoteKind = '';
+    cache.buyResSig = null;
+    buyResOpen = true;
+    if (buyResEl) buyResEl.classList.remove('hidden');
+    syncBuyResource();
+    return true;
+  }
+
+  function closeBuyResource() {
+    buyResOpen = false;
+    buyResNoteText = '';
+    buyResNoteKind = '';
+    cache.buyResSig = null;
+    if (buyResEl) buyResEl.classList.add('hidden');
+  }
+
+  function isBuyResourceOpen() {
+    return buyResOpen;
+  }
+
+  // Покупка набора из окна. Возвращает результат CC.Game.buyResource,
+  // чтобы тесты и другие экраны видели цифры, а не только тост.
+  function buyResource(res, count) {
+    const out = CC.Game.buyResource(res, count);
+
+    if (out.error) {
+      toast(out.error);
+      if (out.code === 'no-gems') {
+        buyResNoteText = 'Не хватает ' + out.missing + ' платины';
+        buyResNoteKind = 'short';
+      } else {
+        buyResNoteText = out.error === 'Склад полон'
+          ? 'Склад полон'
+          : out.error;
+        buyResNoteKind = out.error === 'Склад полон' ? 'full' : 'error';
+      }
+      sync();
+      return out;
+    }
+
+    buyResNoteText = '';
+    buyResNoteKind = '';
+    if (out.lost > 0) {
+      // Платина списана, но часть набора не поместилась: note объясняет
+      // потерю, баланс остаётся отдельно в строке курса.
+      buyResNoteText = 'Часть не влезет: склад мал';
+      buyResNoteKind = 'partial';
+      toast('Не влезло ' + fmtNum(out.lost) + ', склад полон');
+    } else {
+      toast('Куплено: +' + fmtNum(out.got) +
+        (out.res === 'gold' ? ' руды' : ' энергии'));
+    }
+
+    sync();
+    return out;
+  }
+
+  function onBuyResClick(e) {
+    const card = e.target.closest('[data-buy-res]');
+    if (!card || card.disabled) return;
+    buyResource(card.dataset.buyRes, Number(card.dataset.buyGems));
+  }
+
+  /* ---------- платина за рубли ---------- */
+
+  function buyPlatCardHtml(pack) {
+    return '<button class="shop-card buy-offer buy-offer_rub" type="button"' +
+      ' data-plat-pack="' + pack.gems + '"' +
+      ' title="' + platText(pack.gems) + ' за ' + pack.rub + ' ₽">' +
+      '<span class="shop-card__icon ico ico-platinum" aria-hidden="true"></span>' +
+      '<span class="shop-card__name">' + platText(pack.gems) + '</span>' +
+      '<span class="shop-card__desc">' + pack.rub + ' ₽</span>' +
+      '<span class="shop-card__count">Купить</span>' +
+      '</button>';
+  }
+
+  function syncBuyPlatinum() {
+    if (!buyPlatOpen) return;
+    if (buyPlatGrid && !buyPlatGrid.innerHTML) {
+      const packs = (CC.RES_BUY && CC.RES_BUY.rub) || [];
+      buyPlatGrid.innerHTML = packs.map(buyPlatCardHtml).join('');
+    }
+    if (buyPlatNote) {
+      buyPlatNote.textContent = 'Оплата появится после подключения площадки';
+      buyPlatNote.classList.remove('hidden');
+    }
+  }
+
+  function openBuyPlatinum() {
+    if (drag) dragCancel();
+    cancelArm();
+    closeQuest();
+    closeBuilders();
+    closeShop();
+    closeLevels();
+    closeDaily();
+    closeArena();
+    closeReplays();
+    closeBuyResource();
+
+    buyPlatOpen = true;
+    if (buyPlatEl) buyPlatEl.classList.remove('hidden');
+    syncBuyPlatinum();
+    return true;
+  }
+
+  function closeBuyPlatinum() {
+    buyPlatOpen = false;
+    if (buyPlatEl) buyPlatEl.classList.add('hidden');
+  }
+
+  function isBuyPlatinumOpen() {
+    return buyPlatOpen;
+  }
+
+  // Покупка платины за рубли не проводится: площадка ещё не подключена.
+  function onBuyPlatClick(e) {
+    const card = e.target.closest('[data-plat-pack]');
+    if (!card) return;
+    toast('Оплата появится после подключения площадки');
+    return { ok: false, stub: true, note: 'Оплата появится после подключения площадки' };
   }
 
   function syncShop() {
     if (!shopOpen || !shopGrid) return;
 
-    syncExchangeRate();
-
     // Подсказка терминала: сначала — про нулевой лимит ресурса (нет склада),
     // затем — обычный онбординг TH1.
     if (shopNote) {
       let hint = '';
-      if (shopTab === 'build') {
-        const missing = [];
-        if (CC.Game.cap('gold') <= 0) missing.push('Поставь хранилище руды — 400 руды');
-        if (CC.Game.cap('elixir') <= 0) missing.push('Поставь хранилище энергии — 400 руды');
-        if (missing.length) hint = missing.join(' · ');
-        else if (CC.Game.townhallLevel() === 1) {
-          hint = 'На 1 уровне доступны центр и турель. Улучши центр до 2,' +
-            ' чтобы открыть лазерную вышку, 3-й бур и мину';
-        }
+      const missing = [];
+      if (CC.Game.cap('gold') <= 0) missing.push('Поставь хранилище руды');
+      if (CC.Game.cap('elixir') <= 0) missing.push('Поставь хранилище энергии');
+      if (missing.length) hint = missing.join(' · ');
+      else if (CC.Game.townhallLevel() === 1) {
+        hint = 'На 1 уровне доступны центр, турель и лазерная вышка.' +
+          ' Улучши центр до 2, чтобы открыть 3-й бур и мину';
       }
       if (hint) {
         if (shopNote.textContent !== hint) shopNote.textContent = hint;
@@ -2432,45 +2734,22 @@ CC.UI = (function () {
       }
     }
 
-    const sig = shopTab + '|' +
+    const tutor = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    const sig =
       CC.PALETTE.map(function (t) { return CC.Base.count(t); }).join(',') +
-      '|th' + CC.Game.townhallLevel() + '|g' + CC.Game.gems() +
-      '|gold' + Math.round(CC.Game.gold()) + '|elixir' + Math.round(CC.Game.elixir()) +
-      '|gc' + Math.round(CC.Game.cap('gold')) + '|ec' + Math.round(CC.Game.cap('elixir'));
+      '|th' + CC.Game.townhallLevel() + '|gold' + Math.round(CC.Game.gold()) +
+      '|elixir' + Math.round(CC.Game.elixir()) +
+      '|gc' + Math.round(CC.Game.cap('gold')) + '|ec' + Math.round(CC.Game.cap('elixir')) +
+      '|lesson' + (tutor && tutor.active ? tutor.id : '-');
     if (cache.shopSig === sig) return;
     cache.shopSig = sig;
 
     const shopScroll = shopGrid.scrollLeft || 0;
-    shopGrid.innerHTML = shopTab === 'exchange'
-      ? exchangeHtml()
-      : CC.PALETTE.map(shopCardHtml).join('');
+    shopGrid.innerHTML = CC.PALETTE.map(shopCardHtml).join('');
     if (shopScroll) shopGrid.scrollLeft = shopScroll;
   }
 
   function onShopClick(e) {
-    const ex = e.target.closest('[data-gem-res]');
-    if (ex) {
-      if (ex.disabled) return;
-
-      const res = CC.Game.exchangeGems(ex.dataset.gemRes, Number(ex.dataset.gemCount));
-      if (res.error) {
-        toast(res.error);
-      } else if (res.lost.gold > 0 || res.lost.elixir > 0) {
-        const lost = res.lost.gold > 0
-          ? res.lost.gold + ' руды'
-          : res.lost.elixir + ' энергии';
-        toast('Хранилища полны: ' + lost + ' потеряно');
-      } else {
-        const got = res.res === 'gold'
-          ? res.got.gold + ' руды'
-          : res.got.elixir + ' энергии';
-        toast('Обмен: +' + got);
-      }
-
-      sync();
-      return;
-    }
-
     const card = e.target.closest('[data-type]');
     if (!card || card.disabled) return;
 
@@ -2831,6 +3110,18 @@ CC.UI = (function () {
     }
 
     if (e.key !== 'Escape') return;
+
+    if (buyResOpen) {
+      closeBuyResource();
+      sync();
+      return;
+    }
+
+    if (buyPlatOpen) {
+      closeBuyPlatinum();
+      sync();
+      return;
+    }
 
     if (dailyOpen) {
       closeDaily();
@@ -4495,14 +4786,95 @@ CC.UI = (function () {
     closeQuests();
   }
 
+  /* ---------- Сержант: панель обучения ---------- */
+
+  // Панель видна только в деревне и только пока обучение не пройдено.
+  // Модальные окна её прячут, чтобы не перекрывать HUD на 844×390.
+  function syncSergeant() {
+    if (!sergeantEl) return;
+
+    const t = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    const show = !!(t && t.active && CC.App.mode === 'base' &&
+      !anyOverlayOpen() && !buildersOpen && !questOpen && !state.buildMode);
+
+    if (!show) {
+      sergeantEl.classList.add('hidden');
+      return;
+    }
+
+    if (sergeantHintStep !== t.id) {
+      sergeantHintStep = t.id;
+      // Для тренировки и боя сразу раскрываем подробную инструкцию:
+      // игрок должен увидеть очередь и правило высадки без лишнего тапа.
+      sergeantMore = t.goal !== 'place';
+    }
+
+    sergeantEl.classList.remove('hidden');
+    if (sergeantStep) sergeantStep.textContent = t.step + '/' + t.total;
+    if (sergeantText && sergeantText.textContent !== t.text) {
+      sergeantText.textContent = t.text;
+    }
+    if (sergeantHint) {
+      sergeantHint.textContent = t.hint || '';
+      sergeantHint.classList.toggle('hidden', !sergeantMore || !t.hint);
+    }
+    if (sergeantGo) {
+      const label = t.primary || 'Поставить';
+      if (sergeantGo.textContent !== label) sergeantGo.textContent = label;
+    }
+    if (sergeantNext) {
+      sergeantNext.textContent = sergeantMore ? 'Скрыть' : 'Далее';
+    }
+  }
+
+  // Кнопка «Поставить»: для здания сразу включает установку, для тренировки
+  // открывает ангар, для боя запускает первый сектор. Дальше ведёт квест.
+  function sergeantPrimary() {
+    const t = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    if (!t || !t.active) return { error: 'Обучение завершено' };
+
+    if (t.place) {
+      closeQuests();
+      closeShop();
+      closeLevels();
+      closeArena();
+      const res = arm(t.place);
+      if (res.error) toast(res.error);
+      sync();
+      return res;
+    }
+    if (t.goal === 'train') return openHangar();
+    if (t.goal === 'battle' || t.goal === 'level1') {
+      setMode('battle');
+      return { ok: CC.App.mode === 'battle', action: 'battle' };
+    }
+    return questAction(t.id);
+  }
+
+  // Игрок открыл ангар на шаге тренировки — коротко объясняем очередь.
+  function maybeHangarTutorialHint() {
+    const t = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    if (!t || !t.active || t.goal !== 'train') return false;
+    if (hangarHintStep === t.id) return false;
+    hangarHintStep = t.id;
+    toast('Штурмовик → «Нанять» или «×5». Очередь идёт сама: 20 мест на L1 ангара.');
+    return true;
+  }
+
   /* Подсказка в деревне — это активное задание. Она живёт, пока шаг не
      выполнен: тап по полю её не выключает. Крестик скрывает до смены шага. */
   const QUEST_HINTS = {
-    shop: 'Нажми «Терминал» внизу и открой склад построек',
-    fill: 'Выбери ангар на базе и нанимай войска кнопкой ×5',
-    level1: 'Жми «В БОЙ» справа внизу, выбери войско и тапни по любой свободной клетке',
+    placeCannon: 'Терминал → «Турель» → тапни по свободной клетке рядом с центром',
+    placeArcher: 'Терминал → «Лазерная вышка» → поставь рядом с центром',
+    placeGoldmine: 'Терминал → «Бур» → поставь на свободную клетку',
+    placeElixir: 'Терминал → «Реактор» → поставь рядом с буром',
+    placeStorage: 'Терминал → «Хранилище руды» → поставь рядом с центром',
+    placeEstorage: 'Терминал → «Хранилище энергии» → поставь рядом с центром',
+    placeBarracks: 'Терминал → «Ангар» → поставь на свободную клетку',
+    train5: 'Открой ангар, выбери штурмовика и жми «Нанять» или «×5»',
+    battle: 'Жми «В БОЙ» внизу, выбери войско и тапни по свободной клетке',
+    level1: 'Победи в первом секторе: 50% построек или снос центра',
     th2: 'Тапни по командному центру и нажми «Улучшить до ур. 2»',
-    place2: 'Терминал → выбери «Турель» и поставь вторую рядом с центром',
     cannon2: 'Тапни по турели и нажми «Улучшить до ур. 2»'
   };
 
@@ -4549,17 +4921,35 @@ CC.UI = (function () {
   /* Клик по строке задания ведёт к цели. Действия не зависят от того,
      открыта панель или нет: тесты и клавиатура ходят сюда же. */
   function questAction(id) {
-    if (id === 'shop' || id === 'place2') {
-      setShopTab('build');
+    const list = CC.Game.quests ? CC.Game.quests() : [];
+    const q = list.find(function (row) { return row.id === id; }) || null;
+    const placeTypes = {
+      placeCannon: 'cannon', placeArcher: 'archer', placeGoldmine: 'goldmine',
+      placeElixir: 'elixir', placeStorage: 'storage',
+      placeEstorage: 'estorage', placeBarracks: 'barracks'
+    };
+
+    if (placeTypes[id] || id === 'shop' || id === 'place2') {
+      if (placeTypes[id]) {
+        // Ведём прямо к установке нужного здания; терминал закроется сам.
+        closeQuests();
+        const res = arm(placeTypes[id]);
+        if (res.error) {
+          toast(res.error);
+          openShop();
+        }
+        sync();
+        return { ok: !res.error, action: 'place', type: placeTypes[id] };
+      }
       openShop();
       return { ok: true, action: 'shop' };
     }
 
-    if (id === 'fill') {
+    if (id === 'train5' || id === 'fill') {
       return openHangar();
     }
 
-    if (id === 'level1') {
+    if (id === 'battle' || id === 'level1') {
       setMode('battle');
       return { ok: CC.App.mode === 'battle', action: 'battle' };
     }
@@ -4597,6 +4987,7 @@ CC.UI = (function () {
     state.selected = bar.id;
     cache.uTimer = null;
     sync();
+    maybeHangarTutorialHint();
 
     const cardsEl = document.querySelector ? document.querySelector('#train-list') : null;
     if (cardsEl && cardsEl.scrollIntoView) {
@@ -4695,6 +5086,8 @@ CC.UI = (function () {
     closeBuilders();
     closeQuests();
     closeDaily();
+    closeBuyResource();
+    closeBuyPlatinum();
     state.armed = null;
     state.selected = null;
 
@@ -4932,6 +5325,8 @@ CC.UI = (function () {
     closeLevels();
     closeDaily();
     closeArena();
+    closeBuyResource();
+    closeBuyPlatinum();
 
     // «Повторы» вместо отчёта о набеге: отчёт закрываем, иначе он перекроет
     // список и просмотр. Данные набега уже лежат в истории.
@@ -5224,15 +5619,19 @@ CC.UI = (function () {
       syncBuildersChip();
       if (buildersOpen) syncBuildersPanel();
       syncShop();
+      syncBuyResource();
+      syncBuyPlatinum();
       syncShopButton();
       syncSelbar();
       syncBaseTip();
+      syncSergeant();
       updateGhost();
     } else {
       syncRes();
       syncQuests();
       syncArmyCounter();
       syncBattle();
+      if (sergeantEl) sergeantEl.classList.add('hidden');
       if (introNeedsPos && battleIntro && !battleIntro.classList.contains('hidden')) {
         positionBattleIntro();
       }
@@ -5634,6 +6033,7 @@ CC.UI = (function () {
 
   return {
     init: init,
+    bindHudPanels: bindHudPanels,
     sync: sync,
     compactForHeight: compactForHeight,
     applyCompact: applyCompact,
@@ -5674,6 +6074,8 @@ CC.UI = (function () {
     openQuests: openQuests,
     closeQuests: closeQuests,
     questAction: questAction,
+    syncSergeant: syncSergeant,
+    sergeantPrimary: sergeantPrimary,
     openHangar: openHangar,
     heroAbility: heroAbility,
     closeQuestHint: closeQuestHint,
@@ -5703,6 +6105,14 @@ CC.UI = (function () {
     closeAchievements: closeAchievements,
     isShopOpen: function () { return shopOpen; },
     setShopTab: setShopTab,
+    openBuyResource: openBuyResource,
+    closeBuyResource: closeBuyResource,
+    isBuyResourceOpen: isBuyResourceOpen,
+    buyResource: buyResource,
+    openBuyPlatinum: openBuyPlatinum,
+    closeBuyPlatinum: closeBuyPlatinum,
+    isBuyPlatinumOpen: isBuyPlatinumOpen,
+    platinumStubText: 'Оплата появится после подключения площадки',
     dragBegin: dragBegin,
     dragActivate: dragActivate,
     dragTarget: dragTarget,

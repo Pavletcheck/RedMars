@@ -975,18 +975,25 @@ CC.CamMath = (function () {
   const MAX_TILE_PX = 96;    // на мониторе не приближаем тайл сильнее
   const MIN_VISIBLE_Y = 6;   // по высоте полосы — хотя бы столько тайлов
   const BASE_PAD = 2;        // отступ вокруг построек в тайлах
+  // Мир в деревне и в бою опускается относительно фона. Целевой сдвиг —
+  // 20% высоты вьюпорта, но не больше четверти полосы: так база и поле
+  // остаются над нижней панелью даже на 844×390.
+  const BASE_DROP = 0.2;
+  const BASE_DROP_LIMIT = 0.25;
 
   function clamp(v, a, b) {
     return v < a ? a : (v > b ? b : v);
   }
 
   // Держим поле в экране: если оно меньше вьюпорта — не даём увести его
-  // целиком, если больше — не даём оторваться от краёв.
-  function fitAxis(start, size, view) {
+  // целиком, если больше — не даём оторваться от краёв. extra — разрешённый
+  // сдвиг вниз (опускание мира), чтобы не срезать его жёстким MARGIN.
+  function fitAxis(start, size, view, extra) {
+    const add = Math.max(0, Number(extra) || 0);
     if (size <= view - MARGIN * 2) {
-      return clamp(start, MARGIN, view - MARGIN - size);
+      return clamp(start, MARGIN, view - MARGIN - size + add);
     }
-    return clamp(start, view - MARGIN - size, MARGIN);
+    return clamp(start, view - MARGIN - size, MARGIN + add);
   }
 
   // Bounding box построек в клетках. Пустая база → null.
@@ -1123,8 +1130,11 @@ CC.CamMath = (function () {
 
     cam.bandCenterY = bandTop + bandH / 2;
     cam.topPad = topPad;
+    // Опускаем мир на 20% высоты, но не глубже четверти полосы. Сдвиг
+    // одинаков для деревни и боя; фон/горизонт не двигаются.
+    cam.dropY = Math.max(0, Math.min(h * BASE_DROP, bandH * BASE_DROP_LIMIT));
     cam.centerX = w / 2 - cam.centerWorldX * fit;
-    cam.centerY = cam.bandCenterY - (cam.centerWorldY - topPad / 2) * fit;
+    cam.centerY = cam.bandCenterY - (cam.centerWorldY - topPad / 2) * fit + cam.dropY;
 
     cam.defaultZoom = defaultZoomFor(w, h, bandH, tw, th, fit, focus, homeRect, topPad);
     // zoom = 0 — «авто»: ставим базовый вид под текущий экран
@@ -1143,7 +1153,8 @@ CC.CamMath = (function () {
   // остаётся в середине полосы — иначе при зуме уезжал бы верхний угол поля.
   function refreshHome(cam) {
     cam.homeX = cam.w / 2 - cam.homeWorldX * cam.scale;
-    cam.homeY = cam.bandCenterY - (cam.homeWorldY - cam.topPad / 2) * cam.scale;
+    cam.homeY = cam.bandCenterY - (cam.homeWorldY - cam.topPad / 2) * cam.scale +
+      (cam.dropY || 0);
   }
 
   function clampCam(cam) {
@@ -1151,7 +1162,7 @@ CC.CamMath = (function () {
     const fieldH = cam.gridH * cam.tileH * cam.scale;
 
     cam.ox = fitAxis(cam.ox - halfW, halfW * 2, cam.w) + halfW;
-    cam.oy = fitAxis(cam.oy, fieldH, cam.h);
+    cam.oy = fitAxis(cam.oy, fieldH, cam.h, cam.dropY || 0);
 
     cam.panX = cam.ox - cam.homeX;
     cam.panY = cam.oy - cam.homeY;
@@ -1233,6 +1244,8 @@ CC.CamMath = (function () {
     DEFAULT_TILES: DEFAULT_TILES,
     MIN_TILE_PX: MIN_TILE_PX,
     MAX_TILE_PX: MAX_TILE_PX,
+    BASE_DROP: BASE_DROP,
+    BASE_DROP_LIMIT: BASE_DROP_LIMIT,
     boundsOf: boundsOf,
     focusRect: focusRect,
     fitScaleFor: fitScaleFor,

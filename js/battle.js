@@ -1481,7 +1481,10 @@ CC.Battle = (function () {
     });
 
     if (!buildings.length) {
-      return { percent: 0, thDead: false, win: false, time: 0, result: null, placed: 0 };
+      return {
+        percent: 0, thDead: false, win: false, time: 0,
+        result: null, placed: 0, destroyed: []
+      };
     }
 
     try {
@@ -1512,6 +1515,20 @@ CC.Battle = (function () {
       if (!state.over) endBattle(false);
 
       const result = state.result;
+      // Снесённые здания отдаём наружу: набег считает по ним выбитую
+      // ёмкость складов, а не долю от процента разрушений.
+      const destroyed = state.buildings.filter(function (b) {
+        return b && b.dead;
+      }).map(function (b) {
+        return {
+          type: b.type,
+          x: b.x,
+          y: b.y,
+          level: b.level,
+          key: b.key
+        };
+      });
+
       return {
         percent: state.percent,
         thDead: !!(result && result.thDead),
@@ -1519,6 +1536,7 @@ CC.Battle = (function () {
         time: state.time,
         result: result,
         placed: state.deployedCount,
+        destroyed: destroyed,
         log: state.deployLog.slice(),
         traps: {
           total: state.traps.length,

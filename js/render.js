@@ -916,14 +916,15 @@ CC.Render = (function () {
 
   /* ---------- стены ---------- */
 
-  let wallRunCache = { src: null, alive: -1, lvl: -1, runs: [] };
+  let wallRunCache = { src: null, alive: -1, lvl: -1, sig: 0, runs: [] };
 
-  // Склеиваем соседние сегменты в непрерывные участки: сначала горизонтальные
-  // цепочки длиной 2+, потом вертикальные, одиночные остаются как есть.
+  // Прогоны нужны только для газонов и полосок HP: форму стыков они больше
+  // не задают — её считает wallCells() по соседям ±x/±y.
   function wallRuns(buildings) {
     const map = {};
     let count = 0;
     let top = 1;
+    let sig = 0;
 
     for (let i = 0; i < buildings.length; i++) {
       const b = buildings[i];
@@ -931,12 +932,14 @@ CC.Render = (function () {
       map[b.x + ',' + b.y] = b;
       count++;
       const l = levelOf(b);
+      sig = (sig * 31 + b.x * 37 + b.y * 11 + l) | 0;
       if (l > top) top = l;
     }
     if (!count) return [];
 
-    // Тот же массив (бой) и то же число живых стен — участки не пересчитываем.
-    if (wallRunCache.src === buildings && wallRunCache.alive === count && wallRunCache.lvl === top) {
+    // Тот же массив (бой), то же число стен и та же раскладка — не пересчитываем.
+    if (wallRunCache.src === buildings && wallRunCache.alive === count &&
+      wallRunCache.lvl === top && wallRunCache.sig === sig) {
       return wallRunCache.runs;
     }
 
@@ -957,9 +960,7 @@ CC.Render = (function () {
           cells.push(map[(x + i) + ',' + y]);
         }
         runs.push({
-          x: x, y: y, w: len, h: 1, cells: cells, lvl: runLevel(cells),
-          extA: map[(x - 1) + ',' + y] ? 0.5 : 0,
-          extB: map[(x + len) + ',' + y] ? 0.5 : 0
+          x: x, y: y, w: len, h: 1, cells: cells, lvl: runLevel(cells)
         });
         x += len - 1;
       }
@@ -978,15 +979,13 @@ CC.Render = (function () {
           cells.push(map[x + ',' + (y + i)]);
         }
         runs.push({
-          x: x, y: y, w: 1, h: len, cells: cells, lvl: runLevel(cells),
-          extA: map[x + ',' + (y - 1)] ? 0.5 : 0,
-          extB: map[x + ',' + (y + len)] ? 0.5 : 0
+          x: x, y: y, w: 1, h: len, cells: cells, lvl: runLevel(cells)
         });
         y += len - 1;
       }
     }
 
-    wallRunCache = { src: buildings, alive: count, lvl: top, runs: runs };
+    wallRunCache = { src: buildings, alive: count, lvl: top, sig: sig, runs: runs };
     return runs;
   }
 
@@ -1000,54 +999,137 @@ CC.Render = (function () {
     return lvl;
   }
 
-  // зубец на верхней грани участка
+  /* ---------- стены: соседние клетки ---------- */
 
+  // Стена ниже пояса построек: центр, склады и турели читаются поверх.
+  // Уровни 3+ добавляют 3 px, но поле остаётся на уровне груди.
+  function wallHeight(lvl) {
+    return 14 + (lvl >= 3 ? 3 : 0);
+  }
 
-  // Пролёт режем на клеточные секции: каждая попадает в общий список глубины
-  // отдельно, поэтому соседняя постройка встаёт между нужными клетками стены.
-  function wallSections(run) {
-    const alongX = run.w >= run.h;
-    const len = Math.max(run.w, run.h);
+  // Самая верхняя точка стены над землёй: для спрайта, отсечения и HP.
+  function wallTopPx(lvl) {
+    const H = wallHeight(lvl);
+    let top = H + 2.2;                            // наконечник столба
+    if (lvl >= 7) top = Math.max(top, H + 2.5);   // верхняя рейка
+    if (lvl >= 8) top = Math.max(top, H + 6);     // эмиттерный шип
+    if (lvl >= 9) top = Math.max(top, H + 4.5);   // золотая рейка
+    if (lvl >= 10) top = Math.max(top, H + 7.5);  // золотое навершие
+    return top;
+  }
+
+  // Соседи только по сетке: ±x и ±y. Бит входит в ключ спрайта.
+  const WALL_DIRS = [
+    { dx: 1, dy: 0, bit: 1 },    // +x
+    { dx: -1, dy: 0, bit: 2 },   // -x
+    { dx: 0, dy: 1, bit: 4 },    // +y
+    { dx: 0, dy: -1, bit: 8 }    // -y
+  ];
+
+  let wallStats = {
+    cells: 0, arms: 0, posts: 0, straight: 0, corners: 0,
+    ends: 0, tees: 0, cross: 0, isolated: 0, maxTop: 0
+  };
+
+  /* Одна запись на клетку стены. Соседей берём из карты живых стен:
+     клетка на стыке L/T/креста получает общий набор плеч и ровно один столб.
+     Прогоны (wallRuns) остаются только для газонов и полосок HP. */
+  function wallCells(buildings) {
+    const map = Object.create(null);
+    let n = 0;
+    for (let i = 0; i < buildings.length; i++) {
+      const b = buildings[i];
+      if (b.dead || b.type !== 'wall') continue;
+      map[b.x + ',' + b.y] = b;
+      n++;
+    }
+
     const out = [];
+    let arms = 0;
+    let posts = 0;
+    let straight = 0;
+    let corners = 0;
+    let ends = 0;
+    let tees = 0;
+    let cross = 0;
+    let isolated = 0;
+    let maxTop = 0;
 
-    for (let i = 0; i < len; i++) {
-      const cell = run.cells && run.cells[i];
+    for (const k in map) {
+      const b = map[k];
+      const x = b.x;
+      const y = b.y;
+      let bits = 0;
+      let deg = 0;
+
+      for (let d = 0; d < WALL_DIRS.length; d++) {
+        const dir = WALL_DIRS[d];
+        if (map[(x + dir.dx) + ',' + (y + dir.dy)]) {
+          bits |= dir.bit;
+          deg++;
+        }
+      }
+
+      // Столб: один на клетку. У прямой его нет, у конца — на свободной
+      // стороне, у угла/T/креста — в центре.
+      let post = 'center';
+      if (deg === 0) {
+        isolated++;
+      } else if (deg === 1) {
+        ends++;
+        post = 'end';
+      } else if (deg === 2) {
+        if (bits === 3 || bits === 12) {
+          straight++;
+          post = 'none';
+        } else {
+          corners++;
+        }
+      } else if (deg === 3) {
+        tees++;
+      } else {
+        cross++;
+      }
+
+      const lvl = levelOf(b);
+      if (wallTopPx(lvl) > maxTop) maxTop = wallTopPx(lvl);
+      arms += deg === 0 ? 4 : deg;
+      if (post !== 'none') posts++;
+
       out.push({
-        x: alongX ? run.x + i : run.x,
-        y: alongX ? run.y : run.y + i,
-        w: alongX ? 1 : run.w,
-        h: alongX ? run.h : 1,
-        cells: cell ? [cell] : [],
-        lvl: cell ? runLevel([cell]) : (run.lvl || 1),
-        extA: i === 0 ? (run.extA || 0) : 0,
-        extB: i === len - 1 ? (run.extB || 0) : 0,
-        alongX: alongX,
-        first: i === 0,
-        last: i === len - 1
+        x: x, y: y, w: 1, h: 1, cells: [b], lvl: lvl,
+        bits: bits, deg: deg, post: post
       });
     }
 
+    wallStats = {
+      cells: n, arms: arms, posts: posts, straight: straight,
+      corners: corners, ends: ends, tees: tees, cross: cross,
+      isolated: isolated, maxTop: maxTop
+    };
     return out;
   }
 
-  // торцы секции: на стыке с соседней клеткой грань не рисуем, иначе шов
-
-
-  /* Клетка стены — тоже статичный спрайт. Торцы на стыках не рисуются,
-     поэтому соседние спрайты стыкуются без шва. */
+  /* Клетка стены — статичный спрайт. Плечи идут от центра клетки до
+     середины общей грани; у соседа точно такое же плечо навстречу, поэтому
+     линия непрерывна, а столб на стыке один. */
   const wallSpriteCache = new Map();
+  let wallSpriteLod = -1;
 
   function wallSprite(r) {
-    const key = 'w|' + r.lvl + '|' + (r.alongX ? 1 : 0) + '|' +
-      (r.first ? 1 : 0) + (r.last ? 1 : 0) + '|' +
-      (r.extA || 0) + '|' + (r.extB || 0) + '|' + lod;
+    // разные LOD не держим одновременно: иначе кэш растёт на сотни канв
+    if (wallSpriteLod !== lod) {
+      wallSpriteCache.clear();
+      wallSpriteLod = lod;
+    }
 
+    const key = 'wc|' + r.lvl + '|' + (r.bits | 0) + '|' + lod;
     if (wallSpriteCache.has(key)) return wallSpriteCache.get(key);
 
-    const left = 42;
-    const top = 76;
-    const cw = 84;
-    const ch = 126;
+    const left = 48;
+    const top = 58;
+    const cw = 96;
+    const ch = 104;
     const ss = lod === 0 ? 1 : 1.5;
 
     let sp = null;
@@ -1055,11 +1137,10 @@ CC.Render = (function () {
       const c = makeCanvas(cw * ss, ch * ss);
       const cx = c.getContext('2d');
       cx.setTransform(ss, 0, 0, ss, left * ss, top * ss);
-      drawWallRun(cx, {
-        x: 0, y: 0, w: r.w, h: r.h, cells: [],
-        lvl: r.lvl, alongX: r.alongX, first: r.first, last: r.last,
-        extA: r.extA || 0, extB: r.extB || 0
-      }, { section: true });
+      drawWallCellVector(cx, {
+        x: 0, y: 0, w: 1, h: 1, lvl: r.lvl,
+        bits: r.bits | 0, deg: r.deg | 0, post: r.post
+      });
       sp = { canvas: c, left: left, top: top, w: cw, h: ch };
     } catch (e) {
       sp = null;
@@ -1069,37 +1150,196 @@ CC.Render = (function () {
     return sp;
   }
 
-  function wallPulse(ctx, r) {
-    if (lod === 0) return;
-    const lvl = r.lvl || 1;
-    const H = 23 + (lvl >= 3 ? 5 : 0);
-    const pts = wallFieldPoints(r);
-    const a = pts.a;
-    const b = pts.b;
-    const pulse = lvl >= 10
-      ? 0.14 + 0.09 * (0.5 + 0.5 * Math.sin(t * 3 + (r.x + r.y) * 0.8))
-      : 0.08 + 0.05 * (0.5 + 0.5 * Math.sin(t * 2.6 + (r.x + r.y) * 0.8));
+  // Концы плеча в экранных координатах: центр клетки → середина грани.
+  function wallArmPoints(r, dirIndex) {
+    const dir = WALL_DIRS[dirIndex];
+    return {
+      a: P(r.x + 0.5, r.y + 0.5),
+      b: P(r.x + 0.5 + dir.dx * 0.5, r.y + 0.5 + dir.dy * 0.5)
+    };
+  }
 
+  function drawWallArm(ctx, a, b, H, lvl) {
+    const baseH = 3.2;
+    // Поле всегда бирюзовое: песочный акцент включается рейками и точками
+    // на 5+ уровнях, а не заливкой всего барьера.
+    const field = 'rgba(70,224,200,.27)';
+
+    // тёмное основание: держит низ поля и закрывает щель у земли
     poly(ctx, [
       { x: a.x, y: a.y },
       { x: b.x, y: b.y },
+      { x: b.x, y: b.y - baseH },
+      { x: a.x, y: a.y - baseH }
+    ], 'rgba(40,46,50,.92)');
+
+    // энергополе до самой грани клетки
+    poly(ctx, [
+      { x: a.x, y: a.y - baseH },
+      { x: b.x, y: b.y - baseH },
       { x: b.x, y: b.y - H },
       { x: a.x, y: a.y - H }
-    ], lvl >= 5
+    ], field);
+
+    // нижняя кромка поля
+    ctx.strokeStyle = lvl >= 5 ? 'rgba(255,207,74,.85)' : 'rgba(70,224,200,.8)';
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y - baseH);
+    ctx.lineTo(b.x, b.y - baseH);
+    ctx.stroke();
+
+    // сетка поля: линии продолжаются через стык клеток
+    if (lvl >= 3 && mid()) {
+      ctx.strokeStyle = lvl >= 5 ? 'rgba(255,207,74,.26)' : 'rgba(70,224,200,.24)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (let k = 1; k <= 2; k++) {
+        const v = baseH + (H - baseH) * k / 3;
+        ctx.moveTo(a.x, a.y - v);
+        ctx.lineTo(b.x, b.y - v);
+      }
+      ctx.stroke();
+    }
+
+    // верхняя рейка: тёмный металл и светлая кромка
+    ctx.strokeStyle = PAL.metalDark;
+    ctx.lineWidth = near() ? 2.4 : 1.8;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y - H);
+    ctx.lineTo(b.x, b.y - H);
+    ctx.stroke();
+
+    ctx.strokeStyle = PAL.metalLight;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y - H - 0.8);
+    ctx.lineTo(b.x, b.y - H - 0.8);
+    ctx.stroke();
+
+    // 6: световая кромка у основания
+    if (lvl >= 6) {
+      ctx.strokeStyle = lvl >= 9 ? 'rgba(255,207,74,.55)' : 'rgba(127,233,255,.45)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - baseH - 1);
+      ctx.lineTo(b.x, b.y - baseH - 1);
+      ctx.stroke();
+    }
+
+    // 7: вторая рейка над полем на коротких стойках
+    if (lvl >= 7) {
+      ctx.strokeStyle = 'rgba(154,167,173,.6)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - H - 2.5);
+      ctx.lineTo(b.x, b.y - H - 2.5);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(154,167,173,.5)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y - H);
+      ctx.lineTo(b.x, b.y - H - 2.5);
+      ctx.stroke();
+    }
+
+    // 9: золотая рейка по верху — низкая, но заметная
+    if (lvl >= 9) {
+      ctx.strokeStyle = 'rgba(255,207,74,.85)';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - H - 4.3);
+      ctx.lineTo(b.x, b.y - H - 4.3);
+      ctx.stroke();
+    }
+
+    // 10: тонкая золотая полоса между рейками
+    if (lvl >= 10) {
+      poly(ctx, [
+        { x: a.x, y: a.y - H - 2.7 },
+        { x: b.x, y: b.y - H - 2.7 },
+        { x: b.x, y: b.y - H - 4.2 },
+        { x: a.x, y: a.y - H - 4.2 }
+      ], 'rgba(255,207,74,.16)');
+    }
+  }
+
+  function drawWallCellVector(ctx, r) {
+    const lvl = r.lvl || 1;
+    const H = wallHeight(lvl);
+    const bits = r.bits | 0;
+
+    if (!bits) {
+      // одиночная стена — все четыре стороны вокруг одного столба
+      for (let d = 0; d < WALL_DIRS.length; d++) {
+        const arm = wallArmPoints(r, d);
+        drawWallArm(ctx, arm.a, arm.b, H, lvl);
+      }
+    } else {
+      for (let d = 0; d < WALL_DIRS.length; d++) {
+        if (!(bits & WALL_DIRS[d].bit)) continue;
+        const arm = wallArmPoints(r, d);
+        drawWallArm(ctx, arm.a, arm.b, H, lvl);
+      }
+    }
+
+    // Один столб на клетку: конец, угол, T/крест или одиночная.
+    if (r.post === 'end') {
+      // конец пролёта: столб на свободной стороне, напротив единственного соседа
+      let fx = r.x + 0.5;
+      let fy = r.y + 0.5;
+      for (let d = 0; d < WALL_DIRS.length; d++) {
+        if (!(bits & WALL_DIRS[d].bit)) continue;
+        fx = r.x + 0.5 - WALL_DIRS[d].dx * 0.5;
+        fy = r.y + 0.5 - WALL_DIRS[d].dy * 0.5;
+        break;
+      }
+      barrierPost(ctx, fx, fy, H, lvl);
+    } else if (r.post !== 'none') {
+      barrierPost(ctx, r.x + 0.5, r.y + 0.5, H, lvl);
+    }
+
+    // не оставляем round-кэп следующим постройкам
+    ctx.lineCap = 'butt';
+  }
+
+  function wallPulse(ctx, r) {
+    if (lod === 0) return;
+    const lvl = r.lvl || 1;
+    const H = wallHeight(lvl);
+    const baseH = 3.2;
+    const bits = r.bits | 0;
+    const pulse = lvl >= 10
+      ? 0.10 + 0.07 * (0.5 + 0.5 * Math.sin(t * 3 + (r.x + r.y) * 0.8))
+      : 0.05 + 0.035 * (0.5 + 0.5 * Math.sin(t * 2.6 + (r.x + r.y) * 0.8));
+    const col = lvl >= 9
       ? 'rgba(255,207,74,' + pulse.toFixed(3) + ')'
-      : 'rgba(70,224,200,' + pulse.toFixed(3) + ')');
+      : 'rgba(70,224,200,' + pulse.toFixed(3) + ')';
+
+    for (let d = 0; d < WALL_DIRS.length; d++) {
+      if (bits && !(bits & WALL_DIRS[d].bit)) continue;
+      const arm = wallArmPoints(r, d);
+      poly(ctx, [
+        { x: arm.a.x, y: arm.a.y - baseH },
+        { x: arm.b.x, y: arm.b.y - baseH },
+        { x: arm.b.x, y: arm.b.y - H },
+        { x: arm.a.x, y: arm.a.y - H }
+      ], col);
+    }
   }
 
   function drawWallSection(ctx, r) {
     if (!spritesOn || tilePx > 96) {
-      drawWallRun(ctx, r, { section: true });
+      drawWallCellVector(ctx, r);
       wallPulse(ctx, r);
       return;
     }
 
     const sp = wallSprite(r);
     if (!sp) {
-      drawWallRun(ctx, r, { section: true });
+      drawWallCellVector(ctx, r);
       wallPulse(ctx, r);
       return;
     }
@@ -1109,210 +1349,66 @@ CC.Render = (function () {
     wallPulse(ctx, r);
   }
 
-  // Точки силового поля участка (с учётом стыков на углах).
-  function wallFieldPoints(run) {
-    const a0 = -(run.extA || 0);
-    const a1 = (run.alongX ? run.w : run.h) + (run.extB || 0);
-    if (run.alongX) {
-      return {
-        a: P(run.x + a0 + 0.02, run.y + 0.5),
-        b: P(run.x + a1 - 0.02, run.y + 0.5)
-      };
-    }
-    return {
-      a: P(run.x + 0.5, run.y + a0 + 0.02),
-      b: P(run.x + 0.5, run.y + a1 - 0.02)
-    };
-  }
-
   function barrierPost(ctx, px, py, H, lvl) {
+    const half = 0.06;
     // тумба
-    prism(ctx, px - 0.12, py - 0.12, px + 0.12, py + 0.12, 0, 3,
+    prism(ctx, px - 0.09, py - 0.09, px + 0.09, py + 0.09, 0, 2.6,
       PAL.metalLight, PAL.metal, PAL.metalDark);
-    // столб
-    prism(ctx, px - 0.075, py - 0.075, px + 0.075, py + 0.075, 3, H,
+    // невысокий столб
+    prism(ctx, px - half, py - half, px + half, py + half, 2.6, Math.max(1, H - 2.6),
       PAL.metalLight, PAL.metal, PAL.metalDark);
     // наконечник
-    prism(ctx, px - 0.1, py - 0.1, px + 0.1, py + 0.1, H + 3, 3,
+    prism(ctx, px - 0.082, py - 0.082, px + 0.082, py + 0.082, H, 2.2,
       PAL.metalLight, PAL.metal, PAL.metalDark);
-    if (lvl >= 5) {
-      spot(ctx, px + (0), py - H - 7, 1.8, PAL.gold);
+
+    if (lvl >= 8) {
+      // короткий эмиттерный шип вместо высокого «маяка»
+      ctx.strokeStyle = PAL.metalLight;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(px, py - H - 2.2);
+      ctx.lineTo(px, py - H - 6);
+      ctx.stroke();
+      spot(ctx, px, py - H - 6.5, 1.2, PAL.cold);
+    } else if (lvl >= 5) {
+      spot(ctx, px, py - H - 3.6, 1.4, PAL.gold);
     } else if (lvl >= 3 && mid()) {
-      spot(ctx, px, py - H - 6, 1.1, PAL.cyan);
+      spot(ctx, px, py - H - 3.4, 1, PAL.cyan);
     }
 
-    /* 6-10: столб обрастает индикацией и рёбрами */
+    /* 6-10: индикация и рёбра, всё ниже прежнего */
     if (lvl >= 6) {
-      spot(ctx, px - 0.05, py - H * 0.55, 1.1, PAL.glass);
+      spot(ctx, px - 0.05, py - H * 0.55, 0.9, PAL.glass);
     }
     if (lvl >= 7) {
-      // боковые рёбра у основания
-      prism(ctx, px - 0.16, py - 0.04, px - 0.08, py + 0.04, 3, 7,
+      prism(ctx, px - 0.14, py - 0.035, px - 0.08, py + 0.035, 2.6, 4,
         PAL.metalLight, PAL.metal, PAL.metalDark);
-      prism(ctx, px + 0.08, py - 0.04, px + 0.16, py + 0.04, 3, 7,
+      prism(ctx, px + 0.08, py - 0.035, px + 0.14, py + 0.035, 2.6, 4,
         PAL.metalDark, PAL.metal, PAL.metalDark);
     }
-    if (lvl >= 8) {
-      // короткий эмиттерный шип над наконечником
-      ctx.strokeStyle = PAL.metalLight;
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(px, py - H - 10);
-      ctx.lineTo(px, py - H - 16);
-      ctx.stroke();
-      spot(ctx, px, py - H - 17, 1.5, PAL.cold);
-    }
     if (lvl >= 9) {
-      prism(ctx, px - 0.11, py - 0.11, px + 0.11, py + 0.11, H + 6, 2,
+      prism(ctx, px - 0.085, py - 0.085, px + 0.085, py + 0.085, H + 2.2, 1.2,
         PAL.gold, PAL.gold, PAL.gold);
     }
     if (lvl >= 10) {
-      prism(ctx, px - 0.14, py - 0.03, px - 0.08, py + 0.03, H - 8, 10,
-        PAL.metalLight, PAL.metal, PAL.metalDark);
-      prism(ctx, px + 0.08, py - 0.03, px + 0.14, py + 0.03, H - 8, 10,
-        PAL.metalDark, PAL.metal, PAL.metalDark);
+      // низкое золотое навершие: акцент, а не высокая мачта
+      prism(ctx, px - 0.05, py - 0.05, px + 0.05, py + 0.05, H + 3.4, 2.6,
+        PAL.gold, PAL.gold, PAL.metalDark);
+      spot(ctx, px, py - H - 6.4, 1.1, PAL.gold);
     }
   }
 
+  // Запасной путь для drawBuilding: одна клетка без карты соседей.
   function drawWallRun(ctx, run, opts) {
-    const part = !!(opts && opts.section);
-    const lvl = run.lvl || 1;
-    const alongX = typeof run.alongX === 'boolean' ? run.alongX : (run.w >= run.h);
-    const H = 23 + (lvl >= 3 ? 5 : 0);
-    const x0 = run.x;
-    const y0 = run.y;
-    const x1 = run.x + run.w;
-    const y1 = run.y + run.h;
-
-    // газон и тень — один раз на пролёт, до построек
-    if (!part || opts.pad) {
-      grassPad(ctx, x0, y0, x1, y1);
-      castShadow(ctx, x0, y0, x1, y1, 0.9);
-    }
-
-    const pts = wallFieldPoints({
-      x: x0, y: y0, w: run.w, h: run.h,
-      extA: run.extA || 0, extB: run.extB || 0, alongX: alongX
-    });
-    const a = pts.a;
-    const b = pts.b;
-
-    // силовое поле
-    const field = lvl >= 5 ? PAL.amber : PAL.cyan;
-    poly(ctx, [
-      { x: a.x, y: a.y },
-      { x: b.x, y: b.y },
-      { x: b.x, y: b.y - H },
-      { x: a.x, y: a.y - H }
-    ], lvl >= 5 ? 'rgba(255,207,74,.32)' : 'rgba(70,224,200,.3)');
-
-    // внутреннее свечение и кромка
-    ctx.strokeStyle = lvl >= 5 ? 'rgba(255,207,74,.9)' : 'rgba(70,224,200,.85)';
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y - 2);
-    ctx.lineTo(b.x, b.y - 2);
-    ctx.moveTo(a.x, a.y - H + 1);
-    ctx.lineTo(b.x, b.y - H + 1);
-    ctx.stroke();
-
-    // решётка усиленного поля
-    if (lvl >= 3 && mid()) {
-      ctx.strokeStyle = lvl >= 5 ? 'rgba(255,207,74,.3)' : 'rgba(70,224,200,.26)';
-      ctx.lineWidth = 0.9;
-      ctx.beginPath();
-      for (let k = 1; k <= 2; k++) {
-        ctx.moveTo(a.x, a.y - H * k / 3);
-        ctx.lineTo(b.x, b.y - H * k / 3);
-      }
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      ctx.moveTo(mx, my);
-      ctx.lineTo(mx, my - H);
-      ctx.stroke();
-    }
-
-    /* --- 6-10: поле набирает мощность --- */
-
-    // 6: нижняя световая кромка и мелкая насечка
-    if (lvl >= 6) {
-      ctx.strokeStyle = lvl >= 9 ? 'rgba(255,207,74,.55)' : 'rgba(127,233,255,.45)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y - 3);
-      ctx.lineTo(b.x, b.y - 3);
-      ctx.stroke();
-      if (mid()) {
-        ctx.strokeStyle = 'rgba(127,233,255,.22)';
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        for (let k = 1; k <= 3; k++) {
-          const u = k / 4;
-          const px = a.x + (b.x - a.x) * u;
-          const py = a.y + (b.y - a.y) * u;
-          ctx.moveTo(px, py - 2);
-          ctx.lineTo(px, py - H + 2);
-        }
-        ctx.stroke();
-      }
-    }
-
-    // 7: второй контур — рейка над полем на коротких стойках
-    if (lvl >= 7) {
-      ctx.strokeStyle = 'rgba(154,167,173,.55)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y - H - 4);
-      ctx.lineTo(b.x, b.y - H - 4);
-      ctx.moveTo(a.x, a.y - H - 4);
-      ctx.lineTo(a.x, a.y - H);
-      ctx.moveTo(b.x, b.y - H - 4);
-      ctx.lineTo(b.x, b.y - H);
-      ctx.stroke();
-    }
-
-    // 9: золотая рейка по верху поля
-    if (lvl >= 9) {
-      ctx.strokeStyle = 'rgba(255,207,74,.8)';
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y - H - 6);
-      ctx.lineTo(b.x, b.y - H - 6);
-      ctx.stroke();
-    }
-
-    // 10: второй слой поля — пульсирующая надстройка
-    if (lvl >= 10) {
-      const band = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t * 2.4 + (run.x + run.y) * 0.6));
-      poly(ctx, [
-        { x: a.x, y: a.y - H - 6 },
-        { x: b.x, y: b.y - H - 6 },
-        { x: b.x, y: b.y - H - 13 },
-        { x: a.x, y: a.y - H - 13 }
-      ], 'rgba(255,207,74,' + band.toFixed(3) + ')');
-      ctx.strokeStyle = 'rgba(255,207,74,.6)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y - H - 13);
-      ctx.lineTo(b.x, b.y - H - 13);
-      ctx.stroke();
-    }
-
-    // столбы на концах; на стыке секций они совпадают и закрывают шов
-    if (alongX) {
-      barrierPost(ctx, x0, y0 + 0.5, H, lvl);
-      barrierPost(ctx, x1, y0 + 0.5, H, lvl);
-    } else {
-      barrierPost(ctx, x0 + 0.5, y0, H, lvl);
-      barrierPost(ctx, x0 + 0.5, y1, H, lvl);
-    }
-
-    // полоска здоровья — одна на участок
-    if (!part || opts.bar) wallHpBar(ctx, run, H + 10);
+    const cells = run.cells && run.cells.length ? run.cells : [];
+    const lvl = run.lvl || (cells[0] ? levelOf(cells[0]) : 1);
+    const cell = {
+      x: run.x, y: run.y, w: 1, h: 1, cells: cells, lvl: lvl,
+      bits: run.bits | 0, deg: 0, post: 'center'
+    };
+    drawWallSection(ctx, cell);
+    if (opts && opts.bar) wallHpBar(ctx, cell, wallTopPx(lvl) + 4);
   }
-
-  // частокол: насыпь + плотный ряд заострённых брёвен без просветов
-
 
   // полоска HP участка стены
   function wallHpBar(ctx, run, topPx) {
@@ -1338,9 +1434,6 @@ CC.Render = (function () {
     ctx.fillStyle = hpColor(hp / maxHp);
     ctx.fillRect(cx - w / 2, y, w * Math.max(0, hp / maxHp), 2);
   }
-
-  // вертикальные стыки кладки на грани
-
 
   /* ---------- постройки ---------- */
 
@@ -6122,7 +6215,7 @@ CC.Render = (function () {
     if (type === 'ambush') { drawAmbush(ctx, b, lvl, trapVariant(b) === 'open'); return; }
     if (type === 'beam') { drawBeamTower(ctx, b, lvl); return; }
     if (type === 'wall') {
-      drawWallRun(ctx, { x: b.x, y: b.y, w: 1, h: 1, cells: [b], lvl: lvl, alongX: true, first: true, last: true }, { bar: true });
+      drawWallRun(ctx, { x: b.x, y: b.y, w: 1, h: 1, cells: [b], lvl: lvl }, { bar: true });
       return;
     }
 
@@ -8802,6 +8895,80 @@ CC.Render = (function () {
 
   let traceDraw = null;
 
+  /* ---------- состояния окон покупки ---------- */
+  // Разметкой и обработчиками владеет ui.js. Здесь только визуальное
+  // состояние: набор нельзя купить, если платины не хватает или склад полон.
+  // В песочницах без карточек (scene-check/tests) функция молча выключается.
+  let buyHudAt = 0;
+
+  function syncBuyHud() {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    const now = Date.now();
+    if (now - buyHudAt < 120) return;
+    buyHudAt = now;
+
+    let cards;
+    try {
+      cards = document.querySelectorAll('#buyres .buy-offer[data-buy-res][data-buy-gems]');
+    } catch (e) {
+      return;
+    }
+    if (!cards || !cards.length) return;
+    if (!CC.Game || typeof CC.Game.gems !== 'function') return;
+
+    const first = cards[0];
+    const res = first.getAttribute('data-buy-res') === 'elixir' ? 'elixir' : 'gold';
+    const th = CC.Game.townhallLevel ? CC.Game.townhallLevel() : 1;
+    const gems = Number(CC.Game.gems()) || 0;
+    const cap = CC.Game.cap ? Number(CC.Game.cap(res)) || 0 : 0;
+    const held = res === 'elixir'
+      ? (CC.Game.elixir ? Number(CC.Game.elixir()) || 0 : 0)
+      : (CC.Game.gold ? Number(CC.Game.gold()) || 0 : 0);
+    const free = Math.max(0, Math.floor(cap - held));
+
+    let anyShort = false;
+    let anyPartial = false;
+
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      const n = Number(card.getAttribute('data-buy-gems')) || 0;
+      const amount = CC.resBuyAmount ? Number(CC.resBuyAmount(res, n, th)) || 0 : 0;
+      const full = free <= 0;
+      const short = !full && n > gems;
+      const partial = !full && amount > free;
+      if (short) anyShort = true;
+      if (partial) anyPartial = true;
+
+      if (card.classList) {
+        card.classList.toggle('is-short', short);
+        card.classList.toggle('is-full', full);
+        card.classList.toggle('is-partial', partial);
+      }
+      if (full) card.setAttribute('disabled', 'disabled');
+      else card.removeAttribute('disabled');
+
+      const label = card.querySelector ? card.querySelector('.shop-card__count') : null;
+      if (!label) continue;
+      if (!label.getAttribute('data-buy-label')) {
+        label.setAttribute('data-buy-label', label.textContent || 'Купить');
+      }
+      const base = label.getAttribute('data-buy-label') || 'Купить';
+      const want = short
+        ? 'Не хватает ' + (n - gems)
+        : (full ? 'Склад полон' : base);
+      if (label.textContent !== want) label.textContent = want;
+    }
+
+    const win = document.getElementById ? document.getElementById('buyres') : null;
+    const box = win && win.querySelector ? win.querySelector('.buy-card') : null;
+    if (box && box.classList) {
+      box.classList.toggle('has-short', anyShort);
+      box.classList.toggle('has-partial', anyPartial);
+      box.classList.toggle('has-full', free <= 0);
+    }
+  }
+
+
   function drawEntities(ctx, buildings, units, traps) {
     const list = [];
     const runs = wallRuns(buildings);
@@ -8821,14 +8988,13 @@ CC.Render = (function () {
       list.push({ d: (b.x + b.w / 2) + (b.y + b.h / 2), kind: 'b', ref: b });
     }
 
-    // каждая клетка стены — отдельный элемент сортировки
-    for (let i = 0; i < runs.length; i++) {
-      const parts = wallSections(runs[i]);
-      for (let k = 0; k < parts.length; k++) {
-        const s = parts[k];
-        if (!footprintVisible(s.x, s.y, s.x + s.w, s.y + s.h, 70)) continue;
-        list.push({ d: (s.x + 0.5) + (s.y + 0.5), kind: 'w', ref: s });
-      }
+    // каждая клетка стены — отдельный элемент сортировки; соседей берём
+    // по сетке, поэтому прогоны больше не влияют на форму стыков
+    const cells = wallCells(buildings);
+    for (let i = 0; i < cells.length; i++) {
+      const s = cells[i];
+      if (!footprintVisible(s.x, s.y, s.x + 1, s.y + 1, wallTopPx(s.lvl) + 8)) continue;
+      list.push({ d: (s.x + 0.5) + (s.y + 0.5), kind: 'w', ref: s });
     }
 
     // Ловушки в бою живут отдельным списком S.traps. До срабатывания
@@ -8900,11 +9066,210 @@ CC.Render = (function () {
     for (let i = 0; i < runs.length; i++) {
       const r = runs[i];
       if (!footprintVisible(r.x, r.y, r.x + r.w, r.y + r.h, 80)) continue;
-      const lvl = r.lvl || 1;
-      const H = 23 + (lvl >= 3 ? 5 : 0);
-      const top = H + 10;
+      const top = wallTopPx(r.lvl || 1) + 4;
       wallHpBar(ctx, r, top);
     }
+  }
+
+  /* ---------- Сержант-инструктор у командного центра ----------
+     Пока обучение активно, рядом с центром стоит маленькая фигурка
+     с маркером «!». Это декор: рендер только читает CC.Game.tutorial()
+     и CC.Base.list(), кликов и хит-тестов не добавляет. */
+
+  function tutorialRunning() {
+    try {
+      const g = CC.Game;
+      if (!g || typeof g.tutorial !== 'function') return false;
+      const tut = g.tutorial();
+      return !!(tut && tut.active);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function cellBusy(x, y) {
+    let list;
+    try {
+      list = CC.Base.list();
+    } catch (e) {
+      return true;
+    }
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (!b || b.dead) continue;
+      const s = CC.Base.size(b.type) || { w: 1, h: 1 };
+      if (x > b.x - 0.25 && x < b.x + (s.w || 1) + 0.25 &&
+          y > b.y - 0.25 && y < b.y + (s.h || 1) + 0.25) return true;
+    }
+    return false;
+  }
+
+  // Свободная клетка у центра: сначала справа-спереди (фигура не спорит
+  // с самим зданием), затем другие стороны. Без pathfinding и записи в базу.
+  function sergeantPost() {
+    let list;
+    try {
+      list = CC.Base.list();
+    } catch (e) {
+      return null;
+    }
+    let hall = null;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] && !list[i].dead && list[i].type === 'townhall') {
+        hall = list[i];
+        break;
+      }
+    }
+    if (!hall) return null;
+
+    const s = CC.Base.size('townhall') || { w: 3, h: 3 };
+    const w = s.w || 3;
+    const h = s.h || 3;
+    const spots = [
+      { x: hall.x + w + 0.32, y: hall.y + h + 0.32 },
+      { x: hall.x - 0.32, y: hall.y + h + 0.32 },
+      { x: hall.x + w + 0.32, y: hall.y + h - 0.4 },
+      { x: hall.x + w - 0.5, y: hall.y - 0.32 }
+    ];
+    for (let i = 0; i < spots.length; i++) {
+      if (!cellBusy(spots[i].x, spots[i].y)) return spots[i];
+    }
+    return null;
+  }
+
+  function drawTutorialSergeant(ctx) {
+    if (!tutorialRunning()) return;
+    const spot = sergeantPost();
+    if (!spot) return;
+
+    const p = P(spot.x, spot.y);
+    if (!pointVisible(p.x, p.y, 70)) return;
+
+    const bob = Math.sin(t * 2.1) * 1.1;
+    const sway = Math.sin(t * 1.55) * 0.35;
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+
+    // мягкое пятно на грунте: место Сержанта не путается с юнитом
+    ctx.fillStyle = 'rgba(34,52,24,.2)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 7.5, 2.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(70,224,200,.5)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.ellipse(0, 0.2, 8.6, 3.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // красный плащ и ноги
+    poly(ctx, [
+      { x: -5.2, y: -13 + bob },
+      { x: 5.2, y: -13 + bob },
+      { x: 6.4, y: -1.5 },
+      { x: 1.2, y: -0.6 },
+      { x: -6.2, y: -1.8 }
+    ], '#8e2f23');
+    poly(ctx, [
+      { x: -3.4, y: -12 + bob },
+      { x: 3.4, y: -12 + bob },
+      { x: 4.6, y: -3.2 },
+      { x: -4.6, y: -3.2 }
+    ], '#d4573c');
+
+    ctx.fillStyle = '#4c565c';
+    ctx.fillRect(-3.4, -6.2, 2.5, 6.4);
+    ctx.fillRect(1.0, -6.2, 2.5, 6.4);
+    ctx.fillStyle = '#2f271b';
+    ctx.fillRect(-3.9, -1.2, 3.3, 1.5);
+    ctx.fillRect(0.6, -1.2, 3.3, 1.5);
+
+    // корпус
+    poly(ctx, [
+      { x: -4.6, y: -15.5 + bob },
+      { x: 4.6, y: -15.5 + bob },
+      { x: 5.3, y: -6.0 },
+      { x: -5.3, y: -6.0 }
+    ], '#c9b487');
+    ctx.fillStyle = '#b23a2c';
+    ctx.fillRect(-4.3, -10.3 + bob, 8.6, 1.4);
+    ctx.fillStyle = '#ffcf4a';
+    ctx.fillRect(-0.8, -13.8 + bob, 1.6, 1.6);
+
+    // наплечники: две пластины, золотая кромка
+    ctx.fillStyle = '#8a7753';
+    ctx.beginPath();
+    ctx.ellipse(-5.5 + sway, -14.2 + bob, 3.4, 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(5.5 + sway, -14.2 + bob, 3.4, 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffcf4a';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(-5.5 + sway, -14.2 + bob, 2.7, 1.9, 0, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(5.5 + sway, -14.2 + bob, 2.7, 1.9, 0, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+
+    // шлем и бирюзовый визор
+    ctx.fillStyle = '#cdb887';
+    ctx.beginPath();
+    ctx.ellipse(0, -19.6 + bob, 5.3, 5.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#8a7753';
+    ctx.beginPath();
+    ctx.ellipse(0, -19.2 + bob, 4.4, 4.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#b23a2c';
+    ctx.fillRect(-0.8, -24.7 + bob, 1.6, 5.4);
+    ctx.fillStyle = '#0a2f33';
+    ctx.fillRect(-3.8, -20.6 + bob, 7.6, 3.1);
+    ctx.fillStyle = '#46e0c8';
+    ctx.fillRect(-3.3, -20.2 + bob, 6.6, 2.2);
+    ctx.fillStyle = 'rgba(255,255,255,.65)';
+    ctx.fillRect(-2.4, -19.9 + bob, 2.4, 0.6);
+
+    // антенна
+    ctx.strokeStyle = '#d9c697';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(4.0, -23.2 + bob);
+    ctx.lineTo(7.2, -28.4 + bob);
+    ctx.stroke();
+    ctx.fillStyle = '#46e0c8';
+    ctx.beginPath();
+    ctx.arc(7.4, -28.8 + bob, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // маркер «!»: приподнят над головой и мягко покачивается
+    const my = -37 + bob * 1.5;
+    ctx.fillStyle = 'rgba(9,20,24,.92)';
+    ctx.beginPath();
+    ctx.arc(0, my, 7.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(70,224,200,.85)';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.arc(0, my, 7.4, 0, Math.PI * 2);
+    ctx.stroke();
+    poly(ctx, [
+      { x: -3.4, y: my + 5.8 },
+      { x: 3.4, y: my + 5.8 },
+      { x: 0, y: my + 10.4 }
+    ], 'rgba(9,20,24,.92)');
+
+    ctx.fillStyle = '#ffcf4a';
+    ctx.font = '800 11px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', 0, my + 0.6);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+
+    ctx.restore();
   }
 
   /* ---------- сетка режима «Постройки» ----------
@@ -9322,6 +9687,7 @@ CC.Render = (function () {
       updateWalkers(1 / 60);
       drawPlacement(ctx);
       drawEntities(ctx, list, walkers.list);
+      drawTutorialSergeant(ctx);
       drawSelection(ctx);
       drawBuildDrag(ctx);
       drawIndicators(ctx, list);
@@ -9330,6 +9696,7 @@ CC.Render = (function () {
     ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
     drawVignette(ctx, view);
     drawFinal(ctx, view);
+    syncBuyHud();
   }
 
   /* =================================================================
@@ -10571,6 +10938,9 @@ CC.Render = (function () {
     },
     // включение/выключение спрайтов (tools/scene-check.js)
     __sprites: function (on) { spritesOn = !!on; },
+    // статистика последней раскладки стен: клетки, плечи, столбы и типы
+    // стыков. Нужна tools/scene-check.js и tools/wall-shots.js.
+    __walls: function () { return wallStats; },
     // счётчики ловушек за последний кадр: сколько скрыто и сколько нарисовано.
     // Нужны сцене-чеку, чтобы проверить невидимость до срабатывания.
     __traps: function () {
