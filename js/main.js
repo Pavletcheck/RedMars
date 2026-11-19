@@ -360,7 +360,8 @@ CC.Sound = (function () {
     hit: 8, hitWall: 8, destroy: 4, destroyWall: 6,
     cannonShot: 10, archerShot: 10, mortarShot: 5, mortarHit: 5,
     raidAlarm: 1, lootLost: 1, questDone: 1, levelUp: 1, tick: 2,
-    win: 1, lose: 1, ui: 8
+    win: 1, lose: 1, ui: 8,
+    introEngine: 1, introImpact: 1, introServo: 1, introClank: 1, introTitle: 1
   };
 
   let enabled = true;
@@ -382,6 +383,7 @@ CC.Sound = (function () {
   let musicTimer = null;
   let hidden = false;
   let touched = false;
+  let introDuck = false; // заставка: музыка уходит, после — возвращается
 
   try {
     if (localStorage.getItem(KEY) === '0') enabled = false;
@@ -412,7 +414,7 @@ CC.Sound = (function () {
   function mix() {
     return CC.AudioMix.levels(pendingMode || mode, {
       master: masterVol,
-      music: musicOn && !hidden,
+      music: musicOn && !hidden && !introDuck,
       sfx: enabled
     });
   }
@@ -455,6 +457,21 @@ CC.Sound = (function () {
       /* приватный режим */
     }
     applyVolumes();
+  }
+
+  // Заставка не спорит с музыкой: на время сцены фон уводим в тишину,
+  // после — возвращаем на ту же громкость. Работает и без контекста.
+  function duckMusic(on) {
+    const next = !!on;
+    if (next === introDuck) return;
+    introDuck = next;
+    if (next) {
+      stopMusic();
+      if (ctx && musicBus) setParam(musicBus.gain, 0, 0.25);
+    } else {
+      applyVolumes();
+      if (musicOn && !hidden && touched && ctx) startMusic();
+    }
   }
 
   function cleanup(nodes) {
@@ -907,6 +924,91 @@ CC.Sound = (function () {
     // еле слышный клик интерфейса
     ui: function () {
       tone(1200, 0.018, 'square', 0.012, 800);
+    },
+    // Заставка: гул двигателей 2.5 с, к посадке затухает.
+    introEngine: function () {
+      if (!ctx || !sfxBus) return;
+      const t = ctx.currentTime;
+      const dur = 2.5;
+      const bus = ctx.createGain();
+      bus.gain.setValueAtTime(0.0001, t);
+      bus.gain.exponentialRampToValueAtTime(0.075, t + 0.14);
+      bus.gain.setValueAtTime(0.075, t + dur - 0.55);
+      bus.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      bus.connect(sfxBus);
+
+      // Две низкие пилы дают неровный гул, фильтр срезает вой.
+      const flt = ctx.createBiquadFilter();
+      flt.type = 'lowpass';
+      flt.frequency.setValueAtTime(420, t);
+      flt.frequency.linearRampToValueAtTime(190, t + dur);
+      flt.Q.value = 1.1;
+      flt.connect(bus);
+
+      [46, 69].forEach(function (f, i) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = i ? 'triangle' : 'sawtooth';
+        o.frequency.setValueAtTime(f, t);
+        o.frequency.linearRampToValueAtTime(f * 0.82, t + dur);
+        g.gain.value = i ? 0.34 : 0.55;
+        o.connect(g);
+        g.connect(flt);
+        o.start(t);
+        o.stop(t + dur + 0.05);
+        o.onended = function () { cleanup([o, g]); };
+      });
+
+      // Пыль и турбулентность под гулом.
+      const src = ctx.createBufferSource();
+      const nf = ctx.createBiquadFilter();
+      const ng = ctx.createGain();
+      src.buffer = noiseBuffer();
+      nf.type = 'lowpass';
+      nf.frequency.value = 320;
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(0.05, t + 0.2);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(nf);
+      nf.connect(ng);
+      ng.connect(bus);
+      src.start(t, 0, dur);
+      src.stop(t + dur + 0.02);
+      src.onended = function () {
+        cleanup([src, nf, ng, flt, bus]);
+      };
+    },
+    // Удар о грунт: низкий взрыв и сухая пыль.
+    introImpact: function () {
+      tone(62, 0.55, 'sine', 0.17, 26);
+      tone(150, 0.2, 'triangle', 0.055, 55, 0.015);
+      noise(0.5, 0.16, 380);
+      noise(0.12, 0.06, 1900, 'highpass', 0.02);
+    },
+    // Раскрытие модуля: сервоприводы, щелчки замков и шипение.
+    introServo: function () {
+      tone(230, 0.52, 'sawtooth', 0.026, 105);
+      tone(330, 0.34, 'square', 0.014, 180, 0.06);
+      [0.16, 0.42, 0.72].forEach(function (d, i) {
+        noise(0.028, 0.05 - i * 0.008, 1900 + i * 260, 'bandpass', d);
+      });
+      noise(0.55, 0.035, 1100, 'bandpass');
+      tone(140, 0.08, 'triangle', 0.04, 90, 0.86);
+    },
+    // Подъём турели: металлический лязг и короткий скрип привода.
+    introClank: function () {
+      tone(430, 0.18, 'square', 0.038, 190);
+      tone(760, 0.12, 'triangle', 0.028, 320, 0.03);
+      noise(0.2, 0.1, 2500, 'bandpass');
+      noise(0.09, 0.06, 1200, 'bandpass', 0.11);
+      tone(105, 0.3, 'sine', 0.05, 60, 0.02);
+    },
+    // Титул: короткий аккорд, не спорит с музыкой.
+    introTitle: function () {
+      [392, 523.25, 659.25].forEach(function (f, i) {
+        tone(f, 0.5, 'triangle', 0.05, 0, i * 0.045);
+      });
+      tone(98, 0.55, 'sine', 0.035, 70);
     }
   };
 
@@ -954,6 +1056,7 @@ CC.Sound = (function () {
     setMode: setMode,
     pause: pause,
     resume: resume,
+    duckMusic: duckMusic,
     resetLimiter: resetLimiter
   };
 })();

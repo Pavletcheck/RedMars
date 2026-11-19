@@ -139,6 +139,29 @@
     <div class="quest-list" id="quest-list"></div>
   </div>
 
+  <!-- Вступительный лор Сержанта: 4 страницы только на новом сейве.
+       Кнопки «Далее» и «Пропустить» открывают обычную панель обучения. -->
+  <div class="overlay hidden" id="sergeant-lore" role="dialog" aria-modal="true"
+       aria-labelledby="lore-name" aria-describedby="lore-text">
+    <div class="overlay__card lore">
+      <div class="lore__head">
+        <div class="lore__portrait" aria-hidden="true">
+          <span class="sergeant__face">🎖️</span>
+        </div>
+        <div class="lore__who">
+          <b class="lore__name" id="lore-name">Сержант</b>
+          <span class="lore__step" id="lore-step">1/4</span>
+        </div>
+      </div>
+      <p class="lore__text" id="lore-text"></p>
+      <div class="lore__dots" id="lore-dots" aria-hidden="true"></div>
+      <div class="lore__actions">
+        <button class="overlay__btn lore__next" id="lore-next" type="button">Далее</button>
+        <button class="overlay__btn overlay__btn_ghost" id="lore-skip" type="button">Пропустить</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Сержант ведёт новичка по первым шагам. Портрет — класс
        .sergeant__portrait, художник может заменить заглушку 🎖️ картинкой. -->
   <aside class="sergeant hidden" id="sergeant" aria-live="polite">
@@ -497,6 +520,15 @@
        (CC.Render.drawIntro), DOM оставляет только титул и кнопку пропуска -->
   <div id="intro" class="intro hidden" aria-hidden="true">
     <canvas id="intro-canvas" class="intro__canvas"></canvas>
+    <!-- Гейт: без жеста браузер не даёт звук. Тап по экрану вызывает
+         Sound.unlock(), прячет гейт и запускает сцену уже со звуком. -->
+    <div class="intro__gate" id="intro-gate" role="button" tabindex="0"
+         aria-label="Начать заставку «Красный рубеж»">
+      <span class="intro__gate-kicker">СЕКТОР 7 · МАРС</span>
+      <span class="intro__gate-title">КРАСНЫЙ<br>РУБЕЖ</span>
+      <span class="intro__gate-line" aria-hidden="true"></span>
+      <span class="intro__gate-hint">Нажмите, чтобы начать</span>
+    </div>
     <div class="intro__title">
       <span class="intro__title-sub">СЕКТОР 7 · МАРС</span>
       <span class="intro__title-main">КРАСНЫЙ РУБЕЖ</span>

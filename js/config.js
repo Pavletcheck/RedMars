@@ -14,6 +14,12 @@ CC.TIME_LIMIT = 180;   // секунд на бой
 CC.INTRO = {
   flag: 'clash-intro-v1', // старый флаг «уже видел»: только для миграции
   offFlag: 'clash-intro-off-v1', // постоянный отказ от заставки
+  // Экран-гейт: браузер не даёт звук без жеста. Пока игрок не нажал,
+  // сцена стоит на тёмном титуле; по тапу — Sound.unlock() и анимация.
+  gateTitle: 'КРАСНЫЙ РУБЕЖ',
+  gateKicker: 'СЕКТОР 7 · МАРС',
+  gateHint: 'Нажмите, чтобы начать',
+  gateAria: 'Начать заставку «Красный рубеж»',
   fallMs: 2500,           // is-fall: падение модуля к грунту
   impactMs: 500,          // is-impact: удар, пыль, трещины
   unfoldMs: 1500,         // is-unfold: раскрытие в командный центр
@@ -24,7 +30,26 @@ CC.INTRO = {
   safetyMs: 8000          // страховка: снять блокировку, даже если сцена упала
 };
 
-/* Постройки. w/h — размер в тайлах, height — высота коробки в пикселях. */
+/* Сержант: приветствие и лор перед первым шагом обучения. Показываем
+   только на новом сейве (флаг tutorial.loreSeen); старые сейвы и пропуск
+   обучения лор не получают. Тексты шагов живут в base.js рядом с QUESTS. */
+CC.SERGEANT = {
+  name: 'Сержант',
+  nextLabel: 'Далее',
+  startLabel: 'Начать',
+  skipLabel: 'Пропустить',
+  lore: [
+    'Командир, на связи Сержант. Добро пожаловать на Красный рубеж — Сектор 7, Марс.',
+    'Колония потеряла связь после пылевых бурь. Старые станции мертвы, орбита сбрасывает модули по одному.',
+    'Наша задача — поднять базу и удержать сектор. Каждый модуль на счету: из него вырастет оборона, энергия и армия.',
+    'Начнём с обороны. Турель — первый рубеж; она бьёт по земле. Поставь её у подхода к центру.'
+  ]
+};
+
+/* Постройки. w/h — размер в тайлах, height — высота коробки в пикселях.
+   hp — база 1 уровня, округлённая до сотен: каждый следующий уровень
+   удваивает прочность (см. CC.BuildingStats в base.js). Урон башен тоже
+   удваивается, но к деньгам не относится и кратным 100 не обязан. */
 CC.BUILDINGS = {
   townhall: {
     name: 'Командный центр', desc: 'сердце базы, открывает всё',
@@ -45,7 +70,7 @@ CC.BUILDINGS = {
   },
   mortar: {
     name: 'Гаубица', desc: 'навесной огонь по площади',
-    w: 1, h: 1, hp: 450, height: 30,
+    w: 1, h: 1, hp: 500, height: 30,
     color: '#5b4a3a', top: '#9d7c55',
     range: 9, minRange: 2.5, dmg: 45, rate: 0.5, splash: 1.2,
     onlyGround: true
@@ -58,7 +83,7 @@ CC.BUILDINGS = {
   },
   mage: {
     name: 'Плазменная башня', desc: 'плазма по площади',
-    w: 1, h: 1, hp: 780, height: 52,
+    w: 1, h: 1, hp: 800, height: 52,
     color: '#684a72', top: '#c08ad0',
     range: 6, dmg: 32, rate: 0.7, splash: 1.1, targetsAir: true
   },
@@ -104,7 +129,7 @@ CC.BUILDINGS = {
   },
   wall: {
     name: 'Энергобарьер', desc: 'держит врага, не пропускает',
-    w: 1, h: 1, hp: 190, height: 18,
+    w: 1, h: 1, hp: 200, height: 18,
     color: '#8d877d', top: '#b3ada2'
   },
   goldmine: {
@@ -219,18 +244,18 @@ CC.troopUnlock = function (type) {
    У каждого войска свой уровень 1..10, потолок — уровень командного центра
    (TH1 — 1, TH10 — 10). Качается в ангаре, без отдельной постройки.
    Цена и время считаются для ЦЕЛЕВОГО уровня to (2..10):
-     цена  = cost × 12   × 1.55^(to − 2)  энергии
-     время = time × 6    × 1.5^(to − 2)   секунд
-   Цена округляется до десятков, время — до 5 секунд (как у построек).
-   Эффект мультипликативный: HP и урон × 1.12^(уровень − 1).
+     цена  = cost × 12 × 2^(to − 2)  энергии, округление до 100
+     время = time × 6  × 1.5^(to − 2) секунд
+   Время округляется до 5 секунд, как у построек.
+   Эффект: HP и урон × 2 за уровень (уровень 1 — ровно базовые значения).
    Один слот исследования на всю деревню; строителей не занимает. */
 CC.TROOP_LEVEL = {
   max: 10,
   costFactor: 12,
-  costGrowth: 1.55,
   timeFactor: 6,
   timeGrowth: 1.5,
-  bonus: 0.12
+  hpPerLevel: 2,
+  dmgPerLevel: 2
 };
 
 /* ---------- герой «Сержант» ----------
@@ -238,22 +263,22 @@ CC.TROOP_LEVEL = {
    равен уровню центра (TH5 — 1..5, TH10 — 10). Прокачка идёт в отдельном
    слоте ангара, строителей не занимает и не пересекается с исследованием
    войск. Цена считается до целевого уровня to (2..10):
-     руда = 1500 × 1.5^(to − 1)
+     руда = 1600 × 2^(to − 2), округление до 100
    Время задано таблицей: 2 — 30 мин, 3 — 1 ч, 4 — 2 ч, 5 — 4 ч,
    6 — 6 ч, 7 — 8 ч, 8 — 12 ч, 9 — 16 ч, 10 — 24 ч.
-   HP и урон растут линейно: 1000 + 200×(уровень − 1), 80 + 15×(уровень − 1).
+   HP и урон удваиваются за уровень: 1000 → 512 000 и 80 → 40 960 на L10.
    Способность «Щит» — 3 секунды неуязвимости всем союзным юнитам в радиусе
-   2.5 тайла (включая героя), один раз за бой. */
+   2.5 тайла (включая героя), один раз за бой. Щит от множителей не зависит. */
 CC.HERO = {
   id: 'hero',
   minTh: 5,
   maxLevel: 10,
-  costBase: 1500,
-  costGrowth: 1.5,
+  costBase: 1600,
+  costGrowth: 2,
   hpBase: 1000,
-  hpPerLevel: 200,
   dmgBase: 80,
-  dmgPerLevel: 15,
+  hpPerLevel: 2,
+  dmgPerLevel: 2,
   speed: 2.0,
   range: 1.2,
   ability: {
@@ -281,8 +306,8 @@ CC.HERO = {
 (function () {
   for (let l = 2; l <= CC.HERO.maxLevel; l++) {
     CC.HERO.costs[l] = Math.round(
-      CC.HERO.costBase * Math.pow(CC.HERO.costGrowth, l - 1)
-    );
+      CC.HERO.costBase * Math.pow(CC.HERO.costGrowth, l - 2) / 100
+    ) * 100;
   }
 })();
 
@@ -308,12 +333,14 @@ CC.ECONOMY = {
   // Ёмкость даёт только склад: командный центр не хранит ресурсы.
   // baseCap оставлен нулём для старых сейвов и внешних читателей.
   baseCap: 0,
-  // За уровень склада: руда — по складам руды, энергия — по складам энергии.
-  // TH1 с одним складом каждого типа даёт 1700/1500.
-  storageCap: { gold: 1700, elixir: 1500 },
-  // 1.5 цены и 1.45 времени за уровень: к 10 уровню защита стоит 10-15 тыс.
-  // руды и качается 15-20 минут, а не 150 тыс. и полдня.
-  growth: { cost: 1.5, time: 1.45 },
+  // База ёмкости склада 1 уровня. Каждый уровень удваивает её:
+  // 1600 → 3200 → 6400 … → 819 200 на 10 уровне. Руда — по складам руды,
+  // энергия — по складам энергии, центр не хранит.
+  storageCap: { gold: 1600, elixir: 1600 },
+  // Апгрейд до L стоит база × 2^(L−2), округление до 100. Поле growth.cost
+  // оставлено для совместимости: множитель теперь ровно 2. Время по-прежнему
+  // берётся из таблицы CC.BUILD_TIME, growth.time не используется.
+  growth: { cost: 2, time: 1.45 },
   maxLevel: 10
 };
 
@@ -489,7 +516,7 @@ CC.RAIDS = {
 };
 
 /* Что производят постройки: resource — куда капает, rate — в секунду на 1 уровне.
-   Рост за уровень берётся из CC.UPGRADES[type].rate. */
+   Каждый уровень удваивает производство: 0.75 → 1.5 → 3 … (см. base.js). */
 CC.PRODUCTION = {
   goldmine: { res: 'gold', rate: 0.75 },
   elixir: { res: 'elixir', rate: 0.65 }
@@ -512,24 +539,24 @@ CC.extractCap = function (type, level) {
 
 /* Разовая цена постановки новой постройки (не апгрейда). Списывается один
    раз при установке; снос её не возвращает. townhall не ставится — только
-   улучшается, поэтому цена пустая. */
+   улучшается, поэтому цена пустая. Все суммы кратны 100. */
 CC.PLACE_COST = {
-  cannon: { gold: 400 },
-  archer: { gold: 600 },
-  mortar: { gold: 900 },
-  airdef: { gold: 1200 },
-  mage: { gold: 1600 },
-  ambush: { gold: 1500 },
-  beam: { gold: 2500 },
-  mine: { gold: 300 },
-  spring: { gold: 250 },
-  airmine: { gold: 400 },
-  wall: { gold: 120 },
-  goldmine: { elixir: 300 },
-  elixir: { gold: 300 },
-  storage: { gold: 400 },
-  estorage: { gold: 400 },
-  barracks: { elixir: 500 },
+  cannon: { gold: 800 },
+  archer: { gold: 1200 },
+  mortar: { gold: 1800 },
+  airdef: { gold: 2400 },
+  mage: { gold: 3200 },
+  ambush: { gold: 3000 },
+  beam: { gold: 5000 },
+  mine: { gold: 600 },
+  spring: { gold: 600 },
+  airmine: { gold: 800 },
+  wall: { gold: 200 },
+  goldmine: { elixir: 600 },
+  elixir: { gold: 600 },
+  storage: { gold: 800 },
+  estorage: { gold: 800 },
+  barracks: { elixir: 1000 },
   townhall: {}
 };
 
@@ -580,30 +607,32 @@ CC.placeTime = function (type) {
   return CC.buildTime(type, 1);
 };
 
-/* Апгрейды. cost — цена 1 уровня, дальше растёт по ECONOMY.growth.
+/* Апгрейды. cost — база цены перехода НА 2 уровень. Дальше цена считается
+   как база × 2^(L−2) для целевого уровня L и округляется до 100 (base.js).
    time оставлен для совместимости старого сейва/таблиц, но фактическое
    время теперь берётся из CC.BUILD_TIME/CC.TOWNHALL_TIME через
    Base.upgradeTime(type, toLevel).
-   hp/dmg/range/rate/cap — прибавка к характеристике за каждый уровень.
-   Все постройки качаются до 10 уровня; цена округляется в base.js. */
+   HP и урон построек удваиваются за уровень (CC.BuildingStats), дальность
+   растёт на 0.04 тайла за уровень, скорость стрельбы — на rate за уровень.
+   Все постройки качаются до 10 уровня. */
 CC.UPGRADES = {
-  townhall: { max: 10, cost: { gold: 1200 }, time: 90, hp: 0.3 },
-  cannon: { max: 10, cost: { gold: 420 }, time: 45, hp: 0.25, dmg: 0.25, range: 0.04, rate: 0.12 },
-  archer: { max: 10, cost: { gold: 460 }, time: 50, hp: 0.25, dmg: 0.25, range: 0.04, rate: 0.12 },
-  mortar: { max: 10, cost: { gold: 480 }, time: 60, hp: 0.2, dmg: 0.25, range: 0.04, rate: 0.1 },
-  airdef: { max: 10, cost: { gold: 520 }, time: 60, hp: 0.22, dmg: 0.25, range: 0.04, rate: 0.12 },
-  mage: { max: 10, cost: { gold: 560 }, time: 60, hp: 0.2, dmg: 0.28, range: 0.04, rate: 0.1 },
-  ambush: { max: 10, cost: { gold: 650 }, time: 60, hp: 0.2, dmg: 0.25, range: 0.04, rate: 0.1 },
-  beam: { max: 10, cost: { gold: 900 }, time: 60, hp: 0.2, dmg: 0.2, range: 0.04 },
-  mine: { max: 10, cost: { gold: 320 }, time: 40, dmg: 0.2 },
-  spring: { max: 10, cost: { gold: 280 }, time: 40, hp: 0 },
-  airmine: { max: 10, cost: { gold: 420 }, time: 40, dmg: 0.2 },
-  wall: { max: 10, cost: { gold: 80 }, time: 30, hp: 0.6 },
-  goldmine: { max: 10, cost: { elixir: 200 }, time: 40, hp: 0.2, rate: 0.5 },
-  elixir: { max: 10, cost: { gold: 200 }, time: 40, hp: 0.2, rate: 0.5 },
-  storage: { max: 10, cost: { gold: 320 }, time: 45, hp: 0.2, cap: 0.5 },
-  estorage: { max: 10, cost: { gold: 320 }, time: 45, hp: 0.2, cap: 0.5 },
-  barracks: { max: 10, cost: { elixir: 400 }, time: 60, hp: 0.25 }
+  townhall: { max: 10, cost: { gold: 1200 }, time: 90 },
+  cannon: { max: 10, cost: { gold: 400 }, time: 45, range: 0.04, rate: 0.12 },
+  archer: { max: 10, cost: { gold: 500 }, time: 50, range: 0.04, rate: 0.12 },
+  mortar: { max: 10, cost: { gold: 600 }, time: 60, range: 0.04, rate: 0.1 },
+  airdef: { max: 10, cost: { gold: 700 }, time: 60, range: 0.04, rate: 0.12 },
+  mage: { max: 10, cost: { gold: 800 }, time: 60, range: 0.04, rate: 0.1 },
+  ambush: { max: 10, cost: { gold: 1200 }, time: 60, range: 0.04, rate: 0.1 },
+  beam: { max: 10, cost: { gold: 2000 }, time: 60, range: 0.04 },
+  mine: { max: 10, cost: { gold: 300 }, time: 40 },
+  spring: { max: 10, cost: { gold: 300 }, time: 40 },
+  airmine: { max: 10, cost: { gold: 400 }, time: 40 },
+  wall: { max: 10, cost: { gold: 100 }, time: 30 },
+  goldmine: { max: 10, cost: { elixir: 200 }, time: 40 },
+  elixir: { max: 10, cost: { gold: 200 }, time: 40 },
+  storage: { max: 10, cost: { gold: 400 }, time: 45 },
+  estorage: { max: 10, cost: { gold: 400 }, time: 45 },
+  barracks: { max: 10, cost: { elixir: 500 }, time: 60 }
 };
 
 /* Армия: каждое место даёт ангар — 20 за каждый свой уровень
@@ -755,10 +784,19 @@ const CC_DEF_TYPES = ['cannon', 'archer', 'mortar', 'airdef', 'mage'];
 const CC_DEF_PLANS = [
   [2, 1, 0, 0, 0],
   [3, 2, 1, 1, 0],
-  [4, 3, 2, 1, 1],
-  [4, 3, 2, 2, 1],
-  [6, 4, 3, 2, 1]
+  [3, 2, 1, 1, 0],
+  [3, 2, 2, 1, 1],
+  [5, 4, 2, 2, 1]
 ];
+
+/* Уровни обороны, стен и «отстающих» башен по эпохам. После перехода на
+   удвоение HP/урона за уровень разница даже в одну ступень — это ×2,
+   поэтому кривая медленная: 1,1,1,2,2. Внутри эпохи сложность растёт
+   составом, а не уровнем. */
+const CC_DEF_LVLS = [1, 1, 2, 2, 2];
+const CC_WALL_LVLS = [1, 1, 1, 1, 1];
+const CC_TOWER_LVLS = [1, 1, 1, 1, 2];
+
 
 function ccClamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
 
@@ -852,7 +890,7 @@ CC.LevelGen = {
     /* ---------- внешнее кольцо и проходы ---------- */
 
     // Сторона растёт от эпохи к эпохе; на 36x36 с запасом для приманки.
-    const SIDE_RANGES = [[16, 17], [18, 19], [20, 21], [23, 24], [25, 26]];
+    const SIDE_RANGES = [[16, 17], [18, 19], [20, 21], [21, 22], [23, 24]];
     const range = SIDE_RANGES[era];
     let side = range[0] + Math.floor(rnd() * (range[1] - range[0] + 1));
     if (side > CC.GRID - 4) side = CC.GRID - 4;
@@ -882,20 +920,23 @@ CC.LevelGen = {
     gapV(x0);
     gapV(x1);
 
-    const wallLvl = Math.min(5, th);
-    let defLvl = Math.max(1, th - (within < 4 ? 1 : 0));
-    const towerLvl = Math.max(1, th - 1);
+    const wallLvl = CC_WALL_LVLS[era];
+    let defLvl = CC_DEF_LVLS[era];
+    const towerLvl = CC_TOWER_LVLS[era];
 
-    // Точечное ослабление финальных секторов: после свободной высадки
-    // отряд чаще упирается в последние уровни эпохи. Снижаем только
-    // уровень обороны, не ломая раскладку и лимиты состава.
-    const soft = (era === 2 && within >= 8) ||
-      (era === 3 && within >= 8) ||
-      (era === 4 && within >= 4);
-    if (soft) defLvl = Math.max(1, defLvl - 1);
-    // Вторая половина «Купола» упирается в потолок обороны: одна ступень
-    // снимается дополнительно, иначе отдельные секторы не добирают 50%.
-    if (era === 4 && within >= 6) defLvl = Math.max(1, defLvl - 1);
+    // Точечное облегчение финала «Разлома»: после удвоения HP/урона
+    // последние два сектора эпохи не добирали 50% разрушений. Снимаем
+    // одну ступень только с обороны, раскладка и состав не меняются.
+    if (era === 3 && within >= 8) defLvl = Math.max(1, defLvl - 1);
+    // «Купол» 7–8: плотная застройка и удвоенный урон выкашивали отряд
+    // до 50%. Тем же способом снимаем ступень с обороны, не с состава.
+    if (era === 4 && (within === 6 || within === 7)) {
+      defLvl = Math.max(1, defLvl - 1);
+    }
+
+    // Уровни обороны кампании растут медленно: каждый уровень удваивает
+    // HP и урон, поэтому прежняя кривая «уровень = TH» делала поздние
+    // секторы непроходимыми. Ниже — таблица по эпохам, а не по TH.
 
     // Энергобарьеры кампании — отдельный бюджет: обороняемая база должна
     // иметь замкнутый контур, даже если игроку на низком TH доступно меньше.
@@ -1142,7 +1183,8 @@ CC.LevelGen = {
     // кривую сложности, пока игрок только знакомится с типом.
     if (capTh >= 7) {
       const ambushN = Math.min(CC.limitAt('ambush', capTh), capTh >= 10 ? 2 : 1);
-      const ambushLvl = Math.max(1, Math.min(ccLevelMax('ambush', capTh), th - 2 || 1));
+      const ambushLvl = Math.max(1, Math.min(ccLevelMax('ambush', capTh),
+        capTh >= 10 ? 2 : 1));
       for (let k = 0; k < ambushN; k++) {
         // Засада — ближе к центру: её вскрывают уже внутри компартментов.
         if (!putInZone('ambush', ambushLvl, nextZone(), 'near')) {
@@ -1152,7 +1194,7 @@ CC.LevelGen = {
     }
     if (capTh >= 9) {
       const beamN = Math.min(CC.limitAt('beam', capTh), 1);
-      const beamLvl = Math.max(1, Math.min(ccLevelMax('beam', capTh), th - 3 || 1));
+      const beamLvl = Math.max(1, Math.min(ccLevelMax('beam', capTh), 1));
       for (let k = 0; k < beamN; k++) {
         if (!putInDepth('beam', beamLvl)) {
           putInZone('beam', beamLvl, nextZone(), 'far');
@@ -1263,7 +1305,8 @@ CC.LevelGen = {
         ? Math.min(CC.limitAt('airmine', capTh), capTh >= 9 ? 2 : 1)
         : 0
     };
-    const trapLvl = Math.max(1, Math.min(ccLevelMax('mine', capTh), th));
+    const trapLvl = Math.max(1, Math.min(ccLevelMax('mine', capTh),
+      capTh >= 8 ? 2 : 1));
 
     // Проходы внешнего кольца — первые кандидаты: атакующий лезет именно туда.
     // В начале первой эпохи мины нет вовсе (знакомство), на последних двух

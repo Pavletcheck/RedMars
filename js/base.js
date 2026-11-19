@@ -3,7 +3,12 @@ window.CC = window.CC || {};
 CC.App = CC.App || { mode: 'base' };
 
 /* Характеристики постройки с учётом уровня. Единая математика для деревни,
-   боя кампании и набегов: рост hp/dmg/range из CC.UPGRADES. */
+   боя кампании и набегов. Модель «каждый уровень удваивает»:
+     HP       = база × 2^(уровень − 1)
+     урон     = база × 2^(уровень − 1)
+     дальность = база + 0.04 × (уровень − 1)   (не удваивается)
+     скорость стрельбы = база × (1 + rate × (уровень − 1)) — малый прирост.
+   Базы HP в config.js уже округлены до сотен, поэтому HP остаётся круглым. */
 CC.BuildingStats = {
   at: function (type, level) {
     const d = CC.BUILDINGS[type] || {};
@@ -15,13 +20,14 @@ CC.BuildingStats = {
     if (lvl > max) lvl = max;
 
     const k = lvl - 1;
+    const mult = Math.pow(2, k);
     const out = {
       level: lvl,
-      hp: Math.round((d.hp || 0) * (1 + (u.hp || 0) * k))
+      hp: Math.round((d.hp || 0) * mult)
     };
 
-    if (d.dmg) out.dmg = Math.round(d.dmg * (1 + (u.dmg || 0) * k));
-    if (d.range) out.range = +(d.range * (1 + (u.range || 0) * k)).toFixed(2);
+    if (d.dmg) out.dmg = Math.round(d.dmg * mult);
+    if (d.range) out.range = +(d.range + (u.range || 0) * k).toFixed(2);
     if (d.minRange) out.minRange = d.minRange;
     if (d.rate) out.rate = +(d.rate * (1 + (u.rate || 0) * k)).toFixed(3);
     if (d.splash) out.splash = d.splash;
@@ -457,60 +463,84 @@ CC.Game = (function () {
   const QUESTS = [
     {
       id: 'placeCannon', text: 'Поставь турель',
-      hint: 'Первый рубеж. Бьёт по земле.', place: 'cannon'
+      hint: 'Первый рубеж. Бьёт по земле.', place: 'cannon',
+      lore: 'Турель — первый рубеж обороны. Пока она стоит, штурмовики ' +
+        'не пройдут к центру безнаказанно.'
     },
     {
       id: 'placeArcher', text: 'Поставь лазерную башню',
-      hint: 'Дальше и сильнее турели.', place: 'archer'
+      hint: 'Дальше и сильнее турели.', place: 'archer',
+      lore: 'Лазерная вышка видит дальше турели и достаёт воздух. Орбита ' +
+        'сбрасывает не только модули — скоро прилетят и гости.'
     },
     {
       id: 'placeGoldmine', text: 'Поставь бур',
-      hint: 'Копит руду в свой буфер; собирай тапом.', place: 'goldmine'
+      hint: 'Копит руду в свой буфер; собирай тапом.', place: 'goldmine',
+      lore: 'Без руды не будет ни стен, ни пушек. Бур качает её сам, ' +
+        'тебе останется собрать добычу.'
     },
     {
       id: 'placeElixir', text: 'Поставь реактор',
-      hint: 'Даёт энергию.', place: 'elixir'
+      hint: 'Даёт энергию.', place: 'elixir',
+      lore: 'Энергия — кровь базы: тренировка, постройки, исследования. ' +
+        'Реактор держит её поток.'
     },
     {
       id: 'placeStorage', text: 'Поставь склад руды',
-      hint: 'Без него руда не хранится.', place: 'storage'
+      hint: 'Без него руда не хранится.', place: 'storage',
+      lore: 'Добыча без склада утекает в песок. Поставь хранилище — и руда ' +
+        'останется на чёрный день.'
     },
     {
       id: 'placeEstorage', text: 'Поставь склад энергии',
-      hint: 'Без него энергия не хранится.', place: 'estorage'
+      hint: 'Без него энергия не хранится.', place: 'estorage',
+      lore: 'Энергия тоже должна где-то жить. Склад не даст ей сгореть ' +
+        'в пылевых бурях.'
     },
     {
       id: 'placeBarracks', text: 'Поставь ангар',
-      hint: 'Тренирует войска и даёт места в армии.', place: 'barracks'
+      hint: 'Тренирует войска и даёт места в армии.', place: 'barracks',
+      lore: 'Ангар — это твоя армия. Без него некому держать рубеж; ' +
+        'с него начнётся тренировка гарнизона.'
     },
     {
       id: 'train5', text: 'Натренируй 5 штурмовиков',
       hint: 'Открой ангар, выбери штурмовика и жми «Нанять» или «×5». ' +
         'Очередь тренировки идёт сама; на L1 ангара — 20 мест, энергия ' +
-        'списывается за каждого бойца.', goal: 'train', target: 5
+        'списывается за каждого бойца.', goal: 'train', target: 5,
+      lore: 'Пять штурмовиков — минимальный гарнизон. Они пойдут первыми, ' +
+        'когда сектор понадобится вернуть.'
     },
     {
       id: 'battle', text: 'В бой',
       hint: 'Выбери войско внизу и тапни по любой свободной клетке рядом ' +
         'с базой. Цель — 50% построек, снос центра или 100% разрушения. ' +
-        'За победу дают звёзды и добычу.', goal: 'battle', target: 1
+        'За победу дают звёзды и добычу.', goal: 'battle', target: 1,
+      lore: 'Пора проверить рубеж в деле. Разбей лагерь противника — ' +
+        'и сектор твой.'
     },
     {
       id: 'level1', text: 'Пройди первый сектор',
       hint: 'Выбери войско внизу и тапни по свободной клетке рядом с базой. ' +
         'Цель — 50% построек, снос центра или 100% разрушения. ' +
         'Доведи бой до победы: за неё дают звёзды и добычу.',
-      goal: 'level1', target: 1
+      goal: 'level1', target: 1,
+      lore: 'Победа в первом секторе откроет путь дальше. Бей по земляным ' +
+        'целям и не распыляй армию.'
     },
     {
       id: 'th2', text: 'Улучши командный центр до 2 уровня',
       hint: 'Тапни по командному центру и нажми «Улучшить до ур. 2».',
-      goal: 'th2', target: 2
+      goal: 'th2', target: 2,
+      lore: 'Центр второго уровня расширит базу: новые модули, склады ' +
+        'и защита.'
     },
     {
       id: 'cannon2', text: 'Улучши турель до 2 уровня',
       hint: 'Тапни по турели и нажми «Улучшить до ур. 2».',
-      goal: 'cannon2', target: 2
+      goal: 'cannon2', target: 2,
+      lore: 'Улучшенная турель бьёт сильнее и держит дольше. Это вложение ' +
+        'в каждый следующий бой.'
     }
   ];
   // Поля, с которых начинается миграция старых сейвов: старые id цепочки
@@ -555,14 +585,15 @@ CC.Game = (function () {
   // Прокачка войск: цены, рост и бонус за уровень. Константы в config.js,
   // здесь — резерв на случай старого конфига без поля.
   const TROOP_LVL = CC.TROOP_LEVEL || {
-    max: 10, costFactor: 12, costGrowth: 1.55,
-    timeFactor: 6, timeGrowth: 1.5, bonus: 0.12
+    max: 10, costFactor: 12,
+    timeFactor: 6, timeGrowth: 1.5,
+    hpPerLevel: 2, dmgPerLevel: 2
   };
-  // Герой: открытие с TH5, линейные HP/урон и отдельный слот прокачки.
+  // Герой: открытие с TH5, HP/урон ×2 за уровень и отдельный слот прокачки.
   const HERO = CC.HERO || {
     id: 'hero', minTh: 5, maxLevel: 10,
-    costBase: 1500, costGrowth: 1.5,
-    hpBase: 1000, hpPerLevel: 200, dmgBase: 80, dmgPerLevel: 15,
+    costBase: 1600, costGrowth: 2,
+    hpBase: 1000, dmgBase: 80, hpPerLevel: 2, dmgPerLevel: 2,
     speed: 2, range: 1.2,
     ability: { name: 'Щит', duration: 3, radius: 2.5, uses: 1 },
     costs: {}, times: {}
@@ -613,9 +644,10 @@ CC.Game = (function () {
   }
 
   // Состояние обучения Сержанта. Новый сейв начинается с активным обучением,
-  // старый — с done=true (см. load()). cargo — первый груз 800/800 уже выдан.
+  // старый — с done=true (см. load()). cargo — первый груз 800/800 уже выдан,
+  // loreSeen — вступительный лор уже показан (на старых сейвах сразу true).
   function freshTutorial() {
-    return { done: false, skipped: false, cargo: false };
+    return { done: false, skipped: false, cargo: false, loreSeen: false };
   }
 
   function fresh() {
@@ -792,6 +824,7 @@ CC.Game = (function () {
   /* ---------- производство и хранилища ---------- */
 
   // Скорость добычи ресурса: все буры/реакторы со своим уровнем.
+  // Каждый уровень удваивает производство: 0.75 → 1.5 → 3 …
   // Стройплощадка ещё не даёт производства.
   function rate(res) {
     const list = CC.Base.list();
@@ -801,8 +834,7 @@ CC.Game = (function () {
       if (isBuilding(list[i].id)) continue;
       const p = CC.PRODUCTION[list[i].type];
       if (!p || p.res !== res) continue;
-      const g = (UP[list[i].type] || {}).rate || 0;
-      sum += p.rate * (1 + g * (level(list[i].id) - 1));
+      sum += p.rate * Math.pow(2, level(list[i].id) - 1);
     }
     return sum;
   }
@@ -989,20 +1021,15 @@ CC.Game = (function () {
   }
 
   // Ёмкость одного склада по его типу и уровню. Ровно та же формула, что
-  // в caps(): ранец набега должен списывать ресурсы по фактическим складам.
+  // в caps(): база 1600 × 2^(уровень − 1). Ранец набега списывает ресурсы
+  // по фактическим складам.
   function storageCapOf(type, lvl) {
     const l = Math.max(1, Math.floor(num(lvl, 1)));
-    if (type === 'storage') {
-      const base = (ECON.storageCap || {}).gold || 0;
-      const grow = (UP.storage || {}).cap || 0;
-      return base * (1 + grow * (l - 1));
-    }
-    if (type === 'estorage') {
-      const base = (ECON.storageCap || {}).elixir || 0;
-      const grow = (UP.estorage || {}).cap || 0;
-      return base * (1 + grow * (l - 1));
-    }
-    return 0;
+    let base = 0;
+    if (type === 'storage') base = (ECON.storageCap || {}).gold || 0;
+    else if (type === 'estorage') base = (ECON.storageCap || {}).elixir || 0;
+    else return 0;
+    return base * Math.pow(2, l - 1);
   }
 
   // Все готовые склады: суммарная ёмкость и количество по ресурсам.
@@ -1117,8 +1144,7 @@ CC.Game = (function () {
       const p = CC.PRODUCTION[it.type];
       if (!p) continue;
 
-      const grow = (UP[it.type] || {}).rate || 0;
-      const perSec = p.rate * (1 + grow * (level(it.id) - 1));
+      const perSec = p.rate * Math.pow(2, level(it.id) - 1);
       const capBuf = extractCapOf(it);
       const before = stored(it.id);
       const want = perSec * dt;
@@ -1795,6 +1821,23 @@ CC.Game = (function () {
     return String(Math.round(Number(v) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   }
 
+  // Все деньги и объёмы — кратны 100: 400 → 400, 460 → 500.
+  function round100(v) {
+    return Math.round((Number(v) || 0) / 100) * 100;
+  }
+
+  // Цена перехода на целевой уровень to (2..10): база × 2^(to−2).
+  // База — цена до 2 уровня из CC.UPGRADES[type].cost.
+  function levelCost(type, to) {
+    const d = UP[type] || {};
+    const c = d.cost || {};
+    const k = Math.pow(2, Math.max(0, Math.floor(to) - 2));
+    return {
+      gold: round100((c.gold || 0) * k),
+      elixir: round100((c.elixir || 0) * k)
+    };
+  }
+
   function upgradeCost(id) {
     const it = item(id);
     if (!it) return null;
@@ -1804,16 +1847,17 @@ CC.Game = (function () {
     const lvl = level(id);
     if (lvl >= maxLevel(it.type)) return null;
 
-    const k = Math.pow(ECON.growth.cost, lvl - 1);
+    const to = lvl + 1;
+    const c = levelCost(it.type, to);
 
-    // Цены — до десятков, чтобы в панели не мельтешили хвосты. Время
+    // Цены — кратны 100, чтобы в панели не мельтешили хвосты. Время
     // берём из кривой уровня (CC.BUILD_TIME / CC.TOWNHALL_TIME).
     return {
       level: lvl,
-      to: lvl + 1,
-      gold: Math.round((d.cost.gold || 0) * k / 10) * 10,
-      elixir: Math.round((d.cost.elixir || 0) * k / 10) * 10,
-      time: CC.Base.upgradeTime(it.type, lvl + 1)
+      to: to,
+      gold: c.gold,
+      elixir: c.elixir,
+      time: CC.Base.upgradeTime(it.type, to)
     };
   }
 
@@ -1828,16 +1872,10 @@ CC.Game = (function () {
     const it = item(id);
     if (!it) return null;
 
-    const d = UP[it.type];
-    if (!d) return null;
+    if (!UP[it.type]) return null;
 
     const lvl = level(id);
-    const k = Math.pow(ECON.growth.cost, lvl - 1);
-
-    return {
-      gold: Math.round((d.cost.gold || 0) * k / 10) * 10,
-      elixir: Math.round((d.cost.elixir || 0) * k / 10) * 10
-    };
+    return levelCost(it.type, lvl + 1);
   }
 
   function canUpgrade(id, now) {
@@ -2091,15 +2129,14 @@ CC.Game = (function () {
     return l > max ? max : l;
   }
 
-  // Множитель HP и урона: 1.12^(уровень − 1). Уровень 1 — ровно 1.0.
+  // Множитель HP и урона: 2^(уровень − 1). Уровень 1 — ровно 1.0.
   function troopMultiplier(type) {
-    const step = Number(TROOP_LVL.bonus);
-    const bonus = isFinite(step) && step > 0 ? step : 0.12;
-    return Math.pow(1 + bonus, troopLevel(type) - 1);
+    return Math.pow(2, troopLevel(type) - 1);
   }
 
   // Цена и время улучшения до СЛЕДУЮЩЕГО уровня.
-  // Целевой уровень to: цена = cost × 12 × 1.55^(to−2), время = time × 6 × 1.5^(to−2).
+  // Целевой уровень to: цена = cost × 12 × 2^(to−2) до сотен,
+  // время = time × 6 × 1.5^(to−2) до 5 секунд.
   function troopUpgradeCost(type) {
     const d = isTroopType(type) ? TROOPS[type] : null;
     if (!d) return null;
@@ -2114,18 +2151,17 @@ CC.Game = (function () {
     const to = lvl + 1;
     const k = to - 2;
     const cf = isFinite(TROOP_LVL.costFactor) ? TROOP_LVL.costFactor : 12;
-    const cg = isFinite(TROOP_LVL.costGrowth) ? TROOP_LVL.costGrowth : 1.55;
     const tf = isFinite(TROOP_LVL.timeFactor) ? TROOP_LVL.timeFactor : 6;
     const tg = isFinite(TROOP_LVL.timeGrowth) ? TROOP_LVL.timeGrowth : 1.5;
 
-    const rawCost = (d.cost || 0) * cf * Math.pow(cg, k);
+    const rawCost = (d.cost || 0) * cf * Math.pow(2, k);
     const rawTime = (d.time || 0) * tf * Math.pow(tg, k);
 
     return {
       type: type,
       level: lvl,
       to: to,
-      elixir: Math.round(rawCost / 10) * 10,
+      elixir: round100(rawCost),
       time: Math.max(5, Math.round(rawTime / 5) * 5)
     };
   }
@@ -2365,7 +2401,7 @@ CC.Game = (function () {
   }
 
   // Цена и время улучшения до СЛЕДУЮЩЕГО уровня. Целевой уровень to (2..10):
-  // руда = 1500 × 1.5^(to − 1), время — из таблицы CC.HERO.times.
+  // руда = 1600 × 2^(to−2) до сотен, время — из таблицы CC.HERO.times.
   function heroUpgradeCost() {
     const th = townhallLevel();
     const lvl = heroLevel();
@@ -2376,9 +2412,8 @@ CC.Game = (function () {
     const table = HERO.costs || {};
     let gold = Math.floor(Number(table[to]));
     if (!isFinite(gold) || gold <= 0) {
-      const base = Number(HERO.costBase) || 1500;
-      const growth = Number(HERO.costGrowth) || 1.5;
-      gold = Math.round(base * Math.pow(growth, to - 1));
+      const base = Number(HERO.costBase) || 1600;
+      gold = round100(base * Math.pow(2, to - 2));
     }
 
     const times = HERO.times || {};
@@ -2554,17 +2589,18 @@ CC.Game = (function () {
     return true;
   }
 
-  // Характеристики героя по уровню: HP и урон растут линейно.
+  // Характеристики героя по уровню: HP и урон удваиваются за уровень.
+  // L1 — 1000/80, L10 — 512 000/40 960. Щит считается отдельно и от
+  // множителей не зависит.
   function heroStats(level) {
     const max = HERO.maxLevel || 10;
     let l = Math.floor(Number(level));
     if (!(l >= 1)) l = heroLevel() || 1;
     if (l > max) l = max;
 
-    const hp = Math.round((HERO.hpBase || 1000) +
-      (HERO.hpPerLevel || 200) * (l - 1));
-    const dmg = Math.round((HERO.dmgBase || 80) +
-      (HERO.dmgPerLevel || 15) * (l - 1));
+    const mult = Math.pow(2, l - 1);
+    const hp = Math.round((HERO.hpBase || 1000) * mult);
+    const dmg = Math.round((HERO.dmgBase || 80) * mult);
 
     return {
       type: HERO.id || 'hero',
@@ -2844,19 +2880,19 @@ CC.Game = (function () {
 
     const p = CC.PRODUCTION[it.type];
     if (p) {
-      out.production = +(p.rate * (1 + (u.rate || 0) * k)).toFixed(2);
+      out.production = produceAt(it.type, lvl);
       out.res = p.res;
       out.stored = stored(id);
       out.extractCap = extractCapOf(it);
     }
 
     if (it.type === 'storage') {
-      out.capGold = Math.round(ECON.storageCap.gold * (1 + (u.cap || 0) * k));
+      out.capGold = Math.round(storageCapOf('storage', lvl));
       out.store = 'gold';
     }
 
     if (it.type === 'estorage') {
-      out.capElixir = Math.round(ECON.storageCap.elixir * (1 + (u.cap || 0) * k));
+      out.capElixir = Math.round(storageCapOf('estorage', lvl));
       out.store = 'elixir';
     }
 
@@ -2870,11 +2906,14 @@ CC.Game = (function () {
     return out;
   }
 
+  // Производство в секунду на уровне: база × 2^(уровень − 1).
   function produceAt(type, lvl) {
     const p = CC.PRODUCTION[type];
     if (!p) return 0;
-    const g = (UP[type] || {}).rate || 0;
-    return +(p.rate * (1 + g * (lvl - 1))).toFixed(2);
+    let l = Math.floor(Number(lvl) || 1);
+    if (l < 1) l = 1;
+    if (l > ECON.maxLevel) l = ECON.maxLevel;
+    return +(p.rate * Math.pow(2, l - 1)).toFixed(2);
   }
 
   // ---------- армия ----------
@@ -3335,7 +3374,7 @@ CC.Game = (function () {
       return {
         active: false, done: !!t.done, skipped: !!t.skipped,
         step: def ? QUESTS.length : QUESTS.length,
-        total: QUESTS.length, id: null, text: '', hint: '',
+        total: QUESTS.length, id: null, text: '', action: '', lore: '', hint: '',
         place: null, goal: null, primary: ''
       };
     }
@@ -3354,12 +3393,39 @@ CC.Game = (function () {
       step: idx + 1,
       total: QUESTS.length,
       id: def.id,
-      text: def.text,
+      // Основной текст — живая реплика Сержанта, ниже — инструкция действия.
+      text: def.lore || def.text,
+      action: def.text,
+      lore: def.lore || '',
       hint: def.hint || '',
       place: def.place || null,
       goal: def.goal || (def.place ? 'place' : null),
       primary: primary
     };
+  }
+
+  // Вступительный лор: 4 страницы только на новом сейве. Старый сейв
+  // получает loreSeen=true при загрузке (см. load), поэтому active=false.
+  function tutorialLore() {
+    const t = st.tutorial || freshTutorial();
+    const def = CC.SERGEANT || {};
+    const pages = Array.isArray(def.lore) ? def.lore.slice() : [];
+    return {
+      active: tutorialOn() && !t.loreSeen && pages.length > 0,
+      seen: !!t.loreSeen,
+      name: def.name || 'Сержант',
+      pages: pages
+    };
+  }
+
+  // Закрыть вступительный лор (кнопка «Далее» на последней странице или
+  // «Пропустить»). Обучение при этом остаётся активным.
+  function readTutorialLore() {
+    if (!st.tutorial) st.tutorial = freshTutorial();
+    if (st.tutorial.loreSeen) return { ok: false, already: true };
+    st.tutorial.loreSeen = true;
+    save();
+    return { ok: true };
   }
 
   // Пропуск обучения: снимаем бесплатные постановки, но квесты остаются
@@ -3371,6 +3437,7 @@ CC.Game = (function () {
     }
     st.tutorial.skipped = true;
     st.tutorial.done = true;
+    st.tutorial.loreSeen = true; // пропуск обучения лор не показывает
     st.gold = Math.max(st.gold, ECON.tutorialGold || 800);
     st.elixir = Math.max(st.elixir, ECON.tutorialElixir || 800);
     tutorialEvent = {
@@ -3452,6 +3519,7 @@ CC.Game = (function () {
         reward: def.reward || 0,
         gems: def.gems !== undefined ? def.gems : (GEMS.perQuest || 0),
         hint: def.hint || '',
+        lore: def.lore || '',
         place: def.place || null,
         goal: def.goal || (def.place ? 'place' : null),
         done: done,
@@ -4139,10 +4207,15 @@ CC.Game = (function () {
       s.tutorial = {
         done: d.tutorial.done === true || d.tutorial.done === 1,
         skipped: d.tutorial.skipped === true || d.tutorial.skipped === 1,
-        cargo: d.tutorial.cargo === true || d.tutorial.cargo === 1
+        cargo: d.tutorial.cargo === true || d.tutorial.cargo === 1,
+        // Старые сейвы поля не знают: лор им уже не показываем.
+        loreSeen: d.tutorial.loreSeen === undefined
+          ? true
+          : d.tutorial.loreSeen === true || d.tutorial.loreSeen === 1
       };
     } else {
       s.tutorial.done = true;
+      s.tutorial.loreSeen = true;
     }
 
     if (Array.isArray(d.questsDone)) {
@@ -4694,6 +4767,8 @@ CC.Game = (function () {
     invalidateCaps: invalidateCaps,
     quests: quests,
     tutorial: tutorialInfo,
+    tutorialLore: tutorialLore,
+    readTutorialLore: readTutorialLore,
     tutorialPlace: tutorialPlace,
     skipTutorial: skipTutorial,
     takeTutorialEvent: takeTutorialEvent,

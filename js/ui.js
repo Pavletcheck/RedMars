@@ -119,6 +119,14 @@ CC.UI = (function () {
   const sergeantGo = document.getElementById('sergeant-go');
   const sergeantNext = document.getElementById('sergeant-next');
   const sergeantSkip = document.getElementById('sergeant-skip');
+  // Вступительный лор: карточка с портретом, страницы и две кнопки.
+  const loreEl = document.getElementById('sergeant-lore');
+  const loreName = document.getElementById('lore-name');
+  const loreStepEl = document.getElementById('lore-step');
+  const loreText = document.getElementById('lore-text');
+  const loreDots = document.getElementById('lore-dots');
+  const loreNextBtn = document.getElementById('lore-next');
+  const loreSkipBtn = document.getElementById('lore-skip');
   const soundBtn = document.getElementById('sound-btn');
   const musicBtn = document.getElementById('music-btn');
   const volValue = document.getElementById('vol-value');
@@ -245,6 +253,8 @@ CC.UI = (function () {
   let tipClosedStep = null;
   let sergeantMore = false;       // «Далее» раскрывает подробную подсказку
   let sergeantHintStep = null;    // для какого шага уже настроена панель
+  let loreOpen = false;           // вступительный лор сейчас на экране
+  let lorePage = 0;               // текущая страница лора (0..3)
   let hangarHintStep = null;      // шаг, для которого показан совет об очереди
   let introDone = false;      // инструкция первого боя показана
   let introNeedsPos = false;  // позицию считаем после смены data-mode
@@ -628,6 +638,19 @@ CC.UI = (function () {
           if (CC.Sound) CC.Sound.play('questDone');
         }
         sync();
+      });
+    }
+
+    if (loreNextBtn) {
+      loreNextBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        loreNext();
+      });
+    }
+    if (loreSkipBtn) {
+      loreSkipBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        finishLore();
       });
     }
 
@@ -4786,6 +4809,83 @@ CC.UI = (function () {
     closeQuests();
   }
 
+  /* ---------- Сержант: вступительный лор ---------- */
+
+  // Лор открывается после заставки на новом сейве и только в деревне.
+  // Пока он на экране, обычная панель обучения спрятана.
+  function syncLore() {
+    if (!loreEl) return;
+
+    const l = CC.Game.tutorialLore ? CC.Game.tutorialLore() : null;
+    const show = !!(l && l.active && CC.App.mode === 'base' &&
+      !CC.App.introOpen && !anyOverlayOpen());
+
+    if (!show) {
+      loreEl.classList.add('hidden');
+      loreOpen = false;
+      return;
+    }
+
+    if (!loreOpen) {
+      loreOpen = true;
+      lorePage = 0;
+    }
+
+    const pages = l.pages || [];
+    if (lorePage >= pages.length) lorePage = pages.length - 1;
+    if (lorePage < 0) lorePage = 0;
+
+    if (loreName && loreName.textContent !== (l.name || 'Сержант')) {
+      loreName.textContent = l.name || 'Сержант';
+    }
+    if (loreStepEl) {
+      loreStepEl.textContent = (lorePage + 1) + '/' + pages.length;
+    }
+    if (loreText) {
+      const text = pages[lorePage] || '';
+      if (loreText.textContent !== text) loreText.textContent = text;
+    }
+    if (loreDots) {
+      let html = '';
+      for (let i = 0; i < pages.length; i++) {
+        html += '<i class="' + (i === lorePage ? 'is-on' : '') + '"></i>';
+      }
+      if (loreDots.innerHTML !== html) loreDots.innerHTML = html;
+    }
+    if (loreNextBtn) {
+      const last = lorePage >= pages.length - 1;
+      const label = last
+        ? ((CC.SERGEANT && CC.SERGEANT.startLabel) || 'Начать')
+        : ((CC.SERGEANT && CC.SERGEANT.nextLabel) || 'Далее');
+      if (loreNextBtn.textContent !== label) loreNextBtn.textContent = label;
+    }
+
+    loreEl.classList.remove('hidden');
+  }
+
+  // «Далее»: следующая страница, а на последней — открыть обучение.
+  function loreNext() {
+    const l = CC.Game.tutorialLore ? CC.Game.tutorialLore() : null;
+    const pages = (l && l.pages) || [];
+    if (lorePage < pages.length - 1) {
+      lorePage++;
+      syncLore();
+      if (CC.Sound) CC.Sound.play('ui');
+      return { ok: true, page: lorePage };
+    }
+    finishLore();
+    return { ok: true, done: true };
+  }
+
+  // Закрыть лор: обычное обучение продолжится с шага «Поставь турель».
+  function finishLore() {
+    loreOpen = false;
+    lorePage = 0;
+    if (loreEl) loreEl.classList.add('hidden');
+    if (CC.Game.readTutorialLore) CC.Game.readTutorialLore();
+    sync();
+  }
+
   /* ---------- Сержант: панель обучения ---------- */
 
   // Панель видна только в деревне и только пока обучение не пройдено.
@@ -4795,7 +4895,8 @@ CC.UI = (function () {
 
     const t = CC.Game.tutorial ? CC.Game.tutorial() : null;
     const show = !!(t && t.active && CC.App.mode === 'base' &&
-      !anyOverlayOpen() && !buildersOpen && !questOpen && !state.buildMode);
+      !loreOpen && !anyOverlayOpen() && !buildersOpen && !questOpen &&
+      !state.buildMode);
 
     if (!show) {
       sergeantEl.classList.add('hidden');
@@ -4804,9 +4905,9 @@ CC.UI = (function () {
 
     if (sergeantHintStep !== t.id) {
       sergeantHintStep = t.id;
-      // Для тренировки и боя сразу раскрываем подробную инструкцию:
-      // игрок должен увидеть очередь и правило высадки без лишнего тапа.
-      sergeantMore = t.goal !== 'place';
+      // Реплика Сержанта — сверху, инструкция действия — снизу и сразу
+      // видна: игрок должен понимать, что нажимать, без лишнего тапа.
+      sergeantMore = true;
     }
 
     sergeantEl.classList.remove('hidden');
@@ -4906,7 +5007,7 @@ CC.UI = (function () {
       return b.id === state.selected;
     }));
 
-    const busy = tipClosedStep === active.id || state.buildMode ||
+    const busy = tipClosedStep === active.id || state.buildMode || loreOpen ||
       !!(state.armed || hasSelection || drag || buildersOpen || questOpen ||
         shopOpen || levelsOpen || achOpen || arenaOpen || askState || dailyOpen);
     tipEl.classList.toggle('hidden', busy);
@@ -5597,6 +5698,7 @@ CC.UI = (function () {
     syncReplay();
     if (replaysOpen) renderReplayList();
     syncDaily();
+    syncLore();
 
     const dailyDone = CC.Game.takeDailyDone ? CC.Game.takeDailyDone() : 0;
     if (dailyDone && !anyOverlayOpen()) {
@@ -6075,6 +6177,10 @@ CC.UI = (function () {
     closeQuests: closeQuests,
     questAction: questAction,
     syncSergeant: syncSergeant,
+    syncLore: syncLore,
+    loreNext: loreNext,
+    loreSkip: finishLore,
+    lorePage: function () { return lorePage; },
     sergeantPrimary: sergeantPrimary,
     openHangar: openHangar,
     heroAbility: heroAbility,
@@ -6133,7 +6239,7 @@ CC.UI = (function () {
 CC.Intro = (function () {
   'use strict';
 
-  const PHASES = ['is-fall', 'is-impact', 'is-unfold', 'is-reveal',
+  const PHASES = ['is-gate', 'is-fall', 'is-impact', 'is-unfold', 'is-reveal',
     'is-title', 'is-reduced', 'is-done'];
   const T = CC.INTRO || {};
   const FLAG = T.flag || 'clash-intro-v1'; // старый флаг «уже видел»
@@ -6141,12 +6247,14 @@ CC.Intro = (function () {
   const OPT_ID = 'intro-skip-next';
 
   let el = null;
+  let gateEl = null;
   let canvasEl = null;
   let ctx = null;
   let skipBtn = null;
   let optInput = null;
   let bound = false;
   let open = false;
+  let gate = false; // ждём жест: анимация ещё не началась
   let reduced = false;
   let current = 'idle';
   let lastReason = '';
@@ -6268,6 +6376,20 @@ CC.Intro = (function () {
     return el;
   }
 
+  function getGate() {
+    if (!gateEl && typeof document !== 'undefined' && document.getElementById) {
+      gateEl = document.getElementById('intro-gate');
+    }
+    return gateEl;
+  }
+
+  function showGate(on) {
+    const g = getGate();
+    if (!g || !g.classList) return;
+    g.classList.toggle('hidden', !on);
+    if (g.setAttribute) g.setAttribute('aria-hidden', on ? 'false' : 'true');
+  }
+
   function getCanvas() {
     if (!canvasEl && typeof document !== 'undefined' && document.getElementById) {
       canvasEl = document.getElementById('intro-canvas');
@@ -6328,6 +6450,25 @@ CC.Intro = (function () {
       }
     } catch (e) { /* старый браузер */ }
     return Date.now();
+  }
+
+  // Звук фазы заставки. Выключенный звук (кнопка mute) — просто молчим:
+  // unlock всё равно зовём, чтобы контекст был готов к следующему жесту.
+  function cue(name) {
+    if (!CC.Sound || typeof CC.Sound.play !== 'function') return false;
+    if (typeof CC.Sound.isEnabled === 'function' && !CC.Sound.isEnabled()) {
+      return false;
+    }
+    try {
+      return CC.Sound.play(name) !== false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function duck(on) {
+    if (!CC.Sound || typeof CC.Sound.duckMusic !== 'function') return;
+    try { CC.Sound.duckMusic(on); } catch (e) { /* заставка не должна падать */ }
   }
 
   // Запасной кадр: тёмный фон и нарастающее затемнение. Нужен, пока
@@ -6456,9 +6597,12 @@ CC.Intro = (function () {
     if (lastReason !== 'error') applyOptOut();
 
     open = false;
+    gate = false;
     stopFrame();
     clearTimers();
     CC.App.introOpen = false;
+    showGate(false);
+    duck(false);
 
     const root = getEl();
     if (root) {
@@ -6503,6 +6647,7 @@ CC.Intro = (function () {
 
     try {
       open = true;
+      gate = true;
       reduced = reducedMotion();
       lastReason = '';
       CC.App.introOpen = true;
@@ -6514,15 +6659,51 @@ CC.Intro = (function () {
       setCssTimings();
       if (root.classList) root.classList.remove('hidden');
       if (root.setAttribute) root.setAttribute('aria-hidden', 'false');
+      // Лор мог успеть открыться до старта сцены — прячем его под гейт,
+      // после заставки syncLore покажет карточку снова.
+      const loreRoot = typeof document !== 'undefined' && document.getElementById
+        ? document.getElementById('sergeant-lore') : null;
+      if (loreRoot && loreRoot.classList) loreRoot.classList.add('hidden');
       resize();
 
+      // Сначала — тёмный титул-гейт. Без жеста браузер не даст WebAudio,
+      // поэтому сцена и её таймеры ждут тапа (см. beginIntro).
+      setPhase('is-gate');
+      showGate(true);
+      return true;
+    } catch (e) {
+      CC.App.introOpen = false;
+      finish('error');
+      return false;
+    }
+  }
+
+  // Жест получен: снимаем гейт, будим звук и только теперь запускаем сцену.
+  // Возвращает true, если анимация действительно началась.
+  function beginIntro(reason) {
+    if (!open || !gate) return false;
+
+    const root = getEl();
+    gate = false;
+    showGate(false);
+
+    // unlock создаёт/будит AudioContext. Даже при mute зовём его: звук
+    // останется выключенным, но следующий жест уже будет готов.
+    if (CC.Sound && typeof CC.Sound.unlock === 'function') {
+      try { CC.Sound.unlock(); } catch (e) { /* без звука, но со сценой */ }
+    }
+    duck(true);
+
+    try {
       if (reduced) {
-        // Один статичный финальный кадр и короткий фейд до базы.
+        // Без полёта: один финальный кадр и короткий звуковой акцент.
+        cue('introTitle');
         setPhase('is-reduced');
-        if (root.classList) root.classList.add('is-reveal');
+        if (root && root.classList) root.classList.add('is-reveal');
         drawAt(Math.max(0, totalMs() - reducedFrameMs()));
         schedule(function () { finish('reduced'); }, reducedMs());
       } else {
+        cue('introEngine');
         setPhase('is-fall');
         startedAt = nowMs();
         drawAt(0);
@@ -6534,16 +6715,29 @@ CC.Intro = (function () {
         const titleAt = revealAt + revealMs();
         const doneAt = titleAt + titleMs();
 
-        schedule(function () { setPhase('is-impact'); }, impactAt);
-        schedule(function () { setPhase('is-unfold'); }, unfoldAt);
-        schedule(function () { setPhase('is-reveal'); }, revealAt);
-        schedule(function () { setPhase('is-title'); }, titleAt);
+        schedule(function () {
+          setPhase('is-impact');
+          cue('introImpact');
+        }, impactAt);
+        schedule(function () {
+          setPhase('is-unfold');
+          cue('introServo');
+        }, unfoldAt);
+        schedule(function () {
+          setPhase('is-reveal');
+          cue('introClank');
+        }, revealAt);
+        schedule(function () {
+          setPhase('is-title');
+          cue('introTitle');
+        }, titleAt);
         schedule(function () { finish('done'); }, doneAt);
       }
 
       // Страховка: что бы ни случилось со сценой, экран не останется
-      // заблокированным дольше 8 секунд.
+      // заблокированным дольше 8 секунд после жеста.
       safetyTimer = setTimeout(function () { finish('safety'); }, safetyMs());
+      lastReason = reason || '';
       return true;
     } catch (e) {
       CC.App.introOpen = false;
@@ -6563,6 +6757,12 @@ CC.Intro = (function () {
     // Клик по галочке или кнопке не считается тапом «пропустить».
     const t = e && e.target;
     if (t && t.closest && t.closest('.intro__actions')) return;
+
+    if (gate) {
+      if (e && e.stopPropagation) e.stopPropagation();
+      beginIntro('tap');
+      return;
+    }
     skip('tap');
   }
 
@@ -6574,6 +6774,15 @@ CC.Intro = (function () {
       if (e.stopImmediatePropagation) e.stopImmediatePropagation();
       else if (e.stopPropagation) e.stopPropagation();
       skip('escape');
+      return;
+    }
+
+    // На гейте Enter/Пробел — тот же старт, что и тап.
+    if (gate && (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')) {
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      else if (e.stopPropagation) e.stopPropagation();
+      beginIntro('key');
       return;
     }
 
@@ -6612,9 +6821,11 @@ CC.Intro = (function () {
     FLAG: FLAG,
     OFF_FLAG: OFF_FLAG,
     start: start,
+    begin: beginIntro,
     skip: skip,
     finish: finish,
     isOpen: function () { return open; },
+    isGate: function () { return gate; },
     optChecked: optChecked,
     isAnimating: function () { return rafId !== 0; },
     phase: function () { return current; },

@@ -4171,10 +4171,94 @@ html, body { width: 100%; height: 100%; }
   .res-gain { opacity: 1; }
 }
 
-/* ---------- заставка «Колония»: canvas + титул + пропуск ----------
+/* ---------- заставка «Колония»: гейт, canvas, титул, пропуск ----------
    Сцену целиком рисует CC.Render.drawIntro на #intro-canvas.
-   ui.css отвечает только за слой canvas, появление титула и фейды,
-   а длительности приходят из CC.INTRO через переменные --intro-*. */
+   ui.css отвечает за экран-гейт (без жеста нет звука), слой canvas,
+   появление титула и фейды. Длительности — из CC.INTRO. */
+
+/* Гейт: тёмный экран с титулом. Вся площадь — одна кнопка, палец
+   попадает без прицела; тап вызывает Sound.unlock() и старт сцены. */
+.intro__gate {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 2.4vmin, 20px);
+  padding: max(20px, env(safe-area-inset-top, 0px)) 20px
+    max(20px, env(safe-area-inset-bottom, 0px));
+  border: 0;
+  background:
+    radial-gradient(58% 42% at 50% 46%, rgba(120, 38, 34, .30), transparent 72%),
+    radial-gradient(120% 80% at 50% 112%, rgba(255, 120, 72, .18), transparent 70%),
+    #05070d;
+  color: #eef6f7;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  animation: introGateIn 420ms ease-out both;
+}
+
+.intro__gate:focus-visible {
+  outline: 2px solid #ffcf4a;
+  outline-offset: -6px;
+}
+
+.intro__gate-kicker {
+  font-size: clamp(9px, 1.6vmin, 13px);
+  font-weight: 700;
+  letter-spacing: .48em;
+  text-indent: .48em;
+  color: #b98a7a;
+}
+
+.intro__gate-title {
+  font-size: clamp(34px, 8.4vmin, 92px);
+  font-weight: 900;
+  line-height: .92;
+  letter-spacing: .06em;
+  color: #f4efe6;
+  text-shadow:
+    0 0 26px rgba(255, 112, 64, .36),
+    0 4px 0 rgba(80, 22, 16, .55);
+}
+
+.intro__gate-line {
+  width: clamp(64px, 16vmin, 150px);
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #d95f43, transparent);
+}
+
+/* Подпись мягко пульсирует: экран явно ждёт нажатия. */
+.intro__gate-hint {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 150, 116, .34);
+  border-radius: 999px;
+  background: rgba(24, 12, 12, .62);
+  font-size: clamp(11px, 1.9vmin, 15px);
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #ffd9c9;
+  animation: introGatePulse 1.8s ease-in-out infinite;
+}
+
+@keyframes introGateIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes introGatePulse {
+  0%, 100% { opacity: .62; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
+}
 
 .intro__canvas {
   position: absolute;
@@ -4321,7 +4405,134 @@ html, body { width: 100%; height: 100%; }
   }
 
   .intro__canvas { animation: none !important; }
+
+  .intro__gate {
+    animation: none;
+  }
+
+  .intro__gate-hint {
+    opacity: 1;
+    animation: none;
+    transform: none;
+  }
 }
+
+/* ---------- вступительный лор Сержанта ----------
+   Карточка поверх деревни: портрет, страница текста, точки и две кнопки.
+   На 844×390 текст прокручивается, кнопки остаются не меньше 44 px. */
+
+.lore {
+  width: min(470px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  text-align: left;
+}
+
+.lore__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Портрет — та же золотая рамка, что у панели Сержанта. */
+.lore__portrait {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid #8f6a35;
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 35%, #f2d27a, #b57c2f 72%);
+  box-shadow: inset 0 3px 8px rgba(60, 35, 8, .35);
+}
+
+.lore__portrait .sergeant__face { font-size: 2rem; }
+
+.lore__who {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lore__name {
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #4a2f12;
+}
+
+.lore__step {
+  font-size: .7rem;
+  font-weight: 800;
+  opacity: .65;
+  color: #4a2f12;
+}
+
+.lore__text {
+  flex: 1 1 auto;
+  min-height: 3.2em;
+  margin: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  font-size: .92rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #33210f;
+}
+
+.lore__dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.lore__dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(74, 47, 18, .22);
+  transition: background .18s ease, transform .18s ease;
+}
+
+.lore__dots i.is-on {
+  background: #b57c2f;
+  transform: scale(1.25);
+}
+
+.lore__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.lore__actions .overlay__btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  font-size: .82rem;
+}
+
+.lore__next { font-weight: 900; }
+
+/* Низкий телефон лёжа: портрет меньше, отступы плотнее. */
+.is-short .lore {
+  gap: 7px;
+  padding: 10px 12px;
+}
+
+.is-short .lore__portrait { width: 48px; height: 48px; }
+.is-short .lore__portrait .sergeant__face { font-size: 1.5rem; }
+.is-short .lore__name { font-size: .86rem; }
+.is-short .lore__text { font-size: .78rem; line-height: 1.32; }
+.is-short .lore__actions .overlay__btn { min-height: 44px; font-size: .74rem; }
 
 /* ---------- герой «Сержант» ---------- */
 
