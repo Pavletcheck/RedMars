@@ -240,9 +240,24 @@ CC.Base = (function () {
     };
   }
 
-  function remove(id) {
+  function remove(id, opts) {
     const i = items.findIndex(function (it) { return it.id === id; });
     if (i < 0) return { error: 'Постройка не найдена' };
+
+    // Нельзя остаться без добытчика: последний бур/реактор (готовый или
+    // ещё строящийся) не сносим. Если такой же есть — снос разрешён.
+    // force нужен миграциям и тестам «пустая база», обычный UI его не шлёт.
+    const it = items[i];
+    if (!(opts && opts.force) &&
+        (it.type === 'goldmine' || it.type === 'elixir')) {
+      const same = items.filter(function (o) { return o.type === it.type; });
+      if (same.length <= 1) {
+        const reason = it.type === 'goldmine'
+          ? 'Последний бур нельзя убрать — без него не будет руды'
+          : 'Последний реактор нельзя убрать — без него не будет энергии';
+        return { error: reason, reason: reason, code: 'last-extractor' };
+      }
+    }
 
     items.splice(i, 1);
     if (preview && preview.id === id) preview = null;
@@ -1381,9 +1396,8 @@ CC.Game = (function () {
   }
 
   /* Покупка ресурса за платину: наборы 1/10/100 с бонусом к курсу.
-     Платина списывается всегда, ресурс начисляется по свободному месту:
-     что не влезло — возвращаем в lost, чтобы интерфейс сказал «Не влезло N».
-     Полный склад не продаём вовсе. */
+     Если набор не влезает целиком — ничего не списываем и объясняем,
+     сколько поместится. Частичных списаний больше нет. */
   function buyResource(res, count) {
     if (res !== 'gold' && res !== 'elixir') {
       return { error: 'Неизвестный ресурс' };
@@ -1417,14 +1431,18 @@ CC.Game = (function () {
 
     const held = res === 'gold' ? st.gold : st.elixir;
     const free = Math.max(0, Math.floor(capNow - held));
-    if (free <= 0) {
+
+    // Набор должен влезть целиком: иначе платина сгорит впустую.
+    if (free < amount) {
+      const error = 'Склад заполнен: влезет ' + numText(free) + ' из ' +
+        numText(amount) + '. Освободи место';
       return {
-        error: 'Склад полон',
+        error: error,
         code: 'full',
         full: true,
         res: res,
         amount: amount,
-        free: 0,
+        free: free,
         gems: gemsNow()
       };
     }
@@ -1432,8 +1450,7 @@ CC.Game = (function () {
     st.gems -= n;
     addStat('gemsSpent', n);
 
-    const add = Math.min(amount, free);
-    const got = res === 'gold' ? credit(add, 0) : credit(0, add);
+    const got = res === 'gold' ? credit(amount, 0) : credit(0, amount);
     const added = res === 'gold' ? got.gold : got.elixir;
     save();
 
@@ -1444,8 +1461,7 @@ CC.Game = (function () {
       res: res,
       amount: amount,
       got: added,
-      // Не влезло: остаток сверх свободного места.
-      lost: Math.max(0, amount - added),
+      lost: 0,
       free: free
     };
   }

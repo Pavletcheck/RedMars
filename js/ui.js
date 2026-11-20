@@ -232,6 +232,7 @@ CC.UI = (function () {
   const mapCardTh = document.getElementById('map-card-th');
   const mapCardChapter = document.getElementById('map-card-chapter');
   const mapCardLoot = document.getElementById('map-card-loot');
+  const mapCardFree = document.getElementById('map-card-free');
   const mapCardBest = document.getElementById('map-card-best');
   const mapCardGo = document.getElementById('map-card-go');
 
@@ -518,6 +519,7 @@ CC.UI = (function () {
         if (!btn) return;
         shopCat = btn.dataset.shopCat;
         cache.shopSig = null;
+        resetShopScroll();
         syncShop();
       });
     }
@@ -2238,6 +2240,14 @@ CC.UI = (function () {
     if (shopEl) shopEl.classList.add('hidden');
   }
 
+  // Первая карточка должна быть видна целиком: старый скролл категории
+  // не должен срезать её край или первую строку.
+  function resetShopScroll() {
+    if (!shopGrid) return;
+    shopGrid.scrollLeft = 0;
+    shopGrid.scrollTop = 0;
+  }
+
   function openShop() {
     if (drag) dragCancel();
 
@@ -2258,6 +2268,7 @@ CC.UI = (function () {
     if (CC.Game.markShopOpened) CC.Game.markShopOpened();
     if (shopEl) shopEl.classList.remove('hidden');
     cache.shopSig = null;
+    resetShopScroll();
     sync();
   }
 
@@ -2572,6 +2583,31 @@ CC.UI = (function () {
     syncMapCard();
   }
 
+  // Свободное место на складах: нужно и карточке сектора, и предупреждению
+  // перед стартом боя, чтобы «Не влезло» не было сюрпризом.
+  function storageFree() {
+    return {
+      gold: Math.max(0, Math.floor(CC.Game.cap('gold') - CC.Game.gold())),
+      elixir: Math.max(0, Math.floor(CC.Game.cap('elixir') - CC.Game.elixir()))
+    };
+  }
+
+  function lootOverflow(pool) {
+    const loot = pool || { gold: 0, elixir: 0 };
+    const free = storageFree();
+    return {
+      free: free,
+      over: (Number(loot.gold) || 0) > free.gold ||
+        (Number(loot.elixir) || 0) > free.elixir
+    };
+  }
+
+  function warnLootOverflow(pool) {
+    if (!lootOverflow(pool).over) return false;
+    toast('Склад: часть добычи не влезет — собери ресурсы до боя');
+    return true;
+  }
+
   function syncMapCard() {
     if (!mapCard) return;
     if (mapSelected === null || !CC.LEVELS[mapSelected]) {
@@ -2598,6 +2634,13 @@ CC.UI = (function () {
       mapCardLoot.textContent = 'Добыча: ' + fmtNum(pool.gold) + ' руды, ' +
         fmtNum(pool.elixir) + ' энергии';
     }
+    if (mapCardFree) {
+      const fit = lootOverflow(pool);
+      mapCardFree.textContent = 'Свободно: ' + fmtNum(fit.free.gold) +
+        ' руды / ' + fmtNum(fit.free.elixir) + ' энергии' +
+        (fit.over ? ' · часть добычи не влезет' : '');
+      mapCardFree.classList.toggle('is-warn', fit.over);
+    }
     if (mapCardBest) {
       mapCardBest.textContent = stars > 0
         ? 'Лучший результат: ' + starRow(stars)
@@ -2621,6 +2664,8 @@ CC.UI = (function () {
     }
 
     mapSelected = index;
+    // Один тост на старт: если пул сектора больше свободного места.
+    warnLootOverflow((CC.LEVELS[index] && CC.LEVELS[index].loot) || {});
     closeLevels();
     overlayShown = false;
     overlayEl.classList.add('hidden');
@@ -2664,6 +2709,7 @@ CC.UI = (function () {
     }
 
     mapSelected = i;
+    warnLootOverflow((CC.LEVELS[i] && CC.LEVELS[i].loot) || {});
     closeLevels();
     setMode('battle');
     return { ok: true, level: i };
@@ -3092,11 +3138,13 @@ CC.UI = (function () {
       } else if (out.code === 'no-gems') {
         buyResNoteText = 'Не хватает ' + out.missing + ' платины';
         buyResNoteKind = 'short';
+      } else if (out.code === 'full') {
+        // Новый текст объясняет, сколько влезет, и не списывает платину.
+        buyResNoteText = out.error;
+        buyResNoteKind = 'full';
       } else {
-        buyResNoteText = out.error === 'Склад полон'
-          ? 'Склад полон'
-          : out.error;
-        buyResNoteKind = out.error === 'Склад полон' ? 'full' : 'error';
+        buyResNoteText = out.error;
+        buyResNoteKind = 'error';
       }
       sync();
       return out;
@@ -3104,16 +3152,9 @@ CC.UI = (function () {
 
     buyResNoteText = '';
     buyResNoteKind = '';
-    if (out.lost > 0) {
-      // Платина списана, но часть набора не поместилась: note объясняет
-      // потерю, баланс остаётся отдельно в строке курса.
-      buyResNoteText = 'Часть не влезет: склад мал';
-      buyResNoteKind = 'partial';
-      toast('Не влезло ' + fmtNum(out.lost) + ', склад полон');
-    } else {
-      toast('Куплено: +' + fmtNum(out.got) +
-        (out.res === 'gold' ? ' руды' : ' энергии'));
-    }
+    // Штатный путь: набор влёз целиком и оплачен.
+    toast('Куплено: +' + fmtNum(out.got) +
+      (out.res === 'gold' ? ' руды' : ' энергии'));
 
     sync();
     return out;
@@ -3686,12 +3727,17 @@ CC.UI = (function () {
 
   // Снос вынесен отдельно: подтверждение асинхронное, а действие одно.
   function removeBuilding(id) {
-    CC.Base.remove(id);
+    const res = CC.Base.remove(id);
+    if (res && res.error) {
+      toast(res.error);
+      return res;
+    }
     state.selected = null;
     invalidate();
     if (CC.CamBaseChanged) CC.CamBaseChanged();
     toast('Постройка убрана');
     sync();
+    return res;
   }
 
   // Состав базы изменился (постановка, снос, перенос) — сбрасываем
@@ -6443,6 +6489,7 @@ CC.UI = (function () {
     if (drag) dragCancel();
 
     pvpTarget = ghost;
+    warnLootOverflow(ghost.loot || {});
     CC.App.mode = 'battle';
     if (CC.Sound && CC.Sound.setMode) CC.Sound.setMode('battle');
 
@@ -7376,6 +7423,9 @@ CC.UI = (function () {
     toggleBuildMode: toggleBuildMode,
     isBuildMode: function () { return state.buildMode; },
     tryPlace: tryPlace,
+    removeBuilding: removeBuilding,
+    storageFree: storageFree,
+    warnLootOverflow: warnLootOverflow,
     collect: collectBuilding,
     collectAll: collectAllNow,
     collectLayout: collectLayout,
@@ -7454,6 +7504,7 @@ CC.UI = (function () {
       const found = SHOP_CATS.find(function (c) { return c.id === id; });
       shopCat = found ? found.id : 'all';
       cache.shopSig = null;
+      resetShopScroll();
       if (shopOpen) syncShop();
       return shopCat;
     },

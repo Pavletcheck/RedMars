@@ -3311,9 +3311,21 @@ html, body { width: 100%; height: 100%; }
 
 .map-card__best { color: #8a6514; font-weight: 800; }
 
+/* Свободное место на складе: до боя видно, влезет ли добыча сектора. */
+.map-card__free {
+  grid-column: 1 / 2;
+  margin: 0;
+  font-size: .62rem;
+  line-height: 1.25;
+  font-weight: 800;
+  color: #4a6b1f;
+}
+
+.map-card__free.is-warn { color: #a5352a; }
+
 .map-card__go {
   grid-column: 2 / 3;
-  grid-row: 1 / 4;
+  grid-row: 1 / 6;
   min-width: 116px;
   min-height: 44px;
   padding: 0 12px;
@@ -7437,4 +7449,225 @@ html, body { width: 100%; height: 100%; }
   }
   #app .recruit-card__portrait { width: 80px; height: 80px; }
   #app .recruit-card__meta { font-size: 10px; letter-spacing: -.015em; }
+}
+
+/* ===================================================================
+   P0: оверлеи выше HUD и безопасные края на низких экранах.
+   HUD-углы (z-index 45/50) больше не выглядывают поверх модалок,
+   а каждая карточка получает max-height по экрану и внутренний скролл.
+   =================================================================== */
+
+#app .overlay {
+  z-index: 60;
+  padding:
+    max(8px, env(safe-area-inset-top, 0px))
+    max(8px, env(safe-area-inset-right, 0px))
+    max(8px, env(safe-area-inset-bottom, 0px))
+    max(8px, env(safe-area-inset-left, 0px));
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+#app .overlay > .overlay__card {
+  max-height: calc(100dvh - 16px -
+    env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 196, 84, .55) rgba(20, 28, 32, .25);
+}
+
+/* У этих карточек уже есть собственные скролл-области внутри. */
+#app .overlay > .terminal,
+#app .overlay > .recruit,
+#app .overlay > .arena,
+#app .overlay > .map-wrap,
+#app .overlay > .chapter-card,
+#app .overlay > .lore {
+  overflow: hidden;
+}
+
+/* Служебные слои выше модалок. */
+#app .toast { z-index: 100; }
+#app .tut-pointer { z-index: 96; }
+#app .replay-banner { z-index: 94; }
+#app #ask { z-index: 90; }
+#app .tab-lock { z-index: 95; }
+
+/* ---- низкий экран: терминал компактный, цена и лимит видны ---- */
+@media (max-height: 430px) {
+  #levels,
+  #chapter,
+  #recruit,
+  #shop {
+    padding-top: max(6px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  }
+
+  #app .map-wrap,
+  #app .chapter-card,
+  #app .recruit,
+  #app .terminal {
+    height: calc(100dvh -
+      max(8px, env(safe-area-inset-top, 0px)) -
+      max(8px, env(safe-area-inset-bottom, 0px)));
+    max-height: calc(100dvh -
+      max(8px, env(safe-area-inset-top, 0px)) -
+      max(8px, env(safe-area-inset-bottom, 0px)));
+  }
+
+  #app .terminal {
+    gap: 5px;
+    padding: 6px 8px 7px;
+  }
+
+  #app .terminal__head { min-height: 38px; gap: 6px; }
+  #app .terminal__title { font-size: var(--fs-16); }
+  #app .terminal__sub { display: none; }
+  #app .terminal__res-chip {
+    min-height: 26px;
+    padding: 0 6px;
+    font-size: var(--fs-11);
+  }
+  #app .terminal__res-chip i { font-size: .72rem; }
+  #app .terminal__x { width: 40px; height: 40px; }
+  #app .terminal__body { gap: 4px; }
+  #app .terminal__rail { gap: 4px; padding-bottom: 1px; }
+  #app .term-cat { min-height: 36px; padding: 1px 6px; }
+
+  #app .term-card { height: 196px; min-height: 196px; }
+  #app .term-card__banner { min-height: 30px; padding: 2px 6px; }
+  #app .term-card__art-wrap {
+    flex: 0 0 112px;
+    height: 112px;
+    min-height: 0;
+    max-height: none;
+  }
+  #app .shop-card__art.term-card__art,
+  #app #shop .term-card__art-wrap > .shop-card__icon > .shop-card__art {
+    max-height: 112px;
+    padding: 2px 4px;
+  }
+  #app .term-card__desc { display: none; }
+  #app .term-card__status {
+    min-height: 16px;
+    font-size: var(--fs-11);
+    line-height: 16px;
+  }
+  #app .term-card__cost {
+    min-height: 30px;
+    padding: 3px 6px;
+    font-size: var(--fs-11);
+  }
+  #app .terminal__note { display: none; }
+}
+
+/* Совсем низкий ландшафт (683×320): ещё на шаг компактнее, но арт
+   остаётся 100 px, а название, лимит и цена читаются. */
+@media (max-height: 340px) {
+  #app .term-card { height: 178px; min-height: 178px; }
+  #app .term-card__banner { min-height: 26px; padding: 2px 5px; }
+  #app .term-card__name,
+  #app .term-card__limit { font-size: 10px; }
+  #app .term-card__art-wrap { flex: 0 0 100px; height: 100px; }
+  #app .shop-card__art.term-card__art,
+  #app #shop .term-card__art-wrap > .shop-card__icon > .shop-card__art {
+    max-height: 100px;
+  }
+  #app .term-card__status {
+    min-height: 14px;
+    line-height: 14px;
+    font-size: 10px;
+  }
+  #app .term-card__cost {
+    min-height: 28px;
+    padding: 2px 5px;
+    font-size: 10px;
+  }
+}
+
+/* ---- лаборатория/ангар/академия: не под меню и не под resbar ---- */
+@media (max-height: 430px) {
+  .selbar:has(.selarmy:not(.hidden)),
+  .selbar[data-type="lab"],
+  .selbar[data-type="herohall"] {
+    left: 8px;
+    right: 166px;
+    width: auto;
+    max-width: none;
+    transform: none;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+    max-height: calc(100dvh - 156px);
+  }
+}
+
+/* Очередь тренировки и список исследований крутятся внутри панели,
+   а тонкий скроллбар показывает, что там ещё есть строки. */
+#app .selarmy__queue,
+#app .troopup__list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 196, 84, .6) rgba(40, 30, 16, .18);
+}
+
+#app .selarmy__queue { max-height: 132px; }
+#app .troopup__list { max-height: 156px; }
+
+#app .selarmy__queue::-webkit-scrollbar,
+#app .troopup__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#app .selarmy__queue::-webkit-scrollbar-track,
+#app .troopup__list::-webkit-scrollbar-track {
+  background: rgba(40, 30, 16, .14);
+  border-radius: 3px;
+}
+
+#app .selarmy__queue::-webkit-scrollbar-thumb,
+#app .troopup__list::-webkit-scrollbar-thumb {
+  background: rgba(196, 139, 24, .7);
+  border-radius: 3px;
+}
+
+/* Общие скролл-области модалок тоже показывают тонкий скроллбар,
+   чтобы на низком экране было видно: ниже есть ещё строки. */
+#app .arena__list,
+#app .lore__text,
+#app .chapter-goals,
+#app .map-scroll,
+#app .replay-list,
+#app .ach-list,
+#app .recruit__grid,
+#app .recruit__side,
+#app .result-card {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 196, 84, .55) rgba(20, 28, 32, .2);
+}
+
+#app .arena__list::-webkit-scrollbar,
+#app .lore__text::-webkit-scrollbar,
+#app .chapter-goals::-webkit-scrollbar,
+#app .map-scroll::-webkit-scrollbar,
+#app .replay-list::-webkit-scrollbar,
+#app .ach-list::-webkit-scrollbar,
+#app .recruit__grid::-webkit-scrollbar,
+#app .recruit__side::-webkit-scrollbar,
+#app .result-card::-webkit-scrollbar {
+  width: 6px;
+}
+
+#app .arena__list::-webkit-scrollbar-thumb,
+#app .lore__text::-webkit-scrollbar-thumb,
+#app .chapter-goals::-webkit-scrollbar-thumb,
+#app .map-scroll::-webkit-scrollbar-thumb,
+#app .replay-list::-webkit-scrollbar-thumb,
+#app .ach-list::-webkit-scrollbar-thumb,
+#app .recruit__grid::-webkit-scrollbar-thumb,
+#app .recruit__side::-webkit-scrollbar-thumb,
+#app .result-card::-webkit-scrollbar-thumb {
+  background: rgba(196, 139, 24, .65);
+  border-radius: 3px;
 }
