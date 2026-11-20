@@ -306,20 +306,27 @@
 
   <!-- терминал построек вместо горизонтальной палитры -->
   <div class="overlay hidden" id="shop">
-    <div class="overlay__card shop">
-      <div class="shop__head">
-        <h2 class="shop__title">Терминал</h2>
-        <button class="shop__x" id="shop-x" title="Закрыть">✕</button>
+    <div class="overlay__card shop terminal">
+      <div class="shop__head terminal__head">
+        <div class="terminal__title-wrap">
+          <h2 class="shop__title terminal__title">Терминал</h2>
+          <span class="terminal__sub">Строительство · Марс</span>
+        </div>
+        <div class="terminal__res">
+          <span class="terminal__res-chip"><i>🔩</i><b id="shop-res-gold">0</b><em id="shop-res-gold-cap">/0</em></span>
+          <span class="terminal__res-chip"><i>⚡</i><b id="shop-res-elixir">0</b><em id="shop-res-elixir-cap">/0</em></span>
+          <span class="terminal__res-chip terminal__res-chip_gem"><i class="ico ico-platinum" aria-hidden="true"></i><b id="shop-res-gems">0</b></span>
+        </div>
+        <button class="shop__x terminal__x" id="shop-x" title="Закрыть">✕</button>
       </div>
-      <div class="carousel carousel_shop">
-        <button class="carousel__arrow carousel__arrow_prev" id="shop-prev" type="button"
-                data-carousel="shop" data-dir="-1" title="Предыдущая постройка" aria-label="Предыдущая постройка">‹</button>
-        <div class="shop__grid carousel__track" id="shop-grid" tabindex="0"
-             role="listbox" aria-label="Постройки терминала"></div>
-        <button class="carousel__arrow carousel__arrow_next" id="shop-next" type="button"
-                data-carousel="shop" data-dir="1" title="Следующая постройка" aria-label="Следующая постройка">›</button>
+      <div class="terminal__body">
+        <aside class="terminal__rail" id="shop-cats" role="tablist" aria-label="Категории построек"></aside>
+        <section class="terminal__main">
+          <div class="shop__grid terminal__grid" id="shop-grid" tabindex="0"
+               role="listbox" aria-label="Постройки терминала"></div>
+          <p class="shop__note hidden terminal__note" id="shop-note"></p>
+        </section>
       </div>
-      <p class="shop__note hidden" id="shop-note"></p>
     </div>
   </div>
 

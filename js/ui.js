@@ -13,6 +13,12 @@ CC.UI = (function () {
   const shopGrid = document.getElementById('shop-grid');
   const shopNote = document.getElementById('shop-note');
   const shopX = document.getElementById('shop-x');
+  const shopCats = document.getElementById('shop-cats');
+  const shopResGold = document.getElementById('shop-res-gold');
+  const shopResGoldCap = document.getElementById('shop-res-gold-cap');
+  const shopResElixir = document.getElementById('shop-res-elixir');
+  const shopResElixirCap = document.getElementById('shop-res-elixir-cap');
+  const shopResGems = document.getElementById('shop-res-gems');
   const ghostEl = document.getElementById('place-ghost');
   const ghostShape = document.getElementById('place-ghost-shape');
   const ghostIcon = document.getElementById('place-ghost-icon');
@@ -272,6 +278,7 @@ CC.UI = (function () {
   let buildersOpen = false;
   let questOpen = false;
   let shopOpen = false;
+  let shopCat = 'all';
   let buyResOpen = false;
   let buyPlatOpen = false;
   let buyResKind = 'gold';   // какой ресурс открыт в окне покупки
@@ -505,6 +512,15 @@ CC.UI = (function () {
       });
     }
     if (shopGrid) shopGrid.addEventListener('click', onShopClick);
+    if (shopCats) {
+      shopCats.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-shop-cat]');
+        if (!btn) return;
+        shopCat = btn.dataset.shopCat;
+        cache.shopSig = null;
+        syncShop();
+      });
+    }
 
     if (levelBadge) levelBadge.addEventListener('click', openLevels);
     if (lvlChip) lvlChip.addEventListener('click', openLevels);
@@ -2233,6 +2249,12 @@ CC.UI = (function () {
     closeBuyResource();
     closeBuyPlatinum();
     shopOpen = true;
+    // Указатель обучения должен найти карточку: открываем её категорию.
+    shopCat = 'all';
+    const tutor = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    if (tutor && tutor.active && tutor.place) {
+      shopCat = shopTypeCategory(tutor.place);
+    }
     if (CC.Game.markShopOpened) CC.Game.markShopOpened();
     if (shopEl) shopEl.classList.remove('hidden');
     cache.shopSig = null;
@@ -2783,6 +2805,31 @@ CC.UI = (function () {
       size + '" height="' + size + '" draggable="false" decoding="async">';
   }
 
+  const SHOP_CATS = [
+    { id: 'all', name: 'Все', icon: '▦', asset: 'cat-all' },
+    { id: 'defense', name: 'Оборона', icon: '🛡', asset: 'cat-defense',
+      types: ['cannon', 'archer', 'mortar', 'airdef', 'mage', 'ambush', 'beam', 'wall'] },
+    { id: 'resources', name: 'Ресурсы', icon: '⛏', asset: 'cat-resources',
+      types: ['goldmine', 'elixir', 'storage', 'estorage'] },
+    { id: 'army', name: 'Армия', icon: '🪖', asset: 'cat-army',
+      types: ['barracks', 'lab', 'herohall'] },
+    { id: 'traps', name: 'Ловушки', icon: '💥', asset: 'cat-traps',
+      types: ['mine', 'spring', 'airmine'] }
+  ];
+
+  function shopCatTypes(id) {
+    if (id === 'all') return CC.PALETTE.slice();
+    const cat = SHOP_CATS.find(function (c) { return c.id === id; });
+    return cat && cat.types ? cat.types.slice() : CC.PALETTE.slice();
+  }
+
+  function shopTypeCategory(type) {
+    for (let i = 1; i < SHOP_CATS.length; i++) {
+      if ((SHOP_CATS[i].types || []).indexOf(type) !== -1) return SHOP_CATS[i].id;
+    }
+    return 'all';
+  }
+
   function shopCardHtml(type) {
     const d = CC.BUILDINGS[type];
     const have = CC.Base.count(type);
@@ -2820,25 +2867,39 @@ CC.UI = (function () {
     // Уровень для арта: обычная карточка показывает текущий TH (не выше 10),
     // закрытая — 1, чтобы художнику не пришлось рисовать «нулевой» вид.
     const artLevel = locked ? 1 : Math.min(CC.MAX_TH, th);
-    const art = cardArt('building', type, 72, artLevel, 'shop-card__art');
-    const cls = 'shop-card' + (art ? ' has-art' : '') + (locked ? ' is-locked' : '') +
-      (full ? ' is-empty' : '') + (poor ? ' is-poor' : '') +
-      (lesson ? ' is-lesson' : '') + (rescue ? ' is-rescue' : '');
-    const iconCls = 'shop-card__icon cc-icon' + (art ? ' has-art' : '');
-    const lockBadge = locked ? '<span class="shop-card__lock" aria-hidden="true">🔒</span>' : '';
+    const art = cardArt('building', type, 180, artLevel, 'shop-card__art term-card__art');
+    const cls = 'shop-card term-card' + (art ? ' has-art' : '') +
+      (locked ? ' is-locked' : '') + (full ? ' is-empty' : '') +
+      (poor ? ' is-poor' : '') + (lesson ? ' is-lesson' : '') +
+      (rescue ? ' is-rescue' : '');
+    const iconCls = 'shop-card__icon cc-icon term-card__art-fallback' +
+      (art ? ' has-art' : '');
+    const lockBadge = locked
+      ? '<span class="shop-card__lock term-card__lock" aria-hidden="true">🔒</span>'
+      : '';
     // уровень открытия/текущий и состояние — зацепки для стилей художника
     const cardState = locked ? 'locked' : (lesson ? 'lesson' :
       (rescue ? 'rescue' : (full || poor ? 'insufficient' : 'available')));
     const cardLevel = locked ? needTh : th;
-    const count = '<span class="shop-card__count">' + have + ' / ' + limit + '</span>';
+    const count = '<span class="shop-card__count term-card__limit">' +
+      have + ' / ' + limit + '</span>';
     const ptime = lesson ? lesson.seconds
       : (CC.Game.placeTime ? CC.Game.placeTime(type) : 0);
-    const costText = (free ? 'Бесплатно' : placePriceText(price)) +
-      (ptime > 0 ? ' · ' + formatTime(ptime) : '');
-    const cost = '<span class="shop-card__cost">' + costText + '</span>';
-    const req = locked ? '<span class="shop-card__req">с командного центра ' + needTh + '</span>'
-      : (rescue ? '<span class="shop-card__req shop-card__req_rescue">' +
-        'Первый склад: бесплатно</span>' : '');
+    const priceIcon = price.gold > 0 ? '🔩' : (price.elixir > 0 ? '⚡' : '');
+    const costLabel = free
+      ? 'Бесплатно'
+      : (priceIcon ? '<i class="term-card__res">' + priceIcon + '</i> ' +
+        placePriceText(price) : placePriceText(price));
+    const costText = costLabel + (ptime > 0 ? ' · ' + formatTime(ptime) : '');
+    const cost = '<span class="shop-card__cost term-card__cost">' + costText + '</span>';
+    let status = '';
+    if (locked) status = 'С командного центра ' + needTh;
+    else if (full) status = 'Лимит исчерпан';
+    else if (rescue) status = 'Первый склад: бесплатно';
+    else if (lesson) status = 'Сержант: бесплатно';
+    const statusEl = status
+      ? '<span class="shop-card__req term-card__status">' + status + '</span>'
+      : '<span class="term-card__status term-card__status_empty"></span>';
     let title;
     if (locked) title = lockReason;
     else if (full) title = 'Лимит исчерпан';
@@ -2853,14 +2914,20 @@ CC.UI = (function () {
 
     return '<button class="' + cls + '" data-type="' + type + '"' +
       (d.trap ? ' data-trap="1"' : '') +
+      (locked ? ' data-locked="1" aria-disabled="true"' : '') +
       ' data-level="' + cardLevel + '" data-state="' + cardState + '"' +
-      (locked || full ? ' disabled' : '') + ' title="' + title + '">' +
-      lockBadge +
-      '<span class="' + iconCls + '" data-type="' + type + '">' +
-        (art || icon) + '</span>' +
-      '<span class="shop-card__name">' + d.name + '</span>' +
-      '<span class="shop-card__desc">' + (d.desc || '') + '</span>' +
-      count + cost + req +
+      (full ? ' disabled' : '') + ' title="' + title + '">' +
+      '<span class="term-card__banner">' +
+        '<b class="shop-card__name term-card__name">' + d.name + '</b>' +
+        count +
+      '</span>' +
+      '<span class="term-card__art-wrap">' +
+        lockBadge +
+        '<span class="' + iconCls + '" data-type="' + type + '">' +
+          (art || icon) + '</span>' +
+      '</span>' +
+      '<span class="shop-card__desc term-card__desc">' + (d.desc || '') + '</span>' +
+      statusEl + cost +
       '</button>';
   }
 
@@ -3141,24 +3208,76 @@ CC.UI = (function () {
       }
     }
 
+    // Шапка с ресурсами.
+    if (shopResGold) shopResGold.textContent = fmtNum(CC.Game.gold());
+    if (shopResGoldCap) shopResGoldCap.textContent = '/' + fmtNum(CC.Game.cap('gold'));
+    if (shopResElixir) shopResElixir.textContent = fmtNum(CC.Game.elixir());
+    if (shopResElixirCap) shopResElixirCap.textContent = '/' + fmtNum(CC.Game.cap('elixir'));
+    if (shopResGems) shopResGems.textContent = fmtNum(CC.Game.gems());
+
     const tutor = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    if (SHOP_CATS.findIndex(function (c) { return c.id === shopCat; }) === -1) {
+      shopCat = 'all';
+    }
+
     const sig =
       CC.PALETTE.map(function (t) { return CC.Base.count(t); }).join(',') +
       '|th' + CC.Game.townhallLevel() + '|gold' + Math.round(CC.Game.gold()) +
       '|elixir' + Math.round(CC.Game.elixir()) +
+      '|gems' + CC.Game.gems() +
       '|gc' + Math.round(CC.Game.cap('gold')) + '|ec' + Math.round(CC.Game.cap('elixir')) +
+      '|cat' + shopCat +
       '|lesson' + (tutor && tutor.active ? tutor.id : '-');
     if (cache.shopSig === sig) return;
     cache.shopSig = sig;
 
-    const shopScroll = shopGrid.scrollLeft || 0;
-    shopGrid.innerHTML = CC.PALETTE.map(shopCardHtml).join('');
-    if (shopScroll) shopGrid.scrollLeft = shopScroll;
+    // Рейл категорий: счётчик доступных/всего.
+    if (shopCats) {
+      shopCats.innerHTML = SHOP_CATS.map(function (cat) {
+        const types = shopCatTypes(cat.id);
+        let can = 0;
+        for (let i = 0; i < types.length; i++) {
+          if (CC.Game.canBuild(types[i]).ok && CC.Base.left(types[i]) > 0) can++;
+        }
+        const active = cat.id === shopCat ? ' is-active' : '';
+        return '<button class="term-cat' + active + '" type="button"' +
+          ' data-shop-cat="' + cat.id + '" role="tab" aria-selected="' +
+          (cat.id === shopCat ? 'true' : 'false') + '"' +
+          ' onclick="CC.UI.setShopCategory(\'' + cat.id + '\')">' +
+          '<span class="term-cat__icon">' +
+            '<i class="term-cat__emoji" data-fallback="1">' + cat.icon + '</i>' +
+            '<img class="term-cat__img" src="assets/' + cat.asset + '.svg" alt=""' +
+            ' onload="var f=this.parentNode?this.parentNode.querySelector(\'[data-fallback]\'):null;' +
+              'if(f)f.style.display=\'none\'"' +
+            ' onerror="this.style.display=\'none\'">' +
+          '</span>' +
+          '<span class="term-cat__name">' + cat.name + '</span>' +
+          '<span class="term-cat__count">' + can + '/' + types.length + '</span>' +
+        '</button>';
+      }).join('');
+    }
+
+    const shopScroll = shopGrid.scrollTop || 0;
+    shopGrid.innerHTML = shopCatTypes(shopCat).map(shopCardHtml).join('');
+    shopGrid.scrollLeft = 0;
+    if (shopScroll) shopGrid.scrollTop = shopScroll;
   }
 
   function onShopClick(e) {
     const card = e.target.closest('[data-type]');
-    if (!card || card.disabled) return;
+    if (!card) return;
+
+    // Закрытая карточка не ставится, но объясняет причину.
+    if (card.dataset.locked === '1' ||
+        card.getAttribute('data-locked') === '1' ||
+        card.dataset.state === 'locked') {
+      toast(card.title || 'Сначала открой постройку');
+      return;
+    }
+    if (card.disabled) {
+      toast(card.title || 'Лимит исчерпан');
+      return;
+    }
 
     const armRes = arm(card.dataset.type);
     if (armRes.error) toast(armRes.error);
@@ -7331,6 +7450,15 @@ CC.UI = (function () {
     openAchievements: openAchievements,
     closeAchievements: closeAchievements,
     isShopOpen: function () { return shopOpen; },
+    setShopCategory: function (id) {
+      const found = SHOP_CATS.find(function (c) { return c.id === id; });
+      shopCat = found ? found.id : 'all';
+      cache.shopSig = null;
+      if (shopOpen) syncShop();
+      return shopCat;
+    },
+    shopCategory: function () { return shopCat; },
+    shopCategoryTypes: function (id) { return shopCatTypes(id || shopCat); },
     setShopTab: setShopTab,
     openBuyResource: openBuyResource,
     closeBuyResource: closeBuyResource,

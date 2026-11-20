@@ -6942,6 +6942,491 @@ html, body { width: 100%; height: 100%; }
   #app .recruit-card__portrait { width: 76px; height: 76px; }
 }
 
+/* ===================================================================
+   Терминал: полноэкранный строительный экран с категориями.
+   =================================================================== */
+
+#app .terminal {
+  width: min(1100px, calc(100vw - 20px));
+  max-width: min(1100px, calc(100vw - 20px));
+  height: 88dvh;
+  max-height: 88dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 12px 12px;
+  text-align: left;
+  overflow: hidden;
+}
+
+#app .terminal__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+}
+
+#app .terminal__title-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#app .terminal__title {
+  margin: 0;
+  font-size: var(--fs-20);
+  white-space: nowrap;
+}
+
+#app .terminal__sub {
+  font-size: var(--fs-11);
+  font-weight: 700;
+  color: var(--hud-muted);
+  white-space: nowrap;
+}
+
+#app .terminal__res {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#app .terminal__res-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid rgba(147, 167, 173, .22);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .05);
+  color: var(--hud-text);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#app .terminal__res-chip i {
+  font-style: normal;
+  font-size: .8rem;
+}
+
+#app .terminal__res-chip b { font-weight: 900; }
+#app .terminal__res-chip em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--hud-muted);
+}
+#app .terminal__res-chip_gem b { color: #c9a6f0; }
+
+#app .terminal__x {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+}
+
+#app .terminal__body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
+  gap: 10px;
+}
+
+#app .terminal__rail {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+
+#app .term-cat {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 52px;
+  padding: 5px 8px;
+  border: 1px solid rgba(147, 167, 173, .22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .04);
+  color: var(--hud-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+#app .term-cat:hover { border-color: rgba(70, 224, 200, .5); }
+
+#app .term-cat.is-active {
+  border-color: var(--hud-gold);
+  background: linear-gradient(180deg, rgba(255, 207, 74, .16), rgba(255, 207, 74, .05));
+  box-shadow: inset 0 0 0 1px rgba(255, 207, 74, .25);
+}
+
+#app .term-cat__icon {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .18);
+  overflow: hidden;
+}
+
+#app .term-cat__emoji { font-style: normal; font-size: 1.05rem; }
+#app .term-cat__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 1;
+}
+
+#app .term-cat__name {
+  min-width: 0;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#app .term-cat__count {
+  font-size: var(--fs-11);
+  font-weight: 900;
+  color: var(--hud-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+#app .terminal__main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#app .terminal__grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1px 4px 4px 1px;
+  scrollbar-width: thin;
+}
+
+#app .term-card {
+  position: relative;
+  min-width: 0;
+  min-height: 272px;
+  height: 272px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+  border: 2px solid #8a5a2b;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f3d9a6 0%, #e2bd7e 48%, #c99a56 100%);
+  color: #3a2410;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(70, 45, 15, .38);
+}
+
+#app .term-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--hud-gold);
+  box-shadow: 0 5px 0 rgba(70, 45, 15, .28), 0 0 0 2px rgba(255, 207, 74, .28);
+}
+
+#app .term-card:active { transform: translateY(0); }
+
+#app .term-card.is-locked {
+  background: linear-gradient(180deg, #7b858c, #59646c 52%, #424c54);
+  border-color: #8c9aa2;
+  color: #e6edf0;
+  cursor: pointer;
+}
+
+#app .term-card.is-empty { opacity: .72; }
+#app .term-card.is-poor { filter: saturate(.72); }
+#app .term-card.is-lesson,
+#app .term-card.is-rescue { border-color: #f0c454; }
+
+#app .term-card__banner {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: linear-gradient(180deg, #b53d26, #7d2416);
+  border-bottom: 1px solid rgba(60, 25, 10, .45);
+}
+
+#app .term-card.is-locked .term-card__banner {
+  background: linear-gradient(180deg, #4c565e, #303940);
+  border-bottom-color: rgba(0, 0, 0, .35);
+}
+
+#app .term-card__name {
+  min-width: 0;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  color: #fff4df;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#app .term-card__limit {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .28);
+  color: #ffe9b8;
+  font-size: var(--fs-11);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#app .term-card__art-wrap {
+  position: relative;
+  flex: 0 0 160px;
+  height: 160px;
+  min-height: 0;
+  max-height: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(70% 60% at 50% 72%, rgba(80, 40, 15, .18), transparent 70%),
+    rgba(255, 248, 225, .18);
+}
+
+#app .shop-card__icon.term-card__art-fallback {
+  width: 72px;
+  height: 72px;
+  border: 0;
+  background: transparent;
+  font-size: 2.4rem;
+  box-shadow: none;
+}
+
+#app .shop-card__art.term-card__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 190px;
+  object-fit: contain;
+  padding: 4px 6px;
+}
+
+/* Арт терминала занимает всю площадь слота, независимо от того, пришёл
+   ли он из render.js или остался emoji-фолбэком. */
+#app #shop .term-card__art-wrap > .shop-card__icon {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#app #shop .term-card__art-wrap > .shop-card__icon > .shop-card__art {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 190px;
+  padding: 4px 6px;
+  object-fit: contain;
+}
+
+#app .term-card.is-locked .shop-card__art {
+  filter: grayscale(1) brightness(.82);
+  opacity: .8;
+}
+
+#app .term-card__lock {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(10, 15, 18, .72);
+  border: 1px solid rgba(220, 235, 240, .28);
+  font-size: 1rem;
+  filter: none;
+}
+
+#app .term-card__desc {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 0;
+  margin: 0 7px;
+  padding: 3px 0 2px;
+  font-size: var(--fs-11);
+  font-weight: 700;
+  line-height: 1.2;
+  color: #5a3b1c;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  -webkit-line-clamp: initial;
+}
+
+#app .term-card.is-locked .term-card__desc { color: #dbe5ea; }
+
+#app .term-card__status {
+  flex: 0 0 auto;
+  min-height: 18px;
+  margin: 0 7px;
+  padding: 0 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-11);
+  font-weight: 900;
+  color: #6b3d13;
+}
+
+#app .term-card.is-locked .term-card__status { color: #f0c454; }
+#app .term-card__status_empty { min-height: 18px; }
+
+#app .term-card__cost {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(55, 31, 12, .18);
+  border-top: 1px solid rgba(90, 55, 20, .28);
+  font-size: var(--fs-12);
+  font-weight: 900;
+  color: #3b240d;
+  white-space: nowrap;
+}
+
+#app .term-card.is-locked .term-card__cost {
+  background: rgba(0, 0, 0, .24);
+  border-top-color: rgba(255, 255, 255, .12);
+  color: #e6edf0;
+}
+
+#app .term-card__res {
+  font-style: normal;
+  font-size: .9rem;
+}
+
+#app .terminal__note {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 196, 84, .35);
+  background: linear-gradient(180deg, rgba(240, 196, 84, .14), rgba(240, 196, 84, .06));
+  color: #f0d79a;
+  font-size: var(--fs-11);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+#app .terminal__note.hidden { display: none; }
+
+@media (min-width: 1500px) {
+  /* На широком мониторе терминал не должен оставаться 820 px:
+     четыре колонки требуют ~220+ px на карточку. */
+  #app #shop .terminal {
+    width: min(1180px, calc(100vw - 20px));
+    max-width: min(1180px, calc(100vw - 20px));
+  }
+  #app .terminal__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  #app .terminal__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 6px;
+  }
+  #app .terminal__rail {
+    flex-direction: row;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 2px;
+  }
+  #app .term-cat {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    min-height: 42px;
+    grid-template-columns: 24px auto auto;
+    gap: 5px;
+    padding: 3px 8px;
+  }
+  #app .term-cat__icon { width: 24px; height: 24px; }
+  #app .term-cat__name { font-size: var(--fs-11); }
+  #app .terminal__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #app .term-card { min-height: 220px; }
+  #app .term-card__art-wrap { min-height: 108px; }
+}
+
+@media (max-width: 520px) {
+  #app .terminal__grid { grid-template-columns: minmax(0, 1fr); }
+  #app .terminal__res-chip em { display: none; }
+}
+
+@media (max-height: 430px) {
+  #shop { padding-top: 46px; padding-bottom: 6px; }
+  #app .terminal {
+    height: calc(100dvh - 52px);
+    max-height: calc(100dvh - 52px);
+    gap: 5px;
+    padding: 6px 8px 7px;
+  }
+  #app .terminal__head { min-height: 40px; gap: 6px; }
+  #app .terminal__title { font-size: var(--fs-16); }
+  #app .terminal__sub { display: none; }
+  #app .terminal__res-chip { min-height: 28px; padding: 0 6px; }
+  #app .terminal__x { width: 40px; height: 40px; }
+  #app .terminal__body { gap: 5px; }
+  #app .terminal__rail { gap: 4px; }
+  #app .term-cat { min-height: 38px; padding: 2px 6px; }
+  #app .term-card { min-height: 240px; height: 240px; }
+  #app .term-card__banner { min-height: 32px; padding: 3px 6px; }
+  #app .term-card__art-wrap { flex: 0 0 160px; height: 160px; min-height: 0; max-height: none; }
+  #app .shop-card__art.term-card__art { max-height: 180px; }
+  #app .term-card__desc { display: none; }
+  #app .term-card__status { min-height: 16px; }
+  #app .term-card__cost { min-height: 28px; padding: 3px 6px; }
+}
+
 /* Три колонки на десктопе: чуть плотнее портрет, чтобы цена, место и время
    помещались в одну строку. */
 @media (min-width: 901px) {

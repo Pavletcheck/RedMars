@@ -13574,7 +13574,23 @@ CC.Render = (function () {
       const centerX = (w - h) * TW / 4;
       const centerY = (spanY - top) / 2;
       cx.setTransform(k, 0, 0, k, res / 2 - centerX * k, res / 2 - centerY * k);
-      drawBuildingBody(cx, b);
+      // Стена на карточке — короткий прямой пролёт из трёх клеток с двумя
+      // концевыми столбами. Одиночная клетка рисовала четыре плеча «крестом»
+      // и читалась как непонятный знак, а один сегмент — как столб с рёбрами.
+      if (type === 'wall') {
+        [
+          { x: -1, y: 0, bits: 1, deg: 1, post: 'end' },
+          { x: 0, y: 0, bits: 3, deg: 2, post: 'none' },
+          { x: 1, y: 0, bits: 2, deg: 1, post: 'end' }
+        ].forEach(function (c) {
+          drawWallCellVector(cx, {
+            x: c.x, y: c.y, w: 1, h: 1, lvl: lvl,
+            bits: c.bits, deg: c.deg, post: c.post
+          });
+        });
+      } else {
+        drawBuildingBody(cx, b);
+      }
 
       const url = cardFit(tmp, s);
       if (!url) return null;
