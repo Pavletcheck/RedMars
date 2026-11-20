@@ -122,6 +122,7 @@ CC.UI = (function () {
   const sergeantGo = document.getElementById('sergeant-go');
   const sergeantNext = document.getElementById('sergeant-next');
   const sergeantSkip = document.getElementById('sergeant-skip');
+  const tutPointer = document.getElementById('tut-pointer');
   // Вступительный лор: карточка с портретом, страницы и две кнопки.
   const loreEl = document.getElementById('sergeant-lore');
   const loreName = document.getElementById('lore-name');
@@ -5072,9 +5073,207 @@ CC.UI = (function () {
 
   // Панель видна только в деревне и только пока обучение не пройдено.
   // Модальные окна её прячут, чтобы не перекрывать HUD на 844×390.
+  /* ---------- указатель обучения ---------- */
+
+  // Чистая функция: шаг обучения → селектор DOM или тип постройки в мире.
+  // Не трогает DOM и камеру, поэтому её удобно проверять в node.
+  function tutorialTarget(step, opts) {
+    opts = opts || {};
+    if (!step || !step.active || step.done || step.skipped) {
+      return { kind: 'none', step: step && step.id ? step.id : null };
+    }
+
+    if (opts.mode === 'battle') {
+      if (step.goal !== 'battle' && step.goal !== 'level1') {
+        return { kind: 'none', step: step.id };
+      }
+      const type = opts.selectedTroop;
+      if (type) {
+        return {
+          kind: 'selector',
+          selector: '#army .troop[data-type="' + type + '"]',
+          step: step.id
+        };
+      }
+      return {
+        kind: 'selector',
+        selector: '#battle-intro',
+        fallback: '#army',
+        step: step.id
+      };
+    }
+
+    if (step.place) {
+      return opts.shopOpen
+        ? {
+          kind: 'selector',
+          selector: '#shop-grid .shop-card[data-type="' + step.place + '"]',
+          fallback: '#shop-grid',
+          step: step.id
+        }
+        : { kind: 'selector', selector: '#shop-btn', step: step.id };
+    }
+
+    if (step.goal === 'train') {
+      return {
+        kind: 'world', type: 'barracks',
+        selector: '#sergeant-go', step: step.id
+      };
+    }
+    if (step.goal === 'battle' || step.goal === 'level1') {
+      return { kind: 'selector', selector: '#battle-btn', step: step.id };
+    }
+    if (step.goal === 'th2') {
+      return {
+        kind: 'world', type: 'townhall',
+        selector: '#sergeant-go', step: step.id
+      };
+    }
+    if (step.goal === 'cannon2') {
+      return {
+        kind: 'world', type: 'cannon',
+        selector: '#sergeant-go', step: step.id
+      };
+    }
+
+    return { kind: 'none', step: step.id };
+  }
+
+  let tutTargetNode = null;
+
+  function clearTutTarget() {
+    if (tutTargetNode && tutTargetNode.classList) {
+      tutTargetNode.classList.remove('is-tut-target');
+    }
+    tutTargetNode = null;
+  }
+
+  function hideTutPointer() {
+    if (tutPointer) tutPointer.classList.add('hidden');
+    clearTutTarget();
+  }
+
+  function tutorialBlocked() {
+    if (CC.App.introOpen || CC.App.modalOpen) return true;
+    if (loreOpen || askState || state.buildMode) return true;
+    if (levelsOpen || achOpen || dailyOpen || arenaOpen || replaysOpen ||
+        buyResOpen || buyPlatOpen || overlayShown) return true;
+    if (replayEnd && !replayEnd.classList.contains('hidden')) return true;
+    if (offlineEl && !offlineEl.classList.contains('hidden')) return true;
+    if (raidEl && !raidEl.classList.contains('hidden')) return true;
+    if (tabLock && !tabLock.classList.contains('hidden')) return true;
+    return false;
+  }
+
+  function visibleRect(el) {
+    if (!el || !el.getBoundingClientRect) return null;
+    const r = el.getBoundingClientRect();
+    if (!r || r.width <= 0 || r.height <= 0) return null;
+    return r;
+  }
+
+  function pickVisible(selector, fallback) {
+    const el = document.querySelector(selector);
+    if (visibleRect(el)) return el;
+    return fallback ? document.querySelector(fallback) : null;
+  }
+
+  // Сопоставление шага с экраном. Здесь уже есть DOM: ищем элемент,
+  // ставим кольцо .is-tut-target и двигаем перчатку над целью.
+  function syncTutorialPointer() {
+    if (!tutPointer) return;
+
+    const t = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    const S = CC.Battle && CC.Battle.state;
+    const selectedTroop = S && !S.over && S.kind !== 'replay' ? S.selected : null;
+
+    if (tutorialBlocked() || !t || !t.active) {
+      hideTutPointer();
+      return;
+    }
+
+    const target = tutorialTarget(t, {
+      mode: CC.App.mode,
+      shopOpen: shopOpen,
+      selectedTroop: selectedTroop
+    });
+    if (!target || target.kind === 'none') {
+      hideTutPointer();
+      return;
+    }
+
+    let el = null;
+    let x = 0;
+    let y = 0;
+    let worldPoint = null;
+
+    if (target.kind === 'world') {
+      const list = CC.Base.list();
+      let it = null;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].type === target.type) { it = list[i]; break; }
+      }
+      if (it) {
+        const s = CC.Base.size(it.type);
+        const p = CC.Iso.project(it.x + s.w / 2, it.y + s.h / 2);
+        const cam = CC.Cam;
+        const wx = cam.ox + p.x * cam.scale;
+        const hgt = (CC.BUILDINGS[it.type].height || 30) * cam.scale * 0.55;
+        const wy = cam.oy + p.y * cam.scale - hgt;
+        const top = Math.max(58, (cam.topPad || 54) + 16);
+        const bottom = cam.h - 70;
+        if (wx >= 28 && wx <= cam.w - 28 && wy >= top && wy <= bottom) {
+          worldPoint = { x: wx, y: wy };
+          x = wx;
+          y = wy;
+        }
+      }
+      if (!worldPoint) {
+        el = pickVisible(target.selector, null);
+      }
+    } else {
+      el = pickVisible(target.selector, target.fallback);
+    }
+
+    if (el) {
+      const r = visibleRect(el);
+      if (!r) { hideTutPointer(); return; }
+      // Карточка терминала может быть за краем ленты: подводим её к центру,
+      // чтобы кольцо и перчатка действительно вели к цели.
+      if (target.selector.indexOf('#shop-grid') === 0 && el.scrollIntoView) {
+        const vw = CC.Cam.w || window.innerWidth;
+        if (r.right < 0 || r.left > vw) {
+          try {
+            el.scrollIntoView({ block: 'nearest', inline: 'center' });
+          } catch (e) { /* старый браузер — оставляем как есть */ }
+        }
+      }
+      x = r.left + r.width / 2;
+      y = r.top - 5;
+      if (tutTargetNode !== el) {
+        clearTutTarget();
+        tutTargetNode = el;
+        el.classList.add('is-tut-target');
+      }
+    } else {
+      clearTutTarget();
+    }
+
+    if (!el && target.kind !== 'world') { hideTutPointer(); return; }
+    if (!el && !worldPoint) { hideTutPointer(); return; }
+
+    const w = CC.Cam.w || window.innerWidth;
+    const h = CC.Cam.h || window.innerHeight;
+    x = Math.max(28, Math.min(w - 28, x));
+    y = Math.max(58, Math.min(h - 70, y));
+    tutPointer.style.left = Math.round(x) + 'px';
+    tutPointer.style.top = Math.round(y) + 'px';
+    tutPointer.classList.toggle('is-world', target.kind === 'world' && !el);
+    tutPointer.classList.remove('hidden');
+  }
+
   function syncSergeant() {
     if (!sergeantEl) return;
-
     const t = CC.Game.tutorial ? CC.Game.tutorial() : null;
     const show = !!(t && t.active && CC.App.mode === 'base' &&
       !loreOpen && !anyOverlayOpen() && !buildersOpen && !questOpen &&
@@ -5920,6 +6119,8 @@ CC.UI = (function () {
         positionBattleIntro();
       }
     }
+
+    syncTutorialPointer();
   }
 
   /* ---------- финал боя ---------- */
@@ -6364,6 +6565,7 @@ CC.UI = (function () {
     loreSkip: finishLore,
     lorePage: function () { return lorePage; },
     sergeantPrimary: sergeantPrimary,
+    tutorialTarget: tutorialTarget,
     openHangar: openHangar,
     heroAbility: heroAbility,
     closeQuestHint: closeQuestHint,

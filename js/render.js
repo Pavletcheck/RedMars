@@ -770,8 +770,8 @@ CC.Render = (function () {
     }
 
     // колея ровера: две полосы и поперечные грунтозацепы
-    ctx.strokeStyle = 'rgba(232,185,138,.09)';
-    ctx.lineWidth = 8.5;
+    ctx.strokeStyle = 'rgba(232,185,138,.06)';
+    ctx.lineWidth = 7;
     ctx.lineCap = 'round';
     const midP = P(G / 2, G / 2);
     const exit = P(G, G);
@@ -799,6 +799,92 @@ CC.Render = (function () {
       }
     }
 
+    // Утоптанные дорожки и следы техники, расходящиеся от центра поля.
+    // Это фон: к реальной раскладке не привязан, кэш земли не инвалидируется.
+    function routePoint(a, c, b, k) {
+      const u = 1 - k;
+      return {
+        x: u * u * a.x + 2 * u * k * c.x + k * k * b.x,
+        y: u * u * a.y + 2 * u * k * c.y + k * k * b.y
+      };
+    }
+
+    function groundRoute(gx, gy, cx, cy, ex, ey) {
+      const a = P(gx, gy);
+      const c = P(cx, cy);
+      const b = P(ex, ey);
+
+      ctx.lineCap = 'round';
+      // мягкие плечи и утоптанная середина
+      ctx.strokeStyle = 'rgba(72,30,16,.055)';
+      ctx.lineWidth = 12;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(c.x, c.y, b.x, b.y);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(236,188,142,.06)';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(c.x, c.y, b.x, b.y);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255,222,184,.025)';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(c.x, c.y, b.x, b.y);
+      ctx.stroke();
+
+      // две колеи и поперечные грунтозацепы
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      ctx.strokeStyle = 'rgba(70,30,18,.075)';
+      ctx.lineWidth = 1.1;
+      for (let s = -1; s <= 1; s += 2) {
+        const ox = nx * 3.4 * s;
+        const oy = ny * 3.4 * s;
+        ctx.beginPath();
+        ctx.moveTo(a.x + ox, a.y + oy);
+        ctx.quadraticCurveTo(c.x + ox, c.y + oy, b.x + ox, b.y + oy);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(255,220,180,.035)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 15; i++) {
+        const k = i / 15;
+        const p = routePoint(a, c, b, k);
+        ctx.beginPath();
+        ctx.moveTo(p.x - nx * 3.2, p.y - ny * 3.2);
+        ctx.lineTo(p.x + nx * 3.2, p.y + ny * 3.2);
+        ctx.stroke();
+      }
+
+      // втоптанные камешки по обочинам
+      for (let i = 0; i < 7; i++) {
+        const k = 0.12 + rnd() * 0.8;
+        const p = routePoint(a, c, b, k);
+        const side = rnd() < 0.5 ? -1 : 1;
+        const off = (3.8 + rnd() * 3.6) * side;
+        ctx.fillStyle = rnd() < 0.5
+          ? 'rgba(116,84,68,.36)'
+          : 'rgba(180,146,118,.28)';
+        ctx.beginPath();
+        ctx.ellipse(p.x + nx * off, p.y + ny * off,
+          1.4 + rnd() * 2.2, 0.9 + rnd() * 1.2, rnd(), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    groundRoute(G / 2, G / 2, G * 0.64, G * 0.70, G * 1.02, G * 0.98);
+    groundRoute(G / 2, G / 2, G * 0.34, G * 0.72, -G * 0.05, G * 0.94);
+    groundRoute(G / 2, G / 2, G * 0.70, G * 0.30, G * 1.04, -G * 0.04);
+    groundRoute(G / 2, G / 2, G * 0.28, G * 0.26, -G * 0.06, -G * 0.05);
+
     // пыльные пятна по всему полю и за кромкой
     const patches = simple ? 70 : 150;
     for (let i = 0; i < patches; i++) {
@@ -821,19 +907,19 @@ CC.Render = (function () {
         const p = P(-2 + rnd() * (G + 4), -2 + rnd() * (G + 4));
         const r = 4 + rnd() * 11;
 
-        ctx.fillStyle = 'rgba(78,32,16,.28)';
+        ctx.fillStyle = 'rgba(70,26,13,.4)';
         ctx.beginPath();
         ctx.ellipse(p.x, p.y + 1, r, r * 0.5, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = 'rgba(214,146,104,.2)';
+        ctx.fillStyle = 'rgba(218,150,108,.22)';
         ctx.beginPath();
         ctx.ellipse(p.x - 0.6, p.y - 0.5, r * 0.9, r * 0.44, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = 'rgba(60,26,14,.3)';
+        ctx.fillStyle = 'rgba(52,22,12,.34)';
         ctx.beginPath();
         ctx.ellipse(p.x + r * 0.14, p.y + r * 0.06, r * 0.58, r * 0.26, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255,220,182,.14)';
+        ctx.strokeStyle = 'rgba(255,220,182,.18)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.ellipse(p.x - r * 0.1, p.y - r * 0.08, r * 0.84, r * 0.42, 0, Math.PI * 0.12, Math.PI * 0.88);
@@ -949,8 +1035,12 @@ CC.Render = (function () {
     reseed(77123);
 
     const items = [];
-    const want = far ? 16 : 30;
+    const want = far ? 42 : 46;
     let guard = 0;
+    const reserved = [
+      { x: -2.6, y: 5.2 }, { x: G + 2.7, y: G * 0.58 },
+      { x: G * 0.4, y: G + 3.6 }
+    ];
 
     while (items.length < want && guard < 700) {
       guard++;
@@ -960,10 +1050,14 @@ CC.Render = (function () {
       // только вне поля, с запасом от кромки
       if (gx > -1.8 && gx < G + 1.8 && gy > -1.8 && gy < G + 1.8) continue;
 
-      // не липнем друг к другу
+      // не липнем друг к другу и к крупным «героям»
       let clash = false;
       for (let i = 0; i < items.length; i++) {
         if (Math.hypot(items[i].gx - gx, items[i].gy - gy) < 1.3) { clash = true; break; }
+      }
+      if (clash) continue;
+      for (let i = 0; i < reserved.length; i++) {
+        if (Math.hypot(reserved[i].x - gx, reserved[i].y - gy) < 3.2) { clash = true; break; }
       }
       if (clash) continue;
 
@@ -979,6 +1073,12 @@ CC.Render = (function () {
 
       items.push({ gx: gx, gy: gy, kind: kind, seed: rnd() });
     }
+
+    // 2-3 крупных «героя» окружения. Стоят строго вне поля, чтобы не
+    // пересекаться с постройками, и запоминаются контактной тенью.
+    items.push({ gx: -2.6, gy: 5.2, kind: 'lander', seed: 0.55 });
+    items.push({ gx: G + 2.7, gy: G * 0.58, kind: 'boulderBig', seed: 0.3 });
+    items.push({ gx: G * 0.4, gy: G + 3.6, kind: 'dishBig', seed: 0.7 });
 
     // ближние рисуем последними
     items.sort(function (a, b) { return (a.gx + a.gy) - (b.gx + b.gy); });
@@ -1200,8 +1300,157 @@ CC.Render = (function () {
           ctx.lineTo(p.x + 7 * sc, p.y + 0.5);
           ctx.stroke();
         }
+      } else if (it.kind === 'lander') {
+        // упавший грузовой модуль: полузанесённый корпус с бороздой
+        const s = 2.0 * sc;
+        ctx.fillStyle = 'rgba(54,24,14,.22)';
+        ctx.beginPath();
+        ctx.ellipse(p.x + 5 * sc, p.y + 2 * sc, 36 * sc, 10 * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(86,40,22,.16)';
+        ctx.beginPath();
+        ctx.ellipse(p.x + 3 * sc, p.y + 3 * sc, 44 * sc, 13 * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // стойка/опора, торчащая из грунта
+        ctx.strokeStyle = PAL.metalDark;
+        ctx.lineWidth = 2.4 * sc;
+        ctx.beginPath();
+        ctx.moveTo(p.x - 15 * sc, p.y - 4 * sc);
+        ctx.lineTo(p.x - 21 * sc, p.y + 3 * sc);
+        ctx.moveTo(p.x + 9 * sc, p.y - 3 * sc);
+        ctx.lineTo(p.x + 14 * sc, p.y + 3 * sc);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.translate(p.x, p.y - 6 * sc);
+        ctx.rotate(-0.24);
+        uBox(ctx, -24 * s, -8 * s, 42 * s, 16 * s, 7 * s, PAL.metalDark);
+        uBox(ctx, -21 * s, -6.4 * s, 34 * s, 11 * s, 5 * s, PAL.metal);
+        // носовой обтекатель
+        ctx.fillStyle = PAL.metalLight;
+        ctx.beginPath();
+        ctx.ellipse(17 * s, 0, 7 * s, 6 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // ржавая заплатка и бирюзовое окно
+        ctx.fillStyle = PAL.rust;
+        ctx.fillRect(-13 * s, -5.6 * s, 8 * s, 10 * s);
+        ctx.fillStyle = PAL.glass;
+        ctx.fillRect(3 * s, -4.4 * s, 7 * s, 2.6 * s);
+        ctx.fillStyle = 'rgba(255,255,255,.3)';
+        ctx.fillRect(3.4 * s, -4.1 * s, 4.6 * s, 0.7 * s);
+        // оторванный стабилизатор
+        poly(ctx, [
+          { x: -19 * s, y: -7 * s },
+          { x: -27 * s, y: -13 * s },
+          { x: -14 * s, y: -9 * s }
+        ], PAL.rust);
+        ctx.restore();
+
+        if (!far) {
+          // мелкие обломки вокруг
+          spot(ctx, p.x - 28 * sc, p.y + 5 * sc, 1.6 * sc, PAL.metalDark);
+          spot(ctx, p.x + 24 * sc, p.y + 4 * sc, 1.2 * sc, PAL.rust);
+          ctx.strokeStyle = 'rgba(60,28,14,.3)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(p.x - 30 * sc, p.y + 6 * sc);
+          ctx.lineTo(p.x + 26 * sc, p.y + 8 * sc);
+          ctx.stroke();
+        }
+      } else if (it.kind === 'boulderBig') {
+        // большой камень-валун: несколько граней и глубокая тень
+        const rr = 28 * sc;
+        ctx.fillStyle = 'rgba(54,24,14,.22)';
+        ctx.beginPath();
+        ctx.ellipse(p.x + 4 * sc, p.y + 2 * sc, rr * 1.05, rr * 0.42, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = PAL.stoneDark;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y - 4 * sc, rr, rr * 0.72, 0, 0, Math.PI * 2);
+        ctx.fill();
+        poly(ctx, [
+          { x: p.x - rr * 0.82, y: p.y - 5 * sc },
+          { x: p.x - rr * 0.3, y: p.y - rr * 0.8 },
+          { x: p.x + rr * 0.55, y: p.y - rr * 0.6 },
+          { x: p.x + rr * 0.82, y: p.y - 3 * sc }
+        ], PAL.stone);
+        poly(ctx, [
+          { x: p.x - rr * 0.46, y: p.y - rr * 0.74 },
+          { x: p.x - rr * 0.04, y: p.y - rr * 0.98 },
+          { x: p.x + rr * 0.42, y: p.y - rr * 0.6 },
+          { x: p.x - rr * 0.16, y: p.y - rr * 0.35 }
+        ], PAL.stoneLight);
+        ctx.strokeStyle = 'rgba(56,34,24,.45)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(p.x - rr * 0.18, p.y - rr * 0.8);
+        ctx.lineTo(p.x + rr * 0.06, p.y - rr * 0.34);
+        ctx.lineTo(p.x - rr * 0.16, p.y - rr * 0.05);
+        ctx.stroke();
+        if (!far) {
+          spot(ctx, p.x - rr * 0.7, p.y + 1, 3 * sc, PAL.stoneDark);
+          spot(ctx, p.x + rr * 0.72, p.y + 2, 2.2 * sc, PAL.stone);
+        }
+      } else if (it.kind === 'dishBig') {
+        // большая антенна дальней связи с тарелкой
+        const h = 44 * sc;
+        ctx.fillStyle = 'rgba(54,24,14,.2)';
+        ctx.beginPath();
+        ctx.ellipse(p.x + 2 * sc, p.y + 2 * sc, 18 * sc, 6 * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = PAL.metalDark;
+        ctx.lineWidth = 2.2 * sc;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x, p.y - h);
+        ctx.moveTo(p.x, p.y - h * 0.4);
+        ctx.lineTo(p.x - 8 * sc, p.y);
+        ctx.moveTo(p.x, p.y - h * 0.4);
+        ctx.lineTo(p.x + 8 * sc, p.y);
+        ctx.stroke();
+        ctx.save();
+        ctx.translate(p.x + 2 * sc, p.y - h);
+        ctx.rotate(-0.5);
+        ctx.fillStyle = PAL.metalDark;
+        ctx.beginPath();
+        ctx.ellipse(0, 1.4 * sc, 16 * sc, 8.5 * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = PAL.metalLight;
+        ctx.beginPath();
+        ctx.ellipse(-0.6 * sc, 0, 14.2 * sc, 7.3 * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = LAB_BLUE_DARK;
+        ctx.beginPath();
+        ctx.ellipse(0, 0.2 * sc, 11 * sc, 5.4 * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(127,233,255,.42)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(0, 0.2 * sc, 7.4 * sc, 3.4 * sc, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = PAL.metalLight;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(0, 0.2 * sc);
+        ctx.lineTo(10 * sc, -4 * sc);
+        ctx.stroke();
+        spot(ctx, 10 * sc, -4.2 * sc, 1.2 * sc, PAL.cold);
+        ctx.restore();
+        if (!far) {
+          spot(ctx, p.x, p.y - h - 1, 1.6 * sc, PAL.cyan);
+          ctx.strokeStyle = 'rgba(70,224,200,.22)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(p.x + 2 * sc, p.y - h, 20 * sc, -2.4, -0.7);
+          ctx.stroke();
+        }
       } else {
         // пыльный вихрь
+        ctx.fillStyle = 'rgba(54,24,14,.10)';
+        ctx.beginPath();
+        ctx.ellipse(p.x + 1, p.y + 0.8, 7 * sc, 2.2 * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.strokeStyle = 'rgba(232,185,138,.2)';
         ctx.lineWidth = 1.2;
         for (let k = 0; k < 3; k++) {
@@ -1273,9 +1522,24 @@ CC.Render = (function () {
           view.w / 2, view.h * 0.45, Math.min(view.w, view.h) * 0.28,
           view.w / 2, view.h * 0.5, Math.max(view.w, view.h) * 0.8);
         g.addColorStop(0, 'rgba(40,18,10,0)');
-        g.addColorStop(0.62, 'rgba(46,22,14,.05)');
-        g.addColorStop(1, 'rgba(46,20,12,.22)');
+        g.addColorStop(0.62, 'rgba(46,22,14,.045)');
+        g.addColorStop(1, 'rgba(46,20,12,.18)');
         cx.fillStyle = g;
+        cx.fillRect(0, 0, view.w, view.h);
+        // Края кадра чуть темнее и плотнее, центр остаётся спокойным.
+        const edgeV = cx.createLinearGradient(0, 0, 0, view.h);
+        edgeV.addColorStop(0, 'rgba(44,18,10,.07)');
+        edgeV.addColorStop(0.14, 'rgba(44,18,10,0)');
+        edgeV.addColorStop(0.86, 'rgba(44,18,10,0)');
+        edgeV.addColorStop(1, 'rgba(44,18,10,.08)');
+        cx.fillStyle = edgeV;
+        cx.fillRect(0, 0, view.w, view.h);
+        const edgeH = cx.createLinearGradient(0, 0, view.w, 0);
+        edgeH.addColorStop(0, 'rgba(44,18,10,.06)');
+        edgeH.addColorStop(0.16, 'rgba(44,18,10,0)');
+        edgeH.addColorStop(0.84, 'rgba(44,18,10,0)');
+        edgeH.addColorStop(1, 'rgba(44,18,10,.07)');
+        cx.fillStyle = edgeH;
         cx.fillRect(0, 0, view.w, view.h);
         vigCache.canvas = c;
         vigCache.key = key;
@@ -1290,9 +1554,23 @@ CC.Render = (function () {
         view.w / 2, view.h * 0.45, Math.min(view.w, view.h) * 0.28,
         view.w / 2, view.h * 0.5, Math.max(view.w, view.h) * 0.8);
       g.addColorStop(0, 'rgba(40,18,10,0)');
-      g.addColorStop(0.62, 'rgba(46,22,14,.05)');
-      g.addColorStop(1, 'rgba(46,20,12,.22)');
+      g.addColorStop(0.62, 'rgba(46,22,14,.045)');
+      g.addColorStop(1, 'rgba(46,20,12,.18)');
       ctx.fillStyle = g;
+      ctx.fillRect(0, 0, view.w, view.h);
+      const edgeV = ctx.createLinearGradient(0, 0, 0, view.h);
+      edgeV.addColorStop(0, 'rgba(44,18,10,.07)');
+      edgeV.addColorStop(0.14, 'rgba(44,18,10,0)');
+      edgeV.addColorStop(0.86, 'rgba(44,18,10,0)');
+      edgeV.addColorStop(1, 'rgba(44,18,10,.08)');
+      ctx.fillStyle = edgeV;
+      ctx.fillRect(0, 0, view.w, view.h);
+      const edgeH = ctx.createLinearGradient(0, 0, view.w, 0);
+      edgeH.addColorStop(0, 'rgba(44,18,10,.06)');
+      edgeH.addColorStop(0.16, 'rgba(44,18,10,0)');
+      edgeH.addColorStop(0.84, 'rgba(44,18,10,0)');
+      edgeH.addColorStop(1, 'rgba(44,18,10,.07)');
+      ctx.fillStyle = edgeH;
       ctx.fillRect(0, 0, view.w, view.h);
     }
   }
@@ -10015,14 +10293,24 @@ CC.Render = (function () {
   // Кэш пересобирается, только если сменился бой/массив или умерла постройка.
   const deployCache = {
     dep: null, occ: null, ver: -1, dead: -1, count: -1, tile: -1,
-    dots: null, cells: null, border: null
+    dots: null, cells: null, inner: null, innerPoly: null, border: null
   };
+
+  // prefers-reduced-motion: пульс зоны высадки отключаем, геометрию не трогаем.
+  const deployMotionQuery = (typeof window !== 'undefined' && window.matchMedia)
+    ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  let deployReduceMotion = !!(deployMotionQuery && deployMotionQuery.matches);
+  if (deployMotionQuery && deployMotionQuery.addEventListener) {
+    deployMotionQuery.addEventListener('change', function (ev) {
+      deployReduceMotion = !!(ev && ev.matches);
+    });
+  }
 
   // Полуразмер ромбика в клетках: ~1.4 px на экране на дальнем зуме и
   // ~2.4 px на ближнем. Пересчёт только при смене шага тайла (кэш).
   function deployDotR(tile) {
     const t = tile > 0 ? tile : TW;
-    return Math.min(0.08, Math.max(0.014, (1.2 + t * 0.012) / t));
+    return Math.min(0.11, Math.max(0.028, (1.6 + t * 0.02) / t));
   }
 
   function deployDead(S) {
@@ -10030,6 +10318,51 @@ CC.Render = (function () {
     const list = S.buildings || [];
     for (let i = 0; i < list.length; i++) if (list[i].dead) dead++;
     return dead;
+  }
+
+  // Выпуклая оболочка (монотонная цепь). Точки — в координатах сетки.
+  function deployHull(points) {
+    if (points.length <= 3) return points.slice();
+    const pts = points.slice().sort(function (a, b) {
+      return a.x === b.x ? a.y - b.y : a.x - b.x;
+    });
+    function cross(o, a, b) {
+      return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    }
+    const lower = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      while (lower.length >= 2 &&
+        cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+        lower.pop();
+      }
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (upper.length >= 2 &&
+        cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+        upper.pop();
+      }
+      upper.push(p);
+    }
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+  }
+
+  function deployPointInPoly(poly, x, y) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i];
+      const b = poly[j];
+      if (((a.y > y) !== (b.y > y)) &&
+          (x < (b.x - a.x) * (y - a.y) / ((b.y - a.y) || 1e-9) + a.x)) {
+        inside = !inside;
+      }
+    }
+    return inside;
   }
 
   function deployGeometry(S, dep, occ, ver, dead) {
@@ -10043,10 +10376,46 @@ CC.Render = (function () {
 
     const hasPath = typeof Path2D !== 'undefined';
     const dots = hasPath ? new Path2D() : null;
+    const inner = hasPath ? new Path2D() : null;
     const cells = [];
+    const innerPoly = [];
     const border = hasPath ? new Path2D() : null;
     // Полуразмер ромбика в клетках — от текущего шага тайла.
     const r = deployDotR(tilePx);
+
+    // Контур сердцевины базы: выпуклая оболочка занятых клеток с запасом
+    // в один тайл. Это даёт один полигон вместо сотен ромбов в кадре.
+    const pts = [];
+    if (occ) {
+      const m = 0.9;
+      for (let y = 0; y < G; y++) {
+        for (let x = 0; x < G; x++) {
+          if (occ[y * G + x] < 0) continue;
+          const x0 = Math.max(0, x - m);
+          const y0 = Math.max(0, y - m);
+          const x1 = Math.min(G, x + 1 + m);
+          const y1 = Math.min(G, y + 1 + m);
+          pts.push(
+            { x: x0, y: y0 }, { x: x1, y: y0 },
+            { x: x1, y: y1 }, { x: x0, y: y1 }
+          );
+        }
+      }
+    }
+    const hull = pts.length ? deployHull(pts) : [];
+    if (inner && hull.length >= 3) {
+      const h0 = P(hull[0].x, hull[0].y);
+      inner.moveTo(h0.x, h0.y);
+      for (let i = 1; i < hull.length; i++) {
+        const hp = P(hull[i].x, hull[i].y);
+        inner.lineTo(hp.x, hp.y);
+      }
+      inner.closePath();
+    }
+    for (let i = 0; i < hull.length; i++) {
+      const hp = P(hull[i].x, hull[i].y);
+      innerPoly.push(hp.x, hp.y);
+    }
 
     for (let y = 0; y < G; y++) {
       for (let x = 0; x < G; x++) {
@@ -10056,14 +10425,19 @@ CC.Render = (function () {
         // deployable — маска свободной высадки; клетку, освободившуюся
         // после сноса, добираем по живой сетке occ.
         if (!dep[i] && !(occ && occ[i] < 0)) continue;
+        // Внутри контура базы точки не нужны: там тёмная сердцевина.
+        if (hull.length >= 3 && deployPointInPoly(hull, x + 0.5, y + 0.5)) continue;
 
         const cx = x + 0.5;
         const cy = y + 0.5;
         if (dots) {
-          dots.moveTo(cx, cy - r);
-          dots.lineTo(cx + r, cy);
-          dots.lineTo(cx, cy + r);
-          dots.lineTo(cx - r, cy);
+          const cp = P(cx, cy);
+          const rx = r * TW;
+          const ry = r * TH;
+          dots.moveTo(cp.x, cp.y - ry);
+          dots.lineTo(cp.x + rx, cp.y);
+          dots.lineTo(cp.x, cp.y + ry);
+          dots.lineTo(cp.x - rx, cp.y);
           dots.closePath();
         } else {
           cells.push(cx, cy);
@@ -10071,7 +10445,18 @@ CC.Render = (function () {
       }
     }
 
-    if (border) border.rect(0, 0, G, G);
+    // Внешняя граница — реальный ромб поля, а не квадрат в пикселях.
+    if (border) {
+      const A = P(0, 0);
+      const B = P(G, 0);
+      const C = P(G, G);
+      const D = P(0, G);
+      border.moveTo(A.x, A.y);
+      border.lineTo(B.x, B.y);
+      border.lineTo(C.x, C.y);
+      border.lineTo(D.x, D.y);
+      border.closePath();
+    }
 
     deployCache.dep = dep;
     deployCache.occ = occ;
@@ -10081,6 +10466,8 @@ CC.Render = (function () {
     deployCache.count = S.buildings ? S.buildings.length : 0;
     deployCache.dots = dots;
     deployCache.cells = cells;
+    deployCache.inner = inner;
+    deployCache.innerPoly = innerPoly;
     deployCache.border = border;
     return deployCache;
   }
@@ -10088,7 +10475,8 @@ CC.Render = (function () {
   function drawDeployZone(ctx, S) {
     if (!S || S.over) return;
     if (CC.App && CC.App.mode !== 'battle') return;
-    if (!S.selected || !S.army || !S.army[S.selected]) return;
+    // В повторе зона высадки не нужна: там уже идёт записанная атака.
+    if (S.viewReplay && !S.autoDeploy) return;
 
     const dep = S.deployable;
     if (!dep) return;
@@ -10100,35 +10488,104 @@ CC.Render = (function () {
     const geo = deployGeometry(S, dep, S.occ, ver, dead);
     const scale = tilePx > 0 ? tilePx / TW : 1;
     const r = deployDotR(tilePx);
+    const selected = !!(S.selected && S.army && S.army[S.selected]);
+    const pulse = (selected && !deployReduceMotion)
+      ? 0.5 + 0.5 * Math.sin(t * 3.4) : 0;
 
-    // Свободные клетки: полупрозрачные ромбики в центрах, alpha 0.10.
-    ctx.globalAlpha = 0.10;
-    ctx.fillStyle = '#d8fff4';
+    // Свободная полоса: весь ромб поля чуть светлее грунта. Один полигон,
+    // поэтому подсветка не стоит обхода клеток в каждом кадре.
+    ctx.globalAlpha = selected ? 0.055 : 0.045;
+    ctx.fillStyle = '#f6cfa4';
+    if (geo.border) {
+      ctx.fill(geo.border);
+    } else {
+      const A = P(0, 0);
+      const B = P(G, 0);
+      const C = P(G, G);
+      const D = P(0, G);
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.lineTo(C.x, C.y);
+      ctx.lineTo(D.x, D.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Сердцевина базы: один выпуклый контур по занятым клеткам. Мягкий
+    // тёмно-коричневый слой, поверх него стоят сами постройки.
+    ctx.globalAlpha = 0.20;
+    ctx.fillStyle = '#35130e';
+    if (geo.inner) {
+      ctx.fill(geo.inner);
+    } else if (geo.innerPoly && geo.innerPoly.length >= 6) {
+      ctx.beginPath();
+      ctx.moveTo(geo.innerPoly[0], geo.innerPoly[1]);
+      for (let i = 2; i < geo.innerPoly.length; i += 2) {
+        ctx.lineTo(geo.innerPoly[i], geo.innerPoly[i + 1]);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Свободные клетки: без выбора — тихий статичный рисунок, с выбранным
+    // войском — ярче и с пульсом (кроме prefers-reduced-motion).
+    ctx.globalAlpha = selected ? (0.20 + 0.05 * pulse) : 0.075;
+    ctx.fillStyle = selected ? '#fff1da' : '#ffe4c2';
     if (geo.dots) {
       ctx.fill(geo.dots);
     } else if (geo.cells.length) {
+      const rx = r * TW;
+      const ry = r * TH;
       ctx.beginPath();
       for (let i = 0; i < geo.cells.length; i += 2) {
-        const cx = geo.cells[i];
-        const cy = geo.cells[i + 1];
-        ctx.moveTo(cx, cy - r);
-        ctx.lineTo(cx + r, cy);
-        ctx.lineTo(cx, cy + r);
-        ctx.lineTo(cx - r, cy);
+        const cp = P(geo.cells[i], geo.cells[i + 1]);
+        ctx.moveTo(cp.x, cp.y - ry);
+        ctx.lineTo(cp.x + rx, cp.y);
+        ctx.lineTo(cp.x, cp.y + ry);
+        ctx.lineTo(cp.x - rx, cp.y);
         ctx.closePath();
       }
       ctx.fill();
     }
 
-    // Рамка поля заметнее точек: 1.4 px на экране при зуме 44–96 px.
-    ctx.globalAlpha = 0.26;
-    ctx.strokeStyle = '#d8fff4';
-    ctx.lineWidth = 1.4 / scale;
+    // Внешняя граница зоны: тёплое свечение + чёткая линия 2.8 screen px.
+    const edgeW = 2.8 / scale;
+    ctx.globalAlpha = 0.15 + (selected ? 0.04 * pulse : 0);
+    ctx.strokeStyle = '#ff5a32';
+    ctx.lineWidth = 8 / scale;
     if (geo.border) {
       ctx.stroke(geo.border);
     } else {
+      const A = P(0, 0);
+      const B = P(G, 0);
+      const C = P(G, G);
+      const D = P(0, G);
       ctx.beginPath();
-      ctx.rect(0.5 / scale, 0.5 / scale, G - 1 / scale, G - 1 / scale);
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.lineTo(C.x, C.y);
+      ctx.lineTo(D.x, D.y);
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 0.92;
+    ctx.strokeStyle = '#ffb066';
+    ctx.lineWidth = edgeW;
+    if (geo.border) {
+      ctx.stroke(geo.border);
+    } else {
+      const A = P(0, 0);
+      const B = P(G, 0);
+      const C = P(G, G);
+      const D = P(0, G);
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.lineTo(C.x, C.y);
+      ctx.lineTo(D.x, D.y);
+      ctx.closePath();
       ctx.stroke();
     }
 

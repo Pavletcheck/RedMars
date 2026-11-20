@@ -1075,13 +1075,13 @@ CC.CamMath = (function () {
      варианта без рамки (пустая база/тесты). */
   const DEFAULT_TILES = 13;
   const MIN_TILE_PX = 44;
-  const MAX_TILE_PX = 96;    // на мониторе не приближаем тайл сильнее
+  const MAX_TILE_PX = 104;   // на мониторе не приближаем тайл сильнее
   const MIN_VISIBLE_Y = 6;   // по высоте полосы — хотя бы столько тайлов
-  const BASE_PAD = 2;        // отступ вокруг построек в тайлах
-  // Мир в деревне и в бою опускается относительно фона. Целевой сдвиг —
-  // 20% высоты вьюпорта, но не больше четверти полосы: так база и поле
-  // остаются над нижней панелью даже на 844×390.
-  const BASE_DROP = 0.2;
+  const BASE_PAD = 1.5;      // отступ вокруг ядра построек в тайлах
+  const BASE_CORE_MAX = 12;  // максимум рамки: ядро + запас, без дальних стен
+  // Мир в деревне и в бою опускается относительно фона. Небольшой сдвиг
+  // поднимает базу из-под нижней панели, не уводя её под верхний HUD.
+  const BASE_DROP = 0.10;
   const BASE_DROP_LIMIT = 0.25;
 
   function clamp(v, a, b) {
@@ -1135,6 +1135,38 @@ CC.CamMath = (function () {
       y0: Math.max(0, bounds.y0 - p),
       x1: Math.min(gridW, bounds.x1 + p),
       y1: Math.min(gridH, bounds.y1 + p)
+    };
+  }
+
+  // Ограничиваем домашний кадр ядром: если дальние ресурсы/стены растянули
+  // bounds, оставляем окно BASE_CORE_MAX вокруг центра. Всё поле доступно
+  // отдельной кнопкой ◎, а базовый вид не должен отъезжать на 36 тайлов.
+  function capRect(rect, maxSpan, gridW, gridH) {
+    const max = Math.max(4, Number(maxSpan) || BASE_CORE_MAX);
+    let w = rect.x1 - rect.x0;
+    let h = rect.y1 - rect.y0;
+    if (w <= max && h <= max) return rect;
+
+    const cx = (rect.x0 + rect.x1) / 2;
+    const cy = (rect.y0 + rect.y1) / 2;
+    w = Math.min(max, w);
+    h = Math.min(max, h);
+
+    let x0 = cx - w / 2;
+    let y0 = cy - h / 2;
+    let x1 = x0 + w;
+    let y1 = y0 + h;
+
+    if (x0 < 0) { x1 -= x0; x0 = 0; }
+    if (y0 < 0) { y1 -= y0; y0 = 0; }
+    if (x1 > gridW) { x0 -= x1 - gridW; x1 = gridW; }
+    if (y1 > gridH) { y0 -= y1 - gridH; y1 = gridH; }
+
+    return {
+      x0: Math.max(0, x0),
+      y0: Math.max(0, y0),
+      x1: Math.min(gridW, x1),
+      y1: Math.min(gridH, y1)
     };
   }
 
@@ -1237,7 +1269,7 @@ CC.CamMath = (function () {
     // одинаков для деревни и боя; фон/горизонт не двигаются.
     cam.dropY = Math.max(0, Math.min(h * BASE_DROP, bandH * BASE_DROP_LIMIT));
     cam.centerX = w / 2 - cam.centerWorldX * fit;
-    cam.centerY = cam.bandCenterY - (cam.centerWorldY - topPad / 2) * fit + cam.dropY;
+    cam.centerY = cam.bandCenterY - cam.centerWorldY * fit + cam.dropY;
 
     cam.defaultZoom = defaultZoomFor(w, h, bandH, tw, th, fit, focus, homeRect, topPad);
     // zoom = 0 — «авто»: ставим базовый вид под текущий экран
@@ -1256,7 +1288,7 @@ CC.CamMath = (function () {
   // остаётся в середине полосы — иначе при зуме уезжал бы верхний угол поля.
   function refreshHome(cam) {
     cam.homeX = cam.w / 2 - cam.homeWorldX * cam.scale;
-    cam.homeY = cam.bandCenterY - (cam.homeWorldY - cam.topPad / 2) * cam.scale +
+    cam.homeY = cam.bandCenterY - cam.homeWorldY * cam.scale +
       (cam.dropY || 0);
   }
 
@@ -1344,6 +1376,7 @@ CC.CamMath = (function () {
     MAX_FIT_SCALE: MAX_FIT_SCALE,
     FOCUS_PAD: FOCUS_PAD,
     BASE_PAD: BASE_PAD,
+    BASE_CORE_MAX: BASE_CORE_MAX,
     DEFAULT_TILES: DEFAULT_TILES,
     MIN_TILE_PX: MIN_TILE_PX,
     MAX_TILE_PX: MAX_TILE_PX,
@@ -1351,6 +1384,7 @@ CC.CamMath = (function () {
     BASE_DROP_LIMIT: BASE_DROP_LIMIT,
     boundsOf: boundsOf,
     focusRect: focusRect,
+    capRect: capRect,
     fitScaleFor: fitScaleFor,
     rectGrew: rectGrew,
     layout: layout,
@@ -1410,18 +1444,27 @@ CC.CamMath = (function () {
     return CC.CamMath.focusRect(S.bounds, CC.CamMath.FOCUS_PAD, CC.GRID, CC.GRID);
   }
 
-  // Рамка деревни: границы построек + небольшой отступ. По ней считается
-  // базовый масштаб, чтобы база всегда была видна целиком.
+  // Рамка деревни: ядро построек без стен и скрытых ловушек. Стены могут
+  // уходить далеко за пределы базы — если считать по ним, камера отъезжает
+  // почти на всё поле. По этой рамке считается базовый масштаб.
   function baseHomeRect() {
     if (CC.App.mode === 'battle') return null;
 
-    const list = CC.Base.list().map(function (it) {
+    const list = CC.Base.list().filter(function (it) {
+      if (!it) return false;
+      if (it.type === 'wall') return false;
+      if (CC.isTrap && CC.isTrap(it.type)) return false;
+      return true;
+    }).map(function (it) {
       const s = CC.Base.size(it.type);
       return { x: it.x, y: it.y, w: s.w, h: s.h };
     });
 
-    return CC.CamMath.focusRect(
-      CC.CamMath.boundsOf(list), CC.CamMath.BASE_PAD, CC.GRID, CC.GRID
+    return CC.CamMath.capRect(
+      CC.CamMath.focusRect(
+        CC.CamMath.boundsOf(list), CC.CamMath.BASE_PAD, CC.GRID, CC.GRID
+      ),
+      CC.CamMath.BASE_CORE_MAX, CC.GRID, CC.GRID
     );
   }
 
