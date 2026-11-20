@@ -327,353 +327,194 @@ CC.Render = (function () {
     ctx.fill();
   }
 
-  /* ---------- фон ---------- */
+  /* ---------- бесконечный реголит ----------
+     В игровом режиме нет неба и горизонта: база и бой стоят на
+     бесконечной марсианской равнине. Экран заливается базовым цветом,
+     поверх него под мировой трансформацией идёт бесшовная плитка
+     512×512. Она движется строго вместе с миром — без параллакса. */
 
-  const bgCache = { key: '', canvas: null, paints: 0, pad: 0, shift: 0 };
+  const bgCache = {
+    key: 'regolith-v1', canvas: null, pattern: null, patternCtx: null,
+    paints: 0, pad: 0, shift: 0
+  };
+  const BG_TILE = 512;
 
-  // pad — запас кэша по краям под параллакс: видимая часть кадра начинается
-  // на pad пикселей правее левого края картинки, поэтому небо/солнце/луны
-  // ставим с учётом этого сдвига, а землю и холмы тянем на всю ширину кэша.
-  function paintBackground(ctx, w, h, horizon, pad) {
-    const unit = Math.min(w, h);
-    const padX = pad > 0 ? pad : 0;
-    const W = w + padX * 2;   // полная ширина кэша, включая запас
-    const ax = padX;          // где в кэше находится экранный x = 0
+  function paintRegolithTile(ctx) {
+    const S = BG_TILE;
+    ctx.fillStyle = PAL.regolith;
+    ctx.fillRect(0, 0, S, S);
 
-    // марсианское небо: пыльная сирень в зените, жаркая охра у горизонта.
-    // Четыре ступени дают глубину, которой не хватало плоской заливке.
-    const sky = ctx.createLinearGradient(0, 0, 0, horizon + 60);
-    sky.addColorStop(0, '#9c7a80');
-    sky.addColorStop(0.2, '#bd8b7d');
-    sky.addColorStop(0.46, '#d9a47e');
-    sky.addColorStop(0.74, '#eebe8b');
-    sky.addColorStop(1, '#e4a371');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, h);
-
-    // перистые полосы пыли: верх неба не должен быть пустым
-    reseed(44117);
-    for (let i = 0; i < 10; i++) {
-      const y = h * (0.015 + rnd() * 0.3);
-      const ww = W * (0.09 + rnd() * 0.44);
-      const hh = 1.2 + rnd() * 4.2;
-      ctx.fillStyle = 'rgba(255,228,205,' + (0.025 + rnd() * 0.045).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.ellipse(ax + w * rnd(), y, ww, hh, 0, 0, Math.PI * 2);
-      ctx.fill();
+    // Мелкий бесшовный шум: целые периоды синусов дают одинаковые края.
+    try {
+      const img = ctx.createImageData(S, S);
+      const d = img.data;
+      for (let y = 0; y < S; y++) {
+        const ny = y / S * Math.PI * 2;
+        for (let x = 0; x < S; x++) {
+          const nx = x / S * Math.PI * 2;
+          const n = Math.sin(nx * 3 + 0.7) + Math.sin(ny * 4 + 1.1) +
+            Math.sin((nx + ny) * 5 + 2.3) + Math.sin((nx - ny) * 7 + 0.4) +
+            Math.sin(nx * 11 + ny * 9 + 1.8) * 0.5;
+          const v = Math.round(n * 1.5);
+          const i = (y * S + x) * 4;
+          d[i] = 180 + v;
+          d[i + 1] = 85 + Math.round(v * 0.55);
+          d[i + 2] = 47 + Math.round(v * 0.35);
+          d[i + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    } catch (e) {
+      // Без ImageData (заглушка canvas) остаётся базовый тон.
     }
 
-    // солнце в пыли: широкий ореол, тёплое ядро и лёгкие лучи
-    const sunR = Math.max(180, unit * 0.7);
-    const sunX = ax + w * 0.17;
-    const sunY = h * 0.085;
-    const sun = ctx.createRadialGradient(sunX, sunY, 2, sunX, sunY, sunR);
-    sun.addColorStop(0, 'rgba(255,251,232,.88)');
-    sun.addColorStop(0.08, 'rgba(255,244,214,.5)');
-    sun.addColorStop(0.24, 'rgba(255,228,184,.2)');
-    sun.addColorStop(0.58, 'rgba(255,214,164,.07)');
-    sun.addColorStop(1, 'rgba(255,210,160,0)');
-    ctx.fillStyle = sun;
-    ctx.fillRect(0, 0, W, h);
+    // Обёртка 3×3: пятна, камешки и трещины продолжаются через край плитки.
+    function wrap(fn) {
+      for (let oy = -S; oy <= S; oy += S) {
+        for (let ox = -S; ox <= S; ox += S) {
+          ctx.save();
+          ctx.translate(ox, oy);
+          fn();
+          ctx.restore();
+        }
+      }
+    }
 
-    // сам диск небольшой: в пыльной атмосфере он не режет глаз
-    const sunDisc = Math.max(6, unit * 0.015);
-    ctx.fillStyle = 'rgba(255,249,231,.5)';
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, sunDisc, 0, Math.PI * 2);
-    ctx.fill();
-    if (unit > 260) {
-      ctx.strokeStyle = 'rgba(255,240,206,.12)';
-      ctx.lineWidth = 1.2;
-      for (let i = 0; i < 5; i++) {
-        const a = -0.5 + i * 0.24;
+    reseed(512047);
+    for (let i = 0; i < 22; i++) {
+      const cx = rnd() * S;
+      const cy = rnd() * S;
+      const rx = 28 + rnd() * 88;
+      const ry = 9 + rnd() * 30;
+      const rot = rnd() * 0.5;
+      ctx.fillStyle = rnd() < 0.52
+        ? 'rgba(255,214,178,.04)'
+        : 'rgba(88,38,20,.055)';
+      wrap(function () {
         ctx.beginPath();
-        ctx.moveTo(sunX + Math.cos(a) * sunDisc * 1.6, sunY + Math.sin(a) * sunDisc * 1.6);
-        ctx.lineTo(sunX + Math.cos(a) * sunDisc * 4.4, sunY + Math.sin(a) * sunDisc * 4.4);
-        ctx.stroke();
-      }
+        ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
+        ctx.fill();
+      });
     }
 
-    // две маленькие луны: у большой тёмный серп и кратеры
-    const moonR = Math.max(5, unit * 0.011);
-    const moonX = ax + w * 0.76;
-    const moonY = h * 0.1;
-    ctx.fillStyle = 'rgba(244,228,210,.82)';
-    ctx.beginPath();
-    ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(176,152,140,.38)';
-    ctx.beginPath();
-    ctx.arc(moonX + moonR * 0.42, moonY - moonR * 0.08, moonR * 0.9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(232,212,194,.72)';
-    ctx.beginPath();
-    ctx.arc(moonX - moonR * 0.1, moonY + moonR * 0.06, moonR * 0.78, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(160,140,125,.35)';
-    ctx.beginPath();
-    ctx.arc(moonX - moonR * 0.3, moonY - moonR * 0.2, moonR * 0.24, 0, Math.PI * 2);
-    ctx.arc(moonX + moonR * 0.22, moonY + moonR * 0.26, moonR * 0.17, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(210,190,170,.5)';
-    ctx.beginPath();
-    ctx.arc(ax + w * 0.83, h * 0.17, moonR * 0.55, 0, Math.PI * 2);
-    ctx.fill();
-
-    // пыльные облака: три слоя эллипсов дают мягкий объём
-    reseed(90210);
-    const nClouds = Math.max(4, Math.round(w / 360));
-    const cloudSize = Math.max(34, Math.min(96, unit * 0.1));
-
-    for (let i = 0; i < nClouds; i++) {
-      const cx = ax + ((i + 0.15 + rnd() * 0.55) / nClouds) * w;
-      const cy = horizon * (0.1 + rnd() * 0.58);
-      const r = cloudSize * (0.55 + rnd() * 0.75);
-      const a = (0.05 + rnd() * 0.06).toFixed(3);
-
-      ctx.fillStyle = 'rgba(255,226,198,' + a + ')';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, r, r * 0.17, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx - r * 0.42, cy + r * 0.05, r * 0.48, r * 0.11, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + r * 0.34, cy - r * 0.05, r * 0.42, r * 0.1, 0, 0, Math.PI * 2);
-      ctx.fill();
+    // Мелкие камешки: низкий контраст, без ярких повторяющихся пятен.
+    for (let i = 0; i < 86; i++) {
+      const cx = rnd() * S;
+      const cy = rnd() * S;
+      const r = 0.8 + rnd() * 1.9;
+      const ry = r * (0.55 + rnd() * 0.35);
+      const rot = rnd() * Math.PI;
+      ctx.fillStyle = rnd() < 0.55
+        ? 'rgba(94,68,55,.15)'
+        : 'rgba(206,154,118,.14)';
+      wrap(function () {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, ry, rot, 0, Math.PI * 2);
+        ctx.fill();
+      });
     }
 
-    // низкие пыльные шлейфы: воздух над горизонтом «плывёт»
-    reseed(62103);
-    for (let i = 0; i < 6; i++) {
-      const y = horizon * (0.58 + rnd() * 0.36);
-      const ww = w * (0.18 + rnd() * 0.5);
-      ctx.fillStyle = 'rgba(255,214,178,' + (0.03 + rnd() * 0.04).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.ellipse(ax + w * rnd(), y, ww, 1.4 + rnd() * 2.2, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Дальние гряды. Гребень строится из трёх синусов: форма не зависит от
-    // ширины экрана и потому не «плывёт» при зуме, но и не повторяется.
-    function ridge(baseY, amp, step, phase, color, edge) {
+    // Трещины: короткие ломаные, тоже с обёрткой.
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 11; i++) {
       const pts = [];
-      for (let x = -60; x <= W + 60; x += step) {
-        const n = Math.sin(x * 0.019 + phase) * 0.46 +
-          Math.sin(x * 0.047 + phase * 1.9) * 0.32 +
-          Math.sin(x * 0.011 + phase * 0.7) * 0.22;
-        const sharp = n < 0 ? -Math.pow(-n, 0.82) : Math.pow(n, 0.82);
-        pts.push({ x: x, y: baseY - amp * (0.32 + sharp * 0.68) });
+      let x = rnd() * S;
+      let y = rnd() * S;
+      let a = rnd() * Math.PI * 2;
+      const seg = 3 + (rnd() * 3 | 0);
+      for (let k = 0; k < seg; k++) {
+        pts.push({ x: x, y: y });
+        a += (rnd() - 0.5) * 1.2;
+        const len = 4 + rnd() * 16;
+        x += Math.cos(a) * len;
+        y += Math.sin(a) * len;
       }
-
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, h);
-      for (let i = 0; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.lineTo(pts[pts.length - 1].x, h);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = edge;
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.stroke();
+      wrap(function () {
+        ctx.strokeStyle = 'rgba(78,32,16,.18)';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,214,170,.07)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y - 0.7);
+        for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y - 0.7);
+        ctx.stroke();
+      });
     }
 
-    ridge(horizon - 9, Math.max(20, h * 0.05), 26, 1.7,
-      'rgba(120,78,82,.42)', 'rgba(255,214,186,.16)');
-    ridge(horizon + 1, Math.max(13, h * 0.032), 19, 4.2,
-      'rgba(148,74,50,.58)', 'rgba(255,198,158,.15)');
-
-    // Столовые горы: плоские вершины и тёмный правый склон.
-    reseed(7712);
-    const nMesa = Math.max(3, Math.round(W / 470));
-    for (let i = 0; i < nMesa; i++) {
-      const cx = -40 + ((i + 0.15 + rnd() * 0.55) / nMesa) * (W + 80);
-      const mw = 32 + rnd() * 82;
-      const mh = 9 + rnd() * 20;
-      const topY = horizon - mh;
-      const sk = mw * 0.16;
-
-      ctx.fillStyle = 'rgba(112,60,52,.5)';
-      poly(ctx, [
-        { x: cx - mw / 2, y: topY },
-        { x: cx + mw / 2, y: topY },
-        { x: cx + mw / 2 + sk, y: horizon + 3 },
-        { x: cx - mw / 2 - sk, y: horizon + 3 }
-      ], 'rgba(112,60,52,.5)');
-      poly(ctx, [
-        { x: cx + mw * 0.06, y: topY },
-        { x: cx + mw / 2, y: topY },
-        { x: cx + mw / 2 + sk, y: horizon + 3 },
-        { x: cx + mw * 0.12, y: horizon + 3 }
-      ], 'rgba(92,46,42,.34)');
-      ctx.fillStyle = 'rgba(255,204,170,.16)';
-      ctx.fillRect(cx - mw / 2, topY - 1.2, mw, 1.6);
+    // Лёгкие следы техники.
+    for (let i = 0; i < 14; i++) {
+      const cx = rnd() * S;
+      const cy = rnd() * S;
+      const len = 6 + rnd() * 20;
+      const rot = rnd() * Math.PI;
+      wrap(function () {
+        ctx.strokeStyle = 'rgba(255,218,178,.045)';
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(cx - Math.cos(rot) * len / 2, cy - Math.sin(rot) * len / 2);
+        ctx.lineTo(cx + Math.cos(rot) * len / 2, cy + Math.sin(rot) * len / 2);
+        ctx.stroke();
+      });
     }
-
-    // холмы: волна в пикселях, не растягивается на широком экране
-    function hills(baseY, amp, phase, color) {
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(-20, h);
-      ctx.lineTo(-20, baseY);
-      for (let x = -20; x <= W + 20; x += 14) {
-        const wave =
-          Math.sin(x / 240 + phase) * 0.52 +
-          Math.sin(x / 91 + phase * 1.7) * 0.3 +
-          Math.sin(x / 39 + phase * 2.3) * 0.18;
-        ctx.lineTo(x, baseY - amp * (0.55 + wave * 0.45));
-      }
-      ctx.lineTo(W + 20, h);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    const amp1 = Math.max(10, Math.min(34, h * 0.028));
-    const amp2 = Math.max(7, Math.min(24, h * 0.02));
-    hills(horizon - 5, amp1, 0.4, 'rgba(164,74,42,.62)');
-    hills(horizon + 7, amp2, 2.1, 'rgba(142,63,34,.74)');
-
-    // реголит до низа экрана: тёплый у горизонта, плотный внизу
-    const ground = ctx.createLinearGradient(0, horizon, 0, h);
-    ground.addColorStop(0, '#c76a3f');
-    ground.addColorStop(0.32, '#b4552f');
-    ground.addColorStop(0.68, '#9f4828');
-    ground.addColorStop(1, '#7c351f');
-    ctx.fillStyle = ground;
-    ctx.fillRect(0, horizon + 6, W, h - horizon);
-
-    // дюны: длинные дуги поперёк кадра, почти невидимые
-    reseed(8123);
-    for (let i = 0; i < 7; i++) {
-      const y = horizon + 16 + i * ((h - horizon) / 8) + rnd() * 10;
-      const x0 = -30 + rnd() * w * 0.5;
-      const x1 = x0 + w * (0.55 + rnd() * 0.7);
-      ctx.strokeStyle = i % 2
-        ? 'rgba(255,206,166,.055)'
-        : 'rgba(80,34,18,.07)';
-      ctx.lineWidth = 1.5 + rnd() * 3;
-      ctx.beginPath();
-      ctx.moveTo(x0, y);
-      ctx.quadraticCurveTo((x0 + x1) / 2, y - 7 - rnd() * 8, x1, y + rnd() * 4);
-      ctx.stroke();
-    }
-
-    // пыльная дымка у горизонта: два слоя, чтобы гряды уходили в воздух
-    const haze = ctx.createLinearGradient(0, horizon - 34, 0, horizon + 72);
-    haze.addColorStop(0, 'rgba(236,193,148,0)');
-    haze.addColorStop(0.4, 'rgba(236,193,148,.3)');
-    haze.addColorStop(0.72, 'rgba(224,168,124,.12)');
-    haze.addColorStop(1, 'rgba(224,168,124,0)');
-    ctx.fillStyle = haze;
-    ctx.fillRect(0, horizon - 34, W, 106);
-
-    // пятна пыли и тёмной породы
-    reseed(5511);
-    const nPatches = Math.max(7, Math.round(W / 150));
-    for (let i = 0; i < nPatches; i++) {
-      const cx = (i / nPatches) * (W + 160) - 80 + rnd() * 90;
-      const cy = horizon + 26 + rnd() * Math.max(20, h - horizon - 42);
-      const rx = 60 + rnd() * 130;
-      const ry = 5 + rnd() * 10;
-      const light = rnd() < 0.5;
-      ctx.fillStyle = light
-        ? 'rgba(255,220,180,.055)'
-        : 'rgba(90,40,22,.09)';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // каменистые осыпи у подножия гряд
-    reseed(9107);
-    for (let i = 0; i < 34; i++) {
-      const x = ax + rnd() * w;
-      const y = horizon + 8 + rnd() * 26;
-      const r = 1 + rnd() * 2.6;
-      ctx.fillStyle = rnd() < 0.5 ? 'rgba(96,52,38,.3)' : 'rgba(214,146,104,.22)';
-      ctx.beginPath();
-      ctx.ellipse(x, y, r, r * 0.55, rnd(), 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // позёмка
-    ctx.fillStyle = 'rgba(255,215,175,.045)';
-    for (let i = 0; i < 5; i++) {
-      const y = horizon + 36 + i * 32;
-      ctx.fillRect(0, y, W, 1.6);
-    }
+    ctx.lineCap = 'butt';
   }
 
-  /* ---------- параллакс фона ----------
-     Фон — «дальний план»: он едет за камерой, но медленнее поля, иначе
-     панорама читается как «база едет по неподвижному фону».
-     K — доля смещения камеры, которую проходит фон (0.3: поле уходит на
-     100 px, холмы — на 30 px). На очень больших панорамах смещение мягко
-     упирается в запас кэша, чтобы никогда не открыть пустой край. */
-  const BG_PARALLAX_X = 0.3;
-  const BG_PAD_MIN = 160;    // запас кэша по краям, px
-  const BG_PAD_MAX = 720;
-  const BG_PAD_STEP = 80;
-
-  // Панорама в экранных пикселях от «домашнего» положения камеры. Камера
-  // хранит panX; если сцену рисуют без камеры (проверки/скриншоты) — 0.
-  function bgPanX(view) {
-    if (typeof view.panX === 'number' && isFinite(view.panX)) return view.panX;
-    if (typeof view.homeX === 'number' && isFinite(view.homeX) && typeof view.ox === 'number') {
-      return view.ox - view.homeX;
+  function ensureRegolithTile() {
+    if (bgCache.canvas) return bgCache.canvas;
+    try {
+      const c = makeCanvas(BG_TILE, BG_TILE);
+      const cx = c.getContext('2d');
+      paintRegolithTile(cx);
+      bgCache.canvas = c;
+      bgCache.key = 'regolith-v1';
+      bgCache.paints++;
+    } catch (e) {
+      bgCache.canvas = null;
     }
-    return 0;
+    return bgCache.canvas;
   }
 
-  function drawBackground(ctx, view) {
-    // Горизонт ставим выше верхней точки поля, чтобы база стояла на земле,
-    // а не висела в небе. Округляем до 12 px, чтобы не перерисовывать фон
-    // на каждый пиксель панорамы.
-    const top = (typeof view.oy === 'number' && isFinite(view.oy)) ? view.oy : view.h * 0.42;
-    const scale = (typeof view.scale === 'number' && isFinite(view.scale) && view.scale > 0) ? view.scale : 1;
-    // держим горизонт чуть выше игровой зоны, но оставляем полосу неба
-    const horizon = Math.max(24, Math.min(view.h * 0.42, top + 3 * TH * scale));
-    const hq = Math.round(horizon / 12) * 12;
-
-    // Запас кэша считаем от возможной панорамы поля при текущем масштабе:
-    // при зуме поле шире экрана, значит и уехать камера может дальше.
-    // Берём полный запас (а не половину): база может стоять не в центре
-    // поля, и тогда «дом» камеры смещён к краю.
-    const fieldW = G * TW * scale;
-    const need = BG_PARALLAX_X * Math.max(0, fieldW - view.w) + 48;
-    const pad = Math.min(BG_PAD_MAX, Math.max(BG_PAD_MIN,
-      Math.ceil(need / BG_PAD_STEP) * BG_PAD_STEP));
-    const key = view.w + 'x' + view.h + '@' + hq + 'p' + pad;
-
-    if (bgCache.key !== key || !bgCache.canvas) {
+  function regolithPattern(ctx) {
+    const tile = ensureRegolithTile();
+    if (!tile) return null;
+    if (bgCache.patternCtx !== ctx) {
+      bgCache.pattern = null;
+      bgCache.patternCtx = ctx;
+    }
+    if (!bgCache.pattern) {
       try {
-        const c = makeCanvas(view.w + pad * 2, view.h);
-        const cx = c.getContext('2d');
-        paintBackground(cx, view.w, view.h, hq, pad);
-        bgCache.canvas = c;
-        bgCache.key = key;
-        bgCache.paints++;
+        bgCache.pattern = ctx.createPattern(tile, 'repeat');
       } catch (e) {
-        bgCache.canvas = null;
+        bgCache.pattern = null;
       }
     }
-
-    if (bgCache.canvas) {
-      // Мягкое ограничение: около нуля фон идёт ровно с коэффициентом K,
-      // у края запаса плавно замедляется и не выходит за пределы кэша.
-      const lim = pad - 8;
-      const raw = BG_PARALLAX_X * bgPanX(view);
-      const shift = lim * Math.tanh(raw / lim);
-      // Целые пиксели: без дробного ресемплинга кэша каждый кадр (резче и дешевле).
-      const dx = -pad + Math.round(shift);
-      bgCache.pad = pad;
-      bgCache.shift = shift;
-      ctx.drawImage(bgCache.canvas, dx, 0, view.w + pad * 2, view.h);
-    } else {
-      paintBackground(ctx, view.w, view.h, hq, 0);
-    }
+    return bgCache.pattern;
   }
 
+  // Экранная подложка: тот же реголит без неба, солнца и горизонта.
+  function drawBackground(ctx, view) {
+    ctx.fillStyle = PAL.regolith;
+    ctx.fillRect(0, 0, view.w, view.h);
+    bgCache.pad = 0;
+    bgCache.shift = 0;
+  }
+
+  // Бесконечный грунт в мировых координатах: узор жёстко привязан к миру
+  // и движется вместе с камерой без параллакса.
+  function drawGroundTexture(ctx) {
+    const pattern = regolithPattern(ctx);
+    if (!pattern) return;
+    const x0 = worldView.x0 - 4;
+    const y0 = worldView.y0 - 4;
+    const w = worldView.x1 - worldView.x0 + 8;
+    const h = worldView.y1 - worldView.y0 + 8;
+    ctx.fillStyle = pattern;
+    ctx.fillRect(x0, y0, w, h);
+  }
   /* ---------- земля ---------- */
 
   const groundCache = Object.create(null);
@@ -12361,6 +12202,7 @@ CC.Render = (function () {
       view.dpr * (view.ox + sx), view.dpr * (view.oy + sy)
     );
 
+    drawGroundTexture(ctx);
     drawGround(ctx);
     drawEdgeProps(ctx, battle);
     drawBuildGrid(ctx);

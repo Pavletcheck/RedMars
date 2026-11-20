@@ -1081,7 +1081,7 @@ CC.CamMath = (function () {
   const BASE_CORE_MAX = 12;  // максимум рамки: ядро + запас, без дальних стен
   // Мир в деревне и в бою опускается относительно фона. Небольшой сдвиг
   // поднимает базу из-под нижней панели, не уводя её под верхний HUD.
-  const BASE_DROP = 0.10;
+  const BASE_DROP = 0.04;
   const BASE_DROP_LIMIT = 0.25;
 
   function clamp(v, a, b) {
