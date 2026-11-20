@@ -17,6 +17,11 @@
   --ui-elixir-2: #7d2e9e;
   --ui-attack: #ef6a28;
   --ui-attack-2: #c43a16;
+  /* Шкала типографики HUD/карточек/оверлеев. */
+  --fs-12: 12px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
 }
 
 * { box-sizing: border-box; }
@@ -5216,4 +5221,777 @@ html, body { width: 100%; height: 100%; }
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ===================================================================
+   P1: тихая верхняя панель, боевой HUD, крупные карточки, победа
+   =================================================================== */
+
+/* ---- левый верх: один кластер + чип звука ---- */
+#app .hud-tl {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: calc(100% - 230px);
+  z-index: 45;
+}
+
+#app .hud-cluster {
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: rgba(247, 231, 198, .9);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2),
+    0 5px 9px rgba(35, 22, 8, .25);
+}
+
+#app .player-badge {
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+#app .hud-segments {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid rgba(90, 62, 28, .28);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 252, 240, .72);
+}
+
+#app .hud-segments > * {
+  min-height: 40px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: var(--fs-12);
+  padding: 0 9px;
+}
+
+#app .hud-segments > * + * {
+  border-left: 1px solid rgba(90, 62, 28, .22);
+}
+
+#app .hud-segments .ach-btn {
+  width: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+#app .audio-panel {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+}
+
+#app .audio-panel .sound-btn_chip {
+  width: auto;
+  min-width: 68px;
+  height: 46px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #f7e7c6;
+  color: #3a2812;
+}
+
+#app .audio-panel .sound-btn_chip .sound-btn__label { color: #3a2812; }
+
+#app .sound-btn__label {
+  font-size: var(--fs-12);
+  font-weight: 900;
+  color: inherit;
+}
+
+#app .sound-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: 216px;
+  max-width: calc(100vw - 20px);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: #f7e7c6;
+  box-shadow: 0 6px 0 var(--ui-dark-2), 0 12px 24px rgba(25, 15, 5, .35);
+}
+
+#app .sound-popover.hidden { display: none !important; }
+
+#app .sound-row {
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  background: #fff8e8;
+  color: #3a2812;
+  border: 1px solid rgba(90, 62, 28, .22);
+  border-radius: 8px;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+#app .sound-popover .volume {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 6px;
+  border: 1px solid rgba(90, 62, 28, .22);
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #3a2812;
+}
+
+#app .sound-popover .volume__value {
+  min-width: 46px;
+  text-align: center;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  color: #3a2812;
+}
+
+#app .sound-popover .volume__btn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  border: 1px solid rgba(90, 62, 28, .3);
+  border-radius: 8px;
+  background: #f1dfb8;
+  color: #3a2812;
+  font-size: var(--fs-14);
+  font-weight: 900;
+}
+
+/* ---- ресурсы: один общий блок, три кнопки покупки ---- */
+#app .resbar {
+  width: 150px;
+  gap: 0;
+  padding: 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: rgba(247, 231, 198, .92);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2),
+    0 5px 9px rgba(35, 22, 8, .25);
+}
+
+#app .resbar .res-panel {
+  min-height: 40px;
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+#app .resbar .res-panel + .res-panel {
+  border-top: 1px solid rgba(90, 62, 28, .2);
+}
+
+#app .resbar .res-panel__icon {
+  width: 26px;
+  height: 26px;
+  flex-basis: 26px;
+}
+
+#app .resbar .res-panel__value { font-size: var(--fs-14); }
+#app .resbar .res-panel__cap { font-size: var(--fs-12); }
+
+/* ---- боевой HUD ---- */
+#app .hud {
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 8px;
+  right: 8px;
+  height: 0;
+  display: block;
+  pointer-events: none;
+}
+
+#app .hud__timer {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  min-width: 142px;
+  min-height: 54px;
+  padding: 5px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: rgba(247, 231, 198, .94);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 3px 0 var(--ui-dark-2);
+  pointer-events: auto;
+}
+
+#app .hud__timer .hud__label {
+  font-size: var(--fs-12);
+  letter-spacing: .04em;
+}
+
+#app .hud__timer .hud__value {
+  font-size: var(--fs-20);
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+#app .hud__actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+#app .hud__actions .icon-btn,
+#app .hud__base {
+  width: auto;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: rgba(247, 231, 198, .94);
+  color: #3a2812;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#app .hud__base {
+  background: rgba(255, 252, 240, .88);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 2px 0 var(--ui-dark-2);
+}
+
+#app .hud__actions .icon-btn:active,
+#app .hud__base:active { transform: translateY(1px); }
+
+#app .hud__actions .hud__finish { width: auto; }
+
+#app .battle-loot {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 62px);
+  right: 8px;
+  z-index: 5;
+  max-width: 240px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(28, 20, 10, .62);
+  color: #fff3d8;
+  font-size: var(--fs-12);
+  font-weight: 800;
+  text-align: right;
+  pointer-events: none;
+}
+
+#app .battle-stats {
+  position: absolute;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 128px);
+  z-index: 5;
+  min-width: 92px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: rgba(247, 231, 198, .92);
+  box-shadow: 0 3px 0 var(--ui-dark-2);
+  pointer-events: none;
+}
+
+#app .battle-stats__pct {
+  font-size: var(--fs-16);
+  font-weight: 900;
+  color: #3a2812;
+}
+
+#app .battle-stats__stars {
+  font-size: var(--fs-14);
+  letter-spacing: 1px;
+  color: #c78b18;
+}
+
+#app .battle-prep {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 62px);
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: rgba(247, 231, 198, .95);
+  box-shadow: 0 3px 0 var(--ui-dark-2), 0 8px 20px rgba(25, 15, 5, .35);
+}
+
+#app .battle-prep__text {
+  font-size: var(--fs-14);
+  font-weight: 900;
+  color: #3a2812;
+  white-space: nowrap;
+}
+
+#app .battle-prep__skip {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #2f6423;
+  border-radius: 9px;
+  background: #e3efd8;
+  color: #356b27;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#app[data-mode="base"] .battle-prep { display: none !important; }
+
+@media (max-height: 430px) {
+  #app .battle-prep {
+    top: calc(env(safe-area-inset-top, 0px) + 64px);
+    padding: 4px 6px 4px 10px;
+  }
+  #app .battle-prep__skip { min-height: 36px; }
+}
+
+#app[data-mode="battle"] .hud-tl,
+#app[data-mode="battle"] .hud-tc,
+#app[data-mode="battle"] .resbar,
+#app[data-mode="battle"] .bottom-bar,
+#app[data-mode="battle"] .collect-all { display: none !important; }
+
+#app[data-mode="base"] .hud,
+#app[data-mode="base"] .battle-loot,
+#app[data-mode="base"] .battle-stats { display: none !important; }
+
+/* ---- крупные карточки войск в бою ---- */
+#app .army {
+  left: 8px;
+  right: auto;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  width: min(360px, calc(100% - 16px));
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: rgba(28, 20, 10, .55);
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  overflow-x: auto;
+  overflow-y: hidden;
+  pointer-events: auto;
+}
+
+[data-mode="base"] .army { display: none; }
+
+#app .troop {
+  flex: 0 0 92px;
+  min-height: 100px;
+  padding: 4px 4px 3px;
+  scroll-snap-align: start;
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+#app .troop__lvl {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  z-index: 2;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(255, 253, 244, .9);
+  color: #6b4a12;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  line-height: 1.1;
+  pointer-events: none;
+}
+
+#app .troop__icon {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  margin-top: 10px;
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-size: 1.05rem;
+}
+
+#app .troop__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+#app .troop__name {
+  max-width: 86px;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+#app .troop__count {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 2;
+  min-width: 22px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(28, 20, 10, .7);
+  color: #fff3d8;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  line-height: 1.1;
+  text-align: center;
+}
+
+#app .troop__req {
+  max-width: 86px;
+  font-size: var(--fs-12);
+}
+
+#app .troop.is-selected {
+  border-color: var(--ui-gold);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    0 2px 0 #8a5a0d,
+    0 0 0 3px rgba(240, 190, 69, .55);
+}
+
+/* ---- типографика: HUD и оверлеи не мельче 12 px ---- */
+#app .campaign-chip,
+#app .res-panel__cap,
+#app .sound-btn__label,
+#app .army-badge,
+#app .army-badge span,
+#app .builders-chip,
+#app .level-badge__label,
+#app .player-badge__body > span:first-child,
+#app .truce-chip,
+#app .tcard__name,
+#app .tcard__desc,
+#app .tcard__cost,
+#app .tcard__meta,
+#app .tcard__lvl,
+#app .shop-card__name,
+#app .shop-card__desc,
+#app .shop-card__count,
+#app .shop-card__cost,
+#app .shop-card__req,
+#app .overlay__reason,
+#app .overlay__text,
+#app .overlay__loot,
+#app .overlay__army,
+#app .overlay__lost,
+#app .overlay__hint,
+#app .overlay__daily {
+  font-size: var(--fs-12);
+}
+
+#app .tcard__hire,
+#app .tup__name,
+#app .tup__cost,
+#app .tup__time,
+#app .overlay__btn,
+#app .result-actions .overlay__btn {
+  font-size: var(--fs-14);
+}
+
+#app .hud__label { font-size: var(--fs-12); }
+#app .hud__value { font-size: var(--fs-16); }
+
+/* ---- экран победы/поражения ---- */
+#app .result-card {
+  max-width: min(720px, calc(100vw - 24px));
+  max-height: calc(100dvh - 20px);
+  overflow: hidden;
+  padding: 12px 16px 14px;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 18px;
+}
+
+#app .result-banner-wrap {
+  position: relative;
+  width: 260px;
+  height: 200px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+#app .result-banner {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#app .result-banner__fallback {
+  font-size: 132px;
+  line-height: 1;
+  filter: drop-shadow(0 6px 8px rgba(40, 20, 5, .4));
+}
+
+#app .result-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#app .result-title {
+  margin: 2px 0 4px;
+  font-size: var(--fs-20);
+  line-height: 1.05;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #f0be45;
+  text-shadow: 0 2px 0 rgba(60, 30, 5, .35);
+}
+
+#app .result-card.is-loss .result-title { color: #e46a4f; }
+
+#app .result-loot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 2px 0 8px;
+  color: var(--ui-text);
+}
+
+#app .loot-chips__label {
+  font-size: var(--fs-12);
+  font-weight: 900;
+  color: var(--ui-muted);
+}
+
+#app .loot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 252, 240, .78);
+  border: 1px solid rgba(90, 62, 28, .22);
+  font-size: var(--fs-12);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#app .loot-chip b { font-weight: 900; }
+#app .loot-chip_gold { color: #7a4a12; }
+#app .loot-chip_elixir { color: #6a2f8a; }
+#app .loot-chip_gems { color: #2f6b22; }
+#app .loot-chip_empty { color: var(--ui-muted); }
+
+#app .result-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#app .result-actions .overlay__btn { margin: 0; }
+#app .result-actions__main { flex: 1 1 auto; min-height: 48px; }
+#app .result-actions__second { flex: 0 0 auto; min-width: 104px; min-height: 48px; }
+
+#app .result-card .overlay__stars {
+  font-size: 24px;
+  height: 30px;
+  margin: 0;
+}
+
+@media (max-height: 430px) {
+  #app .result-card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-width: min(560px, calc(100vw - 18px));
+    max-height: calc(100dvh - 12px);
+    padding: 7px 12px 9px;
+  }
+  #app .result-banner-wrap {
+    width: 168px;
+    height: 112px;
+    flex: 0 0 auto;
+  }
+  #app .result-banner { max-height: 112px; }
+  #app .result-banner__fallback { font-size: 74px; }
+  #app .result-title { font-size: var(--fs-20); margin: 0 0 2px; }
+  #app .result-card .overlay__stars { font-size: 18px; height: 21px; margin: 0; }
+  #app .result-card .overlay__reason { margin: 0 0 3px; }
+  #app .result-card .overlay__text { margin: 0 0 3px; }
+  #app .result-loot { margin: 0 0 4px; gap: 4px; }
+  #app .result-actions { margin-top: 4px; width: 100%; }
+  #app .result-actions__main,
+  #app .result-actions__second { min-height: 44px; }
+  #app .result-card .overlay__army { margin: 0 0 2px; }
+  #app .result-card .overlay__lost,
+  #app .result-card .overlay__hint { margin: 0 0 2px; }
+  #app .battle-stats { bottom: calc(env(safe-area-inset-bottom, 0px) + 126px); }
+  #app .battle-loot { top: calc(env(safe-area-inset-top, 0px) + 58px); max-width: 200px; }
+}
+
+@media (max-width: 620px) {
+  #app .hud-tl { max-width: calc(100% - 16px); }
+  #app .hud-cluster { max-width: 100%; }
+  #app .hud-segments { overflow-x: auto; scrollbar-width: none; }
+  #app .army { width: calc(100% - 16px); }
+}
+
+/* ---- P1b: компактная лента постройки ---- */
+#app .selbar.is-strip {
+  width: min(560px, calc(100% - 96px));
+  max-height: 140px;
+  overflow: visible;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 4px 7px;
+}
+
+#app .selbar.is-strip .selbar__head {
+  grid-column: 1 / -1;
+  min-height: 36px;
+}
+
+#app .selbar.is-strip .selbar__name { font-size: var(--fs-14); }
+#app .selbar.is-strip .selbar__level { font-size: var(--fs-12); }
+
+#app .selbar.is-strip .selbar__stats {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 8;
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: #fff8e8;
+  box-shadow: 0 4px 0 var(--ui-dark-2), 0 10px 22px rgba(25, 15, 5, .35);
+  font-size: var(--fs-12);
+}
+
+#app .selbar.is-strip.is-info-open .selbar__stats { display: block; }
+
+#app .selbar.is-strip .selbar__note,
+#app .selbar.is-strip .selbar__timer {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  z-index: 8;
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: #fff8e8;
+  border: 1px solid var(--ui-line);
+  box-shadow: 0 3px 0 var(--ui-dark-2);
+  font-size: var(--fs-12);
+}
+
+#app .selbar.is-strip.is-info-open .selbar__note,
+#app .selbar.is-strip.is-info-open .selbar__timer { display: none !important; }
+
+#app .selbar.is-strip .selbar__up {
+  grid-column: 1;
+  grid-row: 2;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+#app .selbar.is-strip .selbar__up .selbar__btn_go { flex: 1 1 auto; }
+#app .selbar.is-strip .selbar__price { flex: 0 0 auto; font-size: var(--fs-12); }
+
+#app .selbar.is-strip .selbar__row {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+#app .selbar.is-strip .selbar__row .selbar__btn {
+  flex: 0 0 auto;
+  min-width: 72px;
+  min-height: 44px;
+  padding: 0 8px;
+  font-size: var(--fs-12);
+}
+
+#app .selbar.is-strip .selbar__btn_th { display: none; }
+
+#app .selbar.is-strip .selbar__progress { display: none; }
+
+#app .selbar__btn_info.is-active {
+  border-color: #2f6423;
+  background: #e3efd8;
+  color: #356b27;
+}
+
+#app .selbar:not(.is-strip) .selbar__btn_info { display: none; }
+
+@media (max-height: 430px) {
+  #app .selbar.is-strip {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+    max-height: 140px;
+    padding: 5px 7px;
+  }
+  #app .selbar.is-strip .selbar__stats { max-height: 132px; }
+  #app .selbar.is-strip .selbar__head { min-height: 28px; }
 }

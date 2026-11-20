@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="300" viewBox="0 0 520 300" role="img" aria-labelledby="vt vd">
+  <title id="vt">Победа колонии</title>
+  <desc id="vd">Марсианский штандарт: обломок модуля, красное полотнище, золотая звезда и бирюзовые огни.</desc>
+  <defs>
+    <radialGradient id="v-glow" cx="50%" cy="42%" r="58%">
+      <stop offset="0" stop-color="#ffcf4a" stop-opacity=".18"/>
+      <stop offset=".45" stop-color="#c7462f" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#c7462f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="v-metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a9b3b6"/>
+      <stop offset=".38" stop-color="#68757b"/>
+      <stop offset=".7" stop-color="#48545a"/>
+      <stop offset="1" stop-color="#2d373d"/>
+    </linearGradient>
+    <linearGradient id="v-metal-light" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d5dcdb"/>
+      <stop offset=".55" stop-color="#8c989b"/>
+      <stop offset="1" stop-color="#566267"/>
+    </linearGradient>
+    <linearGradient id="v-banner" x1="0" y1="0" x2=".9" y2="1">
+      <stop offset="0" stop-color="#d6503b"/>
+      <stop offset=".42" stop-color="#b63429"/>
+      <stop offset=".78" stop-color="#8d211d"/>
+      <stop offset="1" stop-color="#681714"/>
+    </linearGradient>
+    <linearGradient id="v-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff0b5"/>
+      <stop offset=".35" stop-color="#ffcf4a"/>
+      <stop offset=".72" stop-color="#d99a25"/>
+      <stop offset="1" stop-color="#996113"/>
+    </linearGradient>
+    <radialGradient id="v-lamp" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#eafffb"/>
+      <stop offset=".3" stop-color="#7fe9ff"/>
+      <stop offset="1" stop-color="#46e0c8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="v-rust" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a85a32"/>
+      <stop offset="1" stop-color="#632d1c"/>
+    </linearGradient>
+  </defs>
+
+  <ellipse cx="260" cy="162" rx="228" ry="136" fill="url(#v-glow)"/>
+
+  <!-- дальние лучи и пыль -->
+  <g opacity=".3">
+    <path d="M260 44 244 128h10L232 220h56l-22-92h10z" fill="#ffcf4a" opacity=".12"/>
+    <path d="M96 92 244 142l-4 9L92 104z" fill="#c7462f" opacity=".12"/>
+    <path d="M424 92 276 142l4 9 148-47z" fill="#c7462f" opacity=".12"/>
+  </g>
+  <g fill="#ffdca8">
+    <circle cx="88" cy="112" r="2" opacity=".38"/>
+    <circle cx="438" cy="98" r="1.6" opacity=".34"/>
+    <circle cx="398" cy="206" r="1.4" opacity=".25"/>
+    <circle cx="126" cy="226" r="1.8" opacity=".28"/>
+    <circle cx="360" cy="68" r="1.2" opacity=".3"/>
+  </g>
+
+  <!-- обломок марсианского модуля: основание трофея -->
+  <ellipse cx="260" cy="268" rx="154" ry="18" fill="#2a100d" opacity=".5"/>
+  <g>
+    <path d="M146 244 174 218 332 210 378 234 356 262 190 268z" fill="#2d373d"/>
+    <path d="M154 243 180 222 330 215 368 235 350 250 194 256z" fill="url(#v-metal)"/>
+    <path d="M154 243 180 222 330 215 340 218 191 228 168 247z" fill="url(#v-metal-light)" opacity=".8"/>
+    <path d="M188 246 352 238 348 250 194 256z" fill="#3f4a50"/>
+    <path d="M198 234 236 230 226 246 190 249z" fill="url(#v-rust)" opacity=".75"/>
+    <path d="M300 226 330 223 344 236 312 241z" fill="#8f472b" opacity=".55"/>
+    <path d="M176 240 200 229 206 232 184 244z" fill="#d9e0dd" opacity=".18"/>
+    <g fill="#1d2529">
+      <circle cx="191" cy="248" r="2"/>
+      <circle cx="216" cy="245" r="1.8"/>
+      <circle cx="290" cy="243" r="1.8"/>
+      <circle cx="344" cy="243" r="2"/>
+    </g>
+    <g stroke="#7c878a" stroke-width="1" opacity=".6">
+      <path d="M232 220 270 217"/>
+      <path d="M248 250 274 248"/>
+      <path d="M310 244 336 242"/>
+    </g>
+    <!-- рваная панель и кабель -->
+    <path d="M166 228 158 205 176 210 184 228z" fill="#425158"/>
+    <path d="M336 214 352 194 363 203 348 222z" fill="#54636a"/>
+    <path d="M348 216 C376 226 380 240 366 256" fill="none" stroke="#1f2b30" stroke-width="3"/>
+    <path d="M348 216 C372 224 376 236 364 249" fill="none" stroke="#869396" stroke-width="1" opacity=".6"/>
+    <circle cx="366" cy="256" r="2.4" fill="#b9c5c5"/>
+  </g>
+
+  <!-- штандарт -->
+  <g>
+    <path d="M254 246 262 102 268 102 266 246z" fill="#2b343a"/>
+    <path d="M257 244 263 106 267 106 264 244z" fill="url(#v-metal-light)"/>
+    <path d="M250 112 276 112 276 120 250 120z" fill="url(#v-gold)"/>
+    <path d="M254 138 270 138 270 143 254 143z" fill="#c89227"/>
+    <g stroke="#e0c06a" stroke-width="1" opacity=".55">
+      <path d="M259 128 264 128"/>
+      <path d="M258 156 265 156"/>
+      <path d="M257 198 265 198"/>
+    </g>
+    <!-- верхний маяк -->
+    <circle cx="263" cy="101" r="8" fill="#1a262b"/>
+    <circle cx="263" cy="101" r="5.4" fill="#46e0c8"/>
+    <circle cx="263" cy="99.6" r="2.2" fill="#eafffb"/>
+    <circle cx="263" cy="101" r="15" fill="url(#v-lamp)" opacity=".8"/>
+    <path d="M263 90 267 96 263 102 259 96z" fill="#ffcf4a"/>
+  </g>
+
+  <!-- перекладина и красное полотнище -->
+  <g>
+    <path d="M196 116 326 116 326 123 196 123z" fill="#1d262b"/>
+    <path d="M199 116 323 116 323 119 199 119z" fill="url(#v-gold)"/>
+    <circle cx="198" cy="119.5" r="4" fill="url(#v-gold)"/>
+    <circle cx="324" cy="119.5" r="4" fill="url(#v-gold)"/>
+
+    <path d="M205 121 316 121 316 188 Q304 200 294 191 Q284 182 274 192 Q264 202 254 192 Q244 182 234 192 Q224 202 214 193 L205 188z" fill="url(#v-banner)"/>
+    <path d="M205 121 316 121 316 130 205 130z" fill="#7c1b18" opacity=".55"/>
+    <path d="M238 124 250 186 241 190 230 126z" fill="#6e1614" opacity=".42"/>
+    <path d="M284 124 296 186 287 190 275 126z" fill="#e16a4e" opacity=".18"/>
+    <path d="M205 121 316 121 316 126 205 126z" fill="#ffcf4a" opacity=".65"/>
+    <path d="M205 184 212 192 224 202 234 192 244 182 254 192 264 202 274 192 284 182 294 192 304 199 316 188" fill="none" stroke="#5b120f" stroke-width="2" opacity=".5"/>
+    <!-- потёртости полотнища -->
+    <g stroke="#f2a58c" stroke-width="1" opacity=".28">
+      <path d="M219 138 231 136"/>
+      <path d="M270 143 288 141"/>
+      <path d="M243 170 254 168"/>
+      <path d="M298 156 306 155"/>
+    </g>
+
+    <!-- золотая звезда -->
+    <path d="M260 139 267.6 155.5 285.7 157.4 272.2 169.4 276 187.2 260 178.4 244 187.2 247.8 169.4 234.3 157.4 252.4 155.5z" fill="url(#v-gold)"/>
+    <path d="M260 139 267.6 155.5 260 160 252.4 155.5z" fill="#fff6cc" opacity=".7"/>
+    <path d="M260 178.4 276 187.2 272.2 169.4z" fill="#8e5910" opacity=".55"/>
+    <circle cx="260" cy="162" r="34" fill="none" stroke="#ffcf4a" stroke-width="1.4" opacity=".35"/>
+  </g>
+
+  <!-- бирюзовые огни и мелкие детали -->
+  <g>
+    <circle cx="185" cy="238" r="4" fill="url(#v-lamp)"/>
+    <circle cx="185" cy="238" r="1.6" fill="#dffffb"/>
+    <circle cx="332" cy="229" r="3.6" fill="url(#v-lamp)"/>
+    <circle cx="332" cy="229" r="1.4" fill="#cffff8"/>
+    <circle cx="209" cy="214" r="2.8" fill="url(#v-lamp)" opacity=".8"/>
+    <circle cx="310" cy="247" r="2.8" fill="url(#v-lamp)" opacity=".8"/>
+    <path d="M184 252 192 252 190 258 182 258z" fill="#ffcf4a" opacity=".55"/>
+    <path d="M322 252 331 252 328 258 320 258z" fill="#ffcf4a" opacity=".4"/>
+  </g>
+
+  <!-- передние камни и осколки -->
+  <g opacity=".85">
+    <path d="M112 268 146 261 164 270 134 278z" fill="#5a4438"/>
+    <path d="M118 267 144 263 152 268 132 273z" fill="#8a6a56"/>
+    <path d="M362 265 398 257 414 266 382 274z" fill="#4d3a31"/>
+    <path d="M370 264 396 260 404 265 382 270z" fill="#7a5c4b"/>
+    <path d="M232 272 248 269 256 274 240 277z" fill="#6b5244" opacity=".6"/>
+  </g>
+</svg>

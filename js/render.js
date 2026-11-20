@@ -1509,6 +1509,215 @@ CC.Render = (function () {
     }
   }
 
+  /* ---------- боевые силуэты по краям арены ----------
+     Пять крупных объектов вне игрового поля: обломки техники, скалы и
+     мёртвые антенны. Печём каждый силуэт один раз в маленький canvas и
+     дальше только блитим — кадр почти не дорожает. */
+  const battleEdgeCache = new Map();
+
+  function paintBattleEdge(ctx, kind) {
+    // Контактная тень под любым силуэтом.
+    ctx.fillStyle = 'rgba(48,22,13,.24)';
+    ctx.beginPath();
+    ctx.ellipse(2, 2, kind === 'spire' || kind === 'arch' ? 30 : 36, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (kind === 'crawler') {
+      // брошенный гусеничный ровер
+      ctx.fillStyle = PAL.metalDark;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(-30, -13, 58, 12, 4) : ctx.rect(-30, -13, 58, 12);
+      ctx.fill();
+      for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = i % 2 ? PAL.metal : PAL.dark;
+        ctx.beginPath();
+        ctx.arc(-23 + i * 14, -7, 4.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      poly(ctx, [
+        { x: -25, y: -15 }, { x: -10, y: -30 }, { x: 17, y: -27 },
+        { x: 25, y: -16 }, { x: 9, y: -11 }, { x: -18, y: -12 }
+      ], PAL.metal);
+      poly(ctx, [
+        { x: -10, y: -29 }, { x: 4, y: -38 }, { x: 15, y: -35 },
+        { x: 18, y: -27 }
+      ], shade(PAL.metal, -0.12));
+      ctx.fillStyle = PAL.glass;
+      ctx.fillRect(-6, -27, 9, 4);
+      ctx.fillStyle = PAL.rust;
+      ctx.fillRect(-21, -20, 8, 5);
+      ctx.strokeStyle = PAL.metalLight;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(14, -30);
+      ctx.lineTo(27, -44);
+      ctx.lineTo(34, -42);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(70,224,200,.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(-27, -8, 9, 2.6, 4.6);
+      ctx.stroke();
+    } else if (kind === 'spire') {
+      // скальный выступ
+      poly(ctx, [
+        { x: -26, y: 0 }, { x: -20, y: -26 }, { x: -8, y: -55 },
+        { x: 4, y: -46 }, { x: 20, y: -62 }, { x: 27, y: -22 },
+        { x: 31, y: 0 }
+      ], PAL.stoneDark);
+      poly(ctx, [
+        { x: -20, y: -26 }, { x: -8, y: -55 }, { x: 4, y: -46 },
+        { x: 2, y: -8 }, { x: -15, y: 0 }
+      ], PAL.stone);
+      poly(ctx, [
+        { x: 4, y: -46 }, { x: 20, y: -62 }, { x: 27, y: -22 },
+        { x: 15, y: -10 }
+      ], PAL.stoneLight);
+      ctx.strokeStyle = 'rgba(56,34,24,.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-4, -42);
+      ctx.lineTo(2, -25);
+      ctx.lineTo(-6, -10);
+      ctx.stroke();
+    } else if (kind === 'tower') {
+      // сухая антенна связи
+      ctx.strokeStyle = PAL.metalDark;
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -68);
+      ctx.moveTo(0, -35);
+      ctx.lineTo(-16, 0);
+      ctx.moveTo(0, -35);
+      ctx.lineTo(16, 0);
+      for (let i = 0; i < 3; i++) {
+        const y = -18 - i * 15;
+        ctx.moveTo(-9, y);
+        ctx.lineTo(9, y - 7);
+      }
+      ctx.stroke();
+      ctx.fillStyle = PAL.metal;
+      ctx.beginPath();
+      ctx.ellipse(-8, -61, 12, 5, -0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PAL.metalDark;
+      ctx.beginPath();
+      ctx.ellipse(-8, -61, 8, 3, -0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = PAL.metalLight;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-8, -61);
+      ctx.lineTo(-16, -70);
+      ctx.stroke();
+      spot(ctx, -16, -71, 1.5, 'rgba(210,80,60,.5)');
+    } else if (kind === 'pod') {
+      // полузарытый грузовой модуль
+      ctx.save();
+      ctx.translate(0, -8);
+      ctx.rotate(-0.18);
+      ctx.fillStyle = 'rgba(86,40,22,.18)';
+      ctx.beginPath();
+      ctx.ellipse(2, 8, 34, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PAL.metalDark;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 27, 15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PAL.metal;
+      ctx.beginPath();
+      ctx.ellipse(-2, -2, 25, 13, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PAL.rust;
+      ctx.fillRect(-19, -8, 10, 13);
+      ctx.fillStyle = PAL.glass;
+      ctx.fillRect(7, -6, 10, 4);
+      // открытая крышка
+      poly(ctx, [
+        { x: -12, y: -13 }, { x: 12, y: -18 }, { x: 21, y: -32 },
+        { x: 2, y: -27 }
+      ], shade(PAL.metal, -0.16));
+      ctx.restore();
+      spot(ctx, -12, -13, 1.5, 'rgba(70,224,200,.35)');
+    } else {
+      // каменная арка
+      poly(ctx, [
+        { x: -30, y: 0 }, { x: -32, y: -30 }, { x: -20, y: -48 },
+        { x: -8, y: -40 }, { x: -8, y: 0 }
+      ], PAL.stoneDark);
+      poly(ctx, [
+        { x: 10, y: 0 }, { x: 9, y: -34 }, { x: 20, y: -47 },
+        { x: 32, y: -30 }, { x: 30, y: 0 }
+      ], PAL.stone);
+      poly(ctx, [
+        { x: -20, y: -48 }, { x: -5, y: -54 }, { x: 14, y: -49 },
+        { x: 20, y: -47 }, { x: 7, y: -40 }, { x: -8, y: -40 }
+      ], PAL.stoneLight);
+      ctx.strokeStyle = 'rgba(56,34,24,.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(16, -38);
+      ctx.lineTo(12, -23);
+      ctx.lineTo(18, -12);
+      ctx.stroke();
+    }
+  }
+
+  function battleEdgeSprite(kind) {
+    if (battleEdgeCache.has(kind)) return battleEdgeCache.get(kind);
+    const W = 120;
+    const H = 100;
+    const AX = 60;
+    const AY = 88;
+    let sp = null;
+    try {
+      const c = makeCanvas(W * 2, H * 2);
+      const cx = c.getContext('2d');
+      cx.setTransform(2, 0, 0, 2, AX * 2, AY * 2);
+      paintBattleEdge(cx, kind);
+      sp = { canvas: c, ax: AX, ay: AY, w: W, h: H };
+    } catch (e) {
+      sp = null;
+    }
+    battleEdgeCache.set(kind, sp);
+    return sp;
+  }
+
+  const BATTLE_EDGES = [
+    { kind: 'crawler', gx: -2.7, gy: 4.8, s: 1.05 },
+    { kind: 'spire', gx: G * 0.48, gy: -2.7, s: 1.0 },
+    { kind: 'tower', gx: G + 2.7, gy: G * 0.4, s: 1.0 },
+    { kind: 'pod', gx: G * 0.7, gy: G + 2.6, s: 1.0 },
+    { kind: 'arch', gx: -2.6, gy: G * 0.72, s: 1.0 }
+  ];
+
+  function drawBattleEdges(ctx) {
+    if (CC.App && CC.App.mode !== 'battle') return;
+
+    // Пыльная дымка у дальних краёв арены: несколько мягких пятен.
+    ctx.globalAlpha = 0.05;
+    ctx.fillStyle = 'rgba(236,196,152,1)';
+    const haze = [P(G * 0.28, -2.3), P(G * 0.7, -2.6), P(-2.1, G * 0.34)];
+    for (let i = 0; i < haze.length; i++) {
+      ctx.beginPath();
+      ctx.ellipse(haze[i].x, haze[i].y - 10, 46, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    for (let i = 0; i < BATTLE_EDGES.length; i++) {
+      const it = BATTLE_EDGES[i];
+      const p = P(it.gx, it.gy);
+      if (!pointVisible(p.x, p.y, 100)) continue;
+      const sp = battleEdgeSprite(it.kind);
+      if (!sp) continue;
+      const w = sp.w * it.s;
+      const h = sp.h * it.s;
+      ctx.drawImage(sp.canvas, p.x - sp.ax * it.s, p.y - sp.ay * it.s, w, h);
+    }
+  }
+
   const vigCache = { key: '', canvas: null };
 
   function drawVignette(ctx, view) {
@@ -12100,6 +12309,7 @@ CC.Render = (function () {
     );
 
     drawGround(ctx);
+    drawBattleEdges(ctx);
     drawBuildGrid(ctx);
 
     if (battle) {

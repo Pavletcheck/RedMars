@@ -14,36 +14,45 @@
 <div id="app" data-mode="base">
   <canvas id="stage"></canvas>
 
-  <!-- верхний левый угол: опыт игрока, уровень кампании, звук -->
+  <!-- верхний левый угол: опыт, компактная полоса уровня/контракта/повторов, звук -->
   <div class="hud-tl">
-    <div class="player-badge" id="player-badge">
-      <b id="xp-level">1</b>
-      <div class="player-badge__body">
-        <span id="xp-label">0 / 100 XP</span>
-        <span class="player-badge__track"><i id="xp-bar"></i></span>
+    <div class="hud-cluster">
+      <div class="player-badge" id="player-badge">
+        <b id="xp-level">1</b>
+        <div class="player-badge__body">
+          <span id="xp-label">0 / 100 XP</span>
+          <span class="player-badge__track"><i id="xp-bar"></i></span>
+        </div>
+      </div>
+      <div class="hud-segments">
+        <button class="campaign-chip" id="lvl-chip" type="button" title="Уровни">Ур. 1</button>
+        <button class="campaign-chip daily-chip" id="daily-chip" type="button"
+                title="Ежедневный контракт: 5 звёзд">0/5 ★</button>
+        <button class="campaign-chip replay-chip" id="replay-chip" type="button"
+                title="Повторы нападений на базу">⟲</button>
+        <button class="ach-btn" id="ach-btn" title="Достижения">
+          <span class="ico ico-ach" aria-hidden="true">★</span>
+        </button>
       </div>
     </div>
-    <button class="campaign-chip" id="lvl-chip" type="button" title="Уровни">Ур. 1</button>
-    <button class="campaign-chip daily-chip" id="daily-chip" type="button"
-            title="Ежедневный контракт: 5 звёзд">Контракт 0/5 ★</button>
-    <button class="campaign-chip replay-chip" id="replay-chip" type="button"
-            title="Повторы нападений на базу">⟲ Повторы</button>
     <div class="audio-panel" id="audio-panel">
-      <button class="sound-btn" id="sound-btn" title="Звуки включены" aria-pressed="true">
+      <button class="sound-btn sound-btn_chip" id="sound-btn" title="Звук и музыка"
+              aria-pressed="true" aria-expanded="false">
         <span class="ico ico-sound" aria-hidden="true"></span>
+        <span class="sound-btn__label">Звук</span>
       </button>
-      <button class="sound-btn sound-btn_music" id="music-btn" title="Музыка включена" aria-pressed="true">
-        <span class="ico ico-music" aria-hidden="true">♫</span>
-      </button>
+      <div class="sound-popover hidden" id="sound-popover">
+        <button class="sound-btn sound-row" id="sound-toggle" type="button"
+                title="Звуки включены" aria-pressed="true">Звуки</button>
+        <button class="sound-btn sound-row sound-btn_music" id="music-btn" type="button"
+                title="Музыка включена" aria-pressed="true"><span class="ico ico-music" aria-hidden="true"></span> Музыка</button>
+        <div class="volume" id="volume">
+          <button class="volume__btn" id="vol-minus" title="Тише" aria-label="Тише">−</button>
+          <span class="volume__value" id="vol-value">50%</span>
+          <button class="volume__btn" id="vol-plus" title="Громче" aria-label="Громче">+</button>
+        </div>
+      </div>
     </div>
-    <div class="volume" id="volume">
-      <button class="volume__btn" id="vol-minus" title="Тише" aria-label="Тише">−</button>
-      <span class="volume__value" id="vol-value">50%</span>
-      <button class="volume__btn" id="vol-plus" title="Громче" aria-label="Громче">+</button>
-    </div>
-    <button class="ach-btn" id="ach-btn" title="Достижения">
-      <span class="ico ico-ach" aria-hidden="true">★</span>
-    </button>
   </div>
 
   <!-- верх по центру: строители / уровень, армия -->
@@ -101,18 +110,28 @@
 
   <!-- боевая верхняя панель -->
   <header class="hud">
-    <div class="hud__stat">
-      <span class="hud__label">Разрушено</span>
-      <span class="hud__value" id="pct">0%</span>
+    <div class="hud__timer">
+      <span class="hud__label">Осталось</span>
+      <b class="hud__value" id="timer">3:00</b>
     </div>
-    <div class="hud__stat">
-      <span class="hud__label">Время</span>
-      <span class="hud__value" id="timer">3:00</span>
+    <div class="hud__actions">
+      <button class="icon-btn hud__finish hidden" id="btn-finish" type="button"
+              title="Завершить бой? Звёзды и добыча сохранятся">Завершить</button>
+      <button class="hud__base" id="btn-battle-base" type="button" title="Вернуться на базу">На базу</button>
+      <button class="icon-btn" id="btn-restart" title="Начать заново">↻</button>
     </div>
-    <button class="icon-btn hud__finish hidden" id="btn-finish" type="button"
-            title="Завершить бой? Звёзды и добыча сохранятся">Завершить</button>
-    <button class="icon-btn" id="btn-restart" title="Начать заново">↻</button>
   </header>
+
+  <div class="battle-loot hidden" id="battle-loot"></div>
+  <div class="battle-stats hidden" id="battle-stats">
+    <b class="battle-stats__pct" id="pct">0%</b>
+    <span class="battle-stats__stars" id="battle-stars">☆☆☆</span>
+  </div>
+
+  <div class="battle-prep hidden" id="battle-prep">
+    <b class="battle-prep__text" id="battle-prep-text">Начало боя 3…</b>
+    <button class="battle-prep__skip" id="battle-prep-skip" type="button">Пропустить</button>
+  </div>
 
   <div class="bpanel hidden" id="builders-panel">
     <div class="bpanel__head">
@@ -265,6 +284,7 @@
     </div>
 
     <div class="selbar__row">
+      <button class="selbar__btn selbar__btn_info" data-act="info" id="sel-info" type="button">Инфо</button>
       <button class="selbar__btn selbar__btn_danger" data-act="remove">Убрать</button>
     </div>
   </div>
@@ -437,18 +457,26 @@
   </div>
 
   <div class="overlay hidden" id="overlay">
-    <div class="overlay__card result-card">
-      <div class="overlay__stars" id="stars"></div>
-      <h2 class="overlay__title" id="overlay-title">Победа</h2>
-      <p class="overlay__reason" id="overlay-reason"></p>
-      <p class="overlay__text" id="overlay-text"></p>
-      <p class="overlay__daily hidden" id="overlay-daily"></p>
-      <p class="overlay__loot" id="overlay-loot"></p>
-      <p class="overlay__army" id="overlay-army"></p>
-      <p class="overlay__lost hidden" id="overlay-lost"></p>
-      <p class="overlay__hint hidden" id="overlay-hint"></p>
-      <button class="overlay__btn" id="btn-again">Ещё раз</button>
-      <button class="overlay__btn overlay__btn_ghost" id="btn-tobase">На базу</button>
+    <div class="overlay__card result-card" id="result-card">
+      <div class="result-banner-wrap" aria-hidden="true">
+        <img class="result-banner" id="overlay-banner" alt="">
+        <span class="result-banner__fallback" id="overlay-banner-fallback">🏆</span>
+      </div>
+      <div class="result-body">
+        <div class="overlay__stars" id="stars"></div>
+        <h2 class="overlay__title result-title" id="overlay-title">Победа</h2>
+        <p class="overlay__reason" id="overlay-reason"></p>
+        <p class="overlay__text" id="overlay-text"></p>
+        <p class="overlay__daily hidden" id="overlay-daily"></p>
+        <div class="overlay__loot result-loot" id="overlay-loot"></div>
+        <p class="overlay__army" id="overlay-army"></p>
+        <p class="overlay__lost hidden" id="overlay-lost"></p>
+        <p class="overlay__hint hidden" id="overlay-hint"></p>
+        <div class="result-actions">
+          <button class="overlay__btn result-actions__main" id="btn-again">Ещё раз</button>
+          <button class="overlay__btn overlay__btn_ghost result-actions__second" id="btn-tobase">На базу</button>
+        </div>
+      </div>
     </div>
   </div>
 

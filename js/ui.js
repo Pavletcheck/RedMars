@@ -34,6 +34,7 @@ CC.UI = (function () {
   const selUpgrade = document.getElementById('sel-upgrade');
   const selUpgradeSpeed = document.getElementById('sel-upgrade-speed');
   const selPrice = document.getElementById('sel-upgrade-cost');
+  const selInfo = document.getElementById('sel-info');
   const selArmy = document.getElementById('sel-army');
   const labUp = document.getElementById('lab-up');
   const selHero = document.getElementById('sel-hero');
@@ -85,6 +86,16 @@ CC.UI = (function () {
   const overlayTitle = document.getElementById('overlay-title');
   const overlayText = document.getElementById('overlay-text');
   const btnAgain = document.getElementById('btn-again');
+  const resultCard = document.getElementById('result-card');
+  const resultBanner = document.getElementById('overlay-banner');
+  const resultBannerFallback = document.getElementById('overlay-banner-fallback');
+  const battleLootEl = document.getElementById('battle-loot');
+  const battleStatsEl = document.getElementById('battle-stats');
+  const battleStarsEl = document.getElementById('battle-stars');
+  const btnBattleBase = document.getElementById('btn-battle-base');
+  const battlePrepEl = document.getElementById('battle-prep');
+  const battlePrepText = document.getElementById('battle-prep-text');
+  const battlePrepSkip = document.getElementById('battle-prep-skip');
   const lvlChip = document.getElementById('lvl-chip');
   const levelPill = document.getElementById('level-pill');
   const levelBadge = document.getElementById('level-badge');
@@ -133,6 +144,8 @@ CC.UI = (function () {
   const loreSkipBtn = document.getElementById('lore-skip');
   const soundBtn = document.getElementById('sound-btn');
   const musicBtn = document.getElementById('music-btn');
+  const soundPopover = document.getElementById('sound-popover');
+  const soundToggle = document.getElementById('sound-toggle');
   const volValue = document.getElementById('vol-value');
   const volMinus = document.getElementById('vol-minus');
   const volPlus = document.getElementById('vol-plus');
@@ -350,6 +363,18 @@ CC.UI = (function () {
         soundBtn.addEventListener('click', function (e) {
           e.stopPropagation();
           CC.Sound.unlock();
+          const open = soundPopover ? soundPopover.classList.contains('hidden') : false;
+          if (soundPopover) soundPopover.classList.toggle('hidden', !open);
+          if (open) positionSoundPopover();
+          if (soundBtn.setAttribute) soundBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          syncSound();
+        });
+      }
+
+      if (soundToggle) {
+        soundToggle.addEventListener('click', function (e) {
+          e.stopPropagation();
+          CC.Sound.unlock();
           CC.Sound.setEnabled(!CC.Sound.isEnabled());
           if (CC.Sound.isEnabled()) CC.Sound.play('ui');
           syncSound();
@@ -365,6 +390,13 @@ CC.UI = (function () {
           syncSound();
         });
       }
+
+      document.addEventListener('click', function (e) {
+        if (!soundPopover || soundPopover.classList.contains('hidden')) return;
+        if (e.target.closest && e.target.closest('#audio-panel')) return;
+        soundPopover.classList.add('hidden');
+        if (soundBtn.setAttribute) soundBtn.setAttribute('aria-expanded', 'false');
+      });
 
       if (volMinus) {
         volMinus.addEventListener('click', function (e) {
@@ -404,6 +436,9 @@ CC.UI = (function () {
       if (CC.App.mode === 'battle' && battleIntro &&
         !battleIntro.classList.contains('hidden')) {
         positionBattleIntro();
+      }
+      if (soundPopover && !soundPopover.classList.contains('hidden')) {
+        positionSoundPopover();
       }
     });
 
@@ -667,13 +702,21 @@ CC.UI = (function () {
 
     if (btnRestart) btnRestart.addEventListener('click', restartBattle);
     if (btnFinish) btnFinish.addEventListener('click', finishBattleNow);
+    if (btnBattleBase) btnBattleBase.addEventListener('click', function () { setMode('base'); });
+    if (battlePrepSkip) {
+      battlePrepSkip.addEventListener('click', function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        skipBattlePrep();
+      });
+    }
     if (heroShieldBtn) {
       heroShieldBtn.addEventListener('click', function (e) {
         if (e && e.preventDefault) e.preventDefault();
         heroAbility();
       });
     }
-    btnAgain.addEventListener('click', battleAgain);    document.getElementById('btn-tobase').addEventListener('click', function () {
+    btnAgain.addEventListener('click', battleAgain);
+    document.getElementById('btn-tobase').addEventListener('click', function () {
       setMode('base');
     });
     btnOffline.addEventListener('click', function () {
@@ -2036,16 +2079,43 @@ CC.UI = (function () {
     raidEl.classList.remove('hidden');
   }
 
+  // Поповер держим в экране: на узком HUD он прижимается к левому краю,
+  // но не уходит за правую границу и не перекрывает нижнее меню.
+  function positionSoundPopover() {
+    if (!soundPopover || !soundPopover.parentElement) return;
+
+    const host = soundPopover.parentElement;
+    const hr = host.getBoundingClientRect();
+    const vw = (typeof window !== 'undefined' && window.innerWidth) || 0;
+    if (!vw) return;
+
+    const width = Math.max(160, Math.min(216, vw - 20));
+    soundPopover.style.width = Math.round(width) + 'px';
+
+    let left = 0;
+    const minLeft = 10 - hr.left;
+    const maxLeft = vw - 10 - width - hr.left;
+    if (left < minLeft) left = minLeft;
+    if (left > maxLeft) left = maxLeft;
+    soundPopover.style.left = Math.round(left) + 'px';
+  }
+
   function syncSound() {
     if (!CC.Sound) return;
 
     const on = CC.Sound.isEnabled();
     if (soundBtn) {
-      // Иконка нарисована CSS: эмодзи на iOS иногда превращается в пустой
-      // квадрат, а спикер из псевдоэлементов читается всегда.
-      soundBtn.title = on ? 'Звуки включены' : 'Звуки выключены';
+      // Иконка нарисована CSS; сам чип только открывает поповер.
+      soundBtn.title = on ? 'Звук: включён' : 'Звук: выключен';
       soundBtn.classList.toggle('is-muted', !on);
       if (soundBtn.setAttribute) soundBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+
+    if (soundToggle) {
+      soundToggle.textContent = on ? 'Звуки вкл' : 'Звуки выкл';
+      soundToggle.title = on ? 'Выключить звуки' : 'Включить звуки';
+      soundToggle.classList.toggle('is-muted', !on);
+      if (soundToggle.setAttribute) soundToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
 
     if (musicBtn) {
@@ -3511,7 +3581,18 @@ CC.UI = (function () {
     const prevType = selbar.dataset.type;
     selbar.dataset.type = it.type;
     // Новая постройка открывается с верха панели, а не с чужой прокрутки.
-    if (prevType !== it.type) selbar.scrollTop = 0;
+    if (prevType !== it.type) {
+      selbar.scrollTop = 0;
+      selbar.classList.remove('is-info-open');
+    }
+    const wide = it.type === 'barracks' || it.type === 'lab' || it.type === 'herohall';
+    selbar.classList.toggle('is-strip', !wide);
+    if (selInfo) {
+      const open = selbar.classList.contains('is-info-open');
+      const label = open ? 'Скрыть' : 'Инфо';
+      if (selInfo.textContent !== label) selInfo.textContent = label;
+      selInfo.classList.toggle('is-active', open);
+    }
 
     if (selIcon) {
       if (selIcon.dataset.type !== it.type) {
@@ -3995,6 +4076,17 @@ CC.UI = (function () {
   }
 
   function onSelbarClick(e) {
+    const infoBtn = e.target.closest('[data-act="info"]');
+    if (infoBtn) {
+      selbar.classList.toggle('is-info-open');
+      if (selInfo) {
+        const open = selbar.classList.contains('is-info-open');
+        selInfo.textContent = open ? 'Скрыть' : 'Инфо';
+        selInfo.classList.toggle('is-active', open);
+      }
+      return;
+    }
+
     // Ускорение прокачки героя платиной: отдельная кнопка в его карточке.
     const heroSpeedBtn = e.target.closest('[data-hero-speed]');
     if (heroSpeedBtn) {
@@ -4279,6 +4371,7 @@ CC.UI = (function () {
 
   function onPointerDown(e) {
     if (CC.App.introOpen) return; // заставка не пускает ввод в сцену
+    if (CC.App.prepActive) { skipBattlePrep(); return; }
 
     // ЛКМ и палец — игра; правая кнопка мыши — только панорама.
     const rightPan = e.pointerType === 'mouse' && e.button === 2;
@@ -4760,12 +4853,17 @@ CC.UI = (function () {
       const el = document.createElement('div');
       el.className = 'troop';
       el.dataset.type = type;
+      const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
+      const lvl = CC.Game && need > CC.Game.townhallLevel() ? 1 : CC.Game.troopLevel(type);
+      const art = cardArt('troop', type, 64, lvl, 'troop__art');
       el.innerHTML =
+        '<span class="troop__lvl">Ур. ' + lvl + '</span>' +
         '<span class="troop__icon cc-icon" data-type="' + type + '"' +
-        ' style="background:' + d.color + '">' + d.icon + '</span>' +
+        (art ? ' data-art="1"' : '') +
+        ' style="background:' + d.color + '">' + (art || d.icon) + '</span>' +
         '<span class="troop__name">' + d.name + '</span>' +
         '<span class="troop__req hidden"></span>' +
-        '<span class="troop__count">0</span>';
+        '<span class="troop__count">×0</span>';
 
       el.addEventListener('click', function () {
         if (el.classList.contains('is-locked')) {
@@ -4788,12 +4886,16 @@ CC.UI = (function () {
       const el = document.createElement('div');
       el.className = 'troop troop_hero';
       el.dataset.type = 'hero';
+      const heroLvl = CC.Game && CC.Game.heroLevel ? CC.Game.heroLevel() : 0;
+      const heroArt = cardArt('troop', 'hero', 64, Math.max(1, heroLvl), 'troop__art');
       el.innerHTML =
+        '<span class="troop__lvl">Ур. ' + Math.max(1, heroLvl) + '</span>' +
         '<span class="troop__icon cc-icon" data-type="hero"' +
-        ' style="background:' + hd.color + '">' + hd.icon + '</span>' +
+        (heroArt ? ' data-art="1"' : '') +
+        ' style="background:' + hd.color + '">' + (heroArt || hd.icon) + '</span>' +
         '<span class="troop__name">' + hd.name + '</span>' +
         '<span class="troop__req hidden"></span>' +
-        '<span class="troop__count">1</span>';
+        '<span class="troop__count">×1</span>';
 
       el.addEventListener('click', function () {
         if (el.classList.contains('is-locked')) {
@@ -4817,7 +4919,6 @@ CC.UI = (function () {
   function syncBattle() {
     const S = CC.Battle.state;
     if (!S) return;
-
     const pvp = S.kind === 'pvp';
     const replay = S.kind === 'replay';
     const th = CC.Game.townhallLevel();
@@ -4868,6 +4969,45 @@ CC.UI = (function () {
       btnFinish.disabled = !!S.over || replay;
     }
 
+    if (btnBattleBase) {
+      btnBattleBase.classList.toggle('hidden', !!S.over);
+      btnBattleBase.disabled = !!S.over;
+    }
+
+    if (battleLootEl) battleLootEl.classList.remove('hidden');
+    if (battleStatsEl) battleStatsEl.classList.remove('hidden');
+
+    // Верх справа: трофеи Арены или пул сектора. Без данных — «Сектор N».
+    if (battleLootEl) {
+      let line;
+      if (replay) {
+        line = 'Повтор · сектор ' + ((S.level | 0) + 1);
+      } else if (pvp) {
+        const g = pvpTarget || {};
+        line = 'Арена';
+        if (g.rating) line += ' · рейтинг ' + g.rating;
+        if (g.loot && ((g.loot.gold || 0) + (g.loot.elixir || 0) > 0)) {
+          line += ' · пул: ' + lootText(g.loot);
+        }
+      } else {
+        const pool = S.levelLoot || S.lootPool || {};
+        line = ((pool.gold || 0) + (pool.elixir || 0) > 0)
+          ? 'Добыча сектора: ' + lootText(pool)
+          : 'Сектор ' + ((S.level | 0) + 1);
+      }
+      if (battleLootEl.textContent !== line) battleLootEl.textContent = line;
+    }
+
+    if (battleStatsEl) {
+      const hall = S.buildings.find(function (b) { return b.type === 'townhall'; });
+      const starNow = CC.Battle.starsFor
+        ? CC.Battle.starsFor(S.percent, !!(hall && hall.dead)).stars
+        : 0;
+      if (battleStarsEl) {
+        battleStarsEl.textContent = '★'.repeat(starNow) + '☆'.repeat(3 - starNow);
+      }
+    }
+
     const pct = S.percent + '%';
     if (cache.pct !== pct) {
       pctEl.textContent = pct;
@@ -4903,7 +5043,7 @@ CC.UI = (function () {
       if (cache[type] === key) continue;
       cache[type] = key;
 
-      el.querySelector('.troop__count').textContent = n;
+      el.querySelector('.troop__count').textContent = '×' + n;
       el.classList.toggle('is-empty', n === 0 && !locked);
       el.classList.toggle('is-locked', locked);
       el.classList.toggle('is-selected', S.selected === type && !locked);
@@ -4929,7 +5069,7 @@ CC.UI = (function () {
       if (cache.heroCard !== key) {
         cache.heroCard = key;
         const cnt = heroEl.querySelector('.troop__count');
-        if (cnt) cnt.textContent = n;
+        if (cnt) cnt.textContent = '×' + n;
         const req = heroEl.querySelector('.troop__req');
         if (req) {
           req.textContent = locked ? 'с центра ' + need : '';
@@ -4965,6 +5105,56 @@ CC.UI = (function () {
       else if (S.kind === 'pvp') showPvpResult(S);
       else showOverlay(S.result);
     }
+  }
+
+  /* ---------- подготовка к бою ---------- */
+
+  let prepState = null;
+
+  function startBattlePrep(S) {
+    const ms = reducedMotion() ? 900 : 3000;
+    prepState = { state: S, until: Date.now() + ms, active: true };
+    CC.App.prepActive = true;
+  }
+
+  function skipBattlePrep() {
+    if (!prepState) return;
+    prepState.active = false;
+    CC.App.prepActive = false;
+    if (battlePrepEl) battlePrepEl.classList.add('hidden');
+  }
+
+  function syncBattlePrep() {
+    if (CC.App.mode !== 'battle' || !CC.Battle.state) {
+      prepState = null;
+      CC.App.prepActive = false;
+      if (battlePrepEl) battlePrepEl.classList.add('hidden');
+      return;
+    }
+
+    const S = CC.Battle.state;
+    if (!prepState || prepState.state !== S) startBattlePrep(S);
+
+    if (!prepState.active) {
+      CC.App.prepActive = false;
+      if (battlePrepEl) battlePrepEl.classList.add('hidden');
+      return;
+    }
+
+    const left = Math.max(0, prepState.until - Date.now());
+    if (left <= 0) {
+      prepState.active = false;
+      CC.App.prepActive = false;
+      if (battlePrepEl) battlePrepEl.classList.add('hidden');
+      return;
+    }
+
+    CC.App.prepActive = true;
+    if (battlePrepText) {
+      const text = 'Начало боя ' + Math.ceil(left / 1000) + '…';
+      if (battlePrepText.textContent !== text) battlePrepText.textContent = text;
+    }
+    if (battlePrepEl) battlePrepEl.classList.remove('hidden');
   }
 
   function syncQuestBar() {
@@ -5154,7 +5344,7 @@ CC.UI = (function () {
   }
 
   function tutorialBlocked() {
-    if (CC.App.introOpen || CC.App.modalOpen) return true;
+    if (CC.App.introOpen || CC.App.modalOpen || CC.App.prepActive) return true;
     if (loreOpen || askState || state.buildMode) return true;
     if (levelsOpen || achOpen || dailyOpen || arenaOpen || replaysOpen ||
         buyResOpen || buyPlatOpen || overlayShown) return true;
@@ -6121,6 +6311,7 @@ CC.UI = (function () {
     }
 
     syncTutorialPointer();
+    syncBattlePrep();
   }
 
   /* ---------- финал боя ---------- */
@@ -6150,10 +6341,33 @@ CC.UI = (function () {
     overlayShown = true;
     hideBattleIntro();
 
+    const win = !!res.win;
+    if (resultCard) {
+      resultCard.classList.toggle('is-win', win);
+      resultCard.classList.toggle('is-loss', !win);
+    }
+    if (resultBanner) {
+      const src = win ? 'assets/victory-banner.svg' : 'assets/defeat-banner.svg';
+      if (resultBannerFallback) {
+        resultBannerFallback.textContent = win ? '🏆' : '💥';
+        resultBannerFallback.classList.remove('hidden');
+      }
+      resultBanner.classList.add('hidden');
+      resultBanner.onload = function () {
+        resultBanner.classList.remove('hidden');
+        if (resultBannerFallback) resultBannerFallback.classList.add('hidden');
+      };
+      resultBanner.onerror = function () {
+        resultBanner.classList.add('hidden');
+        if (resultBannerFallback) resultBannerFallback.classList.remove('hidden');
+      };
+      resultBanner.src = src;
+    }
+
     // При поражении звёзд нет и анимировать нечего.
     starsEl.innerHTML = res.win ? resultStarsHtml(res.stars) : '';
 
-    overlayTitle.textContent = res.win ? 'Победа' : 'Поражение';
+    overlayTitle.textContent = win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ';
 
     // Причина звёзд: 50%, снос центра, 100% — игрок видит, за что получил ★.
     if (overlayReason) {
@@ -6180,18 +6394,37 @@ CC.UI = (function () {
     }
     if (CC.Sound) CC.Sound.play(res.win ? 'win' : 'lose');
 
+    // Добыча — отдельными чипами: руда / энергия / платина. Значения
+    // берём из фактически снесённых зданий, без «нарисованных» чисел.
     const actual = res.loot || { gold: 0, elixir: 0 };
     const offered = res.lootOffered || actual;
     const lost = res.lootLost || { gold: 0, elixir: 0 };
     const hasOffered = (offered.gold || 0) + (offered.elixir || 0) > 0;
     const emptyLoot = Array.isArray(res.emptyLoot) && res.emptyLoot.length > 0;
 
-    // Добыча — из фактически снесённых зданий, даже без звёзд. Пустое
-    // с прошлого захода хранилище честно помечаем.
-    let lootLine = hasOffered ? 'Добыча: ' + lootText(offered) : 'Добычи нет';
-    if (hasOffered && res.gems) lootLine += ' · +' + platText(res.gems);
-    if (emptyLoot) lootLine += ' · в этом складе уже пусто';
-    overlayLoot.textContent = lootLine;
+    if (overlayLoot) {
+      const chips = ['<span class="loot-chips__label">Добыча:</span>'];
+      if (offered.gold > 0) {
+        chips.push('<span class="loot-chip loot-chip_gold">🔩 <b>' +
+          fmtNum(offered.gold) + '</b> руды</span>');
+      }
+      if (offered.elixir > 0) {
+        chips.push('<span class="loot-chip loot-chip_elixir">⚡ <b>' +
+          fmtNum(offered.elixir) + '</b> энергии</span>');
+      }
+      if (res.gems) {
+        chips.push('<span class="loot-chip loot-chip_gems">' +
+          '<span class="ico ico-platinum" aria-hidden="true"></span> <b>+' +
+          res.gems + '</b> ' + platText(res.gems) + '</span>');
+      }
+      if (!hasOffered && !res.gems) {
+        chips.push('<span class="loot-chip loot-chip_empty">нет</span>');
+      }
+      if (emptyLoot) {
+        chips.push('<span class="loot-chip loot-chip_empty">в этом складе уже пусто</span>');
+      }
+      overlayLoot.innerHTML = chips.join('');
+    }
 
     const lostParts = [];
     if (lost.gold > 0) lostParts.push(lost.gold + ' руды');
@@ -6566,6 +6799,8 @@ CC.UI = (function () {
     lorePage: function () { return lorePage; },
     sergeantPrimary: sergeantPrimary,
     tutorialTarget: tutorialTarget,
+    skipBattlePrep: skipBattlePrep,
+    inBattlePrep: function () { return !!CC.App.prepActive; },
     openHangar: openHangar,
     heroAbility: heroAbility,
     closeQuestHint: closeQuestHint,

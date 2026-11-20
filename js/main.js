@@ -1068,7 +1068,7 @@ CC.CamMath = (function () {
   const MAX_ZOOM = 8;
   const MARGIN = 8;     // сколько пикселей поля можно выглянуть за экран
   const MAX_FIT_SCALE = 1.2; // не раздуваем маленькую базу через весь экран
-  const FOCUS_PAD = 2.5;     // отступ вокруг базы в тайлах
+  const FOCUS_PAD = 0.5;     // отступ вокруг базы в тайлах (бой)
 
   /* Базовый вид «в деревне» теперь вписывает рамку построек, а не
      фиксированное число тайлов. Нормы ниже — только для запасного
@@ -1241,8 +1241,13 @@ CC.CamMath = (function () {
   function layout(cam, w, h, gridW, gridH, tw, th, topPad, bandTop, bandH, focus, homeRect) {
     const rect = focus || { x0: 0, y0: 0, x1: gridW, y1: gridH };
     const box = worldBox(rect, tw, th);
+    const battle = !!focus;
 
-    const rawFit = Math.min((w * 0.96) / box.w, bandH / (box.h + topPad));
+    // Деревня вписывает ядро почти на всю ширину, бой — 55–70% ширины,
+    // чтобы база читалась как объект, а не как обои.
+    const widthShare = battle ? 0.68 : 0.96;
+    const padForFit = battle ? 8 : (topPad || 0);
+    const rawFit = Math.min((w * widthShare) / box.w, bandH / (box.h + padForFit));
     const fit = Math.min(rawFit, MAX_FIT_SCALE);
 
     cam.w = w;
@@ -1252,6 +1257,7 @@ CC.CamMath = (function () {
     cam.tileW = tw;
     cam.tileH = th;
     cam.focus = rect;
+    cam.focusMode = battle;
     cam.fitScale = fit;
     cam.centerWorldX = (box.minX + box.maxX) / 2;
     cam.centerWorldY = (box.minY + box.maxY) / 2;
@@ -1265,9 +1271,9 @@ CC.CamMath = (function () {
 
     cam.bandCenterY = bandTop + bandH / 2;
     cam.topPad = topPad;
-    // Опускаем мир на 20% высоты, но не глубже четверти полосы. Сдвиг
-    // одинаков для деревни и боя; фон/горизонт не двигаются.
-    cam.dropY = Math.max(0, Math.min(h * BASE_DROP, bandH * BASE_DROP_LIMIT));
+    // В деревне опускаем мир на 10% высоты; в бою держим базу между
+    // таймером и карточками без дополнительного сдвига.
+    cam.dropY = battle ? 0 : Math.max(0, Math.min(h * BASE_DROP, bandH * BASE_DROP_LIMIT));
     cam.centerX = w / 2 - cam.centerWorldX * fit;
     cam.centerY = cam.bandCenterY - cam.centerWorldY * fit + cam.dropY;
 
@@ -1297,7 +1303,17 @@ CC.CamMath = (function () {
     const fieldH = cam.gridH * cam.tileH * cam.scale;
 
     cam.ox = fitAxis(cam.ox - halfW, halfW * 2, cam.w) + halfW;
-    cam.oy = fitAxis(cam.oy, fieldH, cam.h, cam.dropY || 0);
+    if (cam.focusMode) {
+      // В бою кадр базы может быть меньше поля: не прижимаем его к самому
+      // верху, иначе база уезжает вниз под карточки. При ручном зуме поле
+      // снова клампим по краям, как обычно.
+      const floats = fieldH <= cam.h - 1;
+      const lo = cam.h - fieldH - (floats ? 24 : MARGIN);
+      const hi = floats ? 24 : MARGIN;
+      cam.oy = clamp(cam.oy, lo, hi);
+    } else {
+      cam.oy = fitAxis(cam.oy, fieldH, cam.h, cam.dropY || 0);
+    }
 
     cam.panX = cam.ox - cam.homeX;
     cam.panY = cam.oy - cam.homeY;
@@ -1503,11 +1519,11 @@ CC.CamMath = (function () {
     // В ландшафте HUD занимает углы, а не полосы сверху/снизу — оставляем полю
     // больше места. В портрете (десктоп) вписываем всё поле в остаток.
     const topPad = short ? 54 : 78;
-    const bandTop = portrait ? 146 : (short ? 74 : 96);
-    // в деревне снизу только терминал и «В бой», в бою — панель войск
     const baseMode = CC.App.mode !== 'battle';
+    const bandTop = portrait ? 146 : (baseMode ? (short ? 74 : 96) : 64);
+    // в деревне снизу только терминал и «В бой», в бою — панель войск
     const bandBottom = portrait ? 116
-      : (baseMode ? (short ? 84 : 92) : (short ? 96 : 108));
+      : (baseMode ? (short ? 84 : 92) : 132);
     const bandH = Math.max(120, h - bandTop - bandBottom);
 
     CC.Cam.dpr = dpr;
@@ -1729,10 +1745,12 @@ CC.CamMath = (function () {
     }
 
     if (CC.App.mode === 'battle') {
-      // В повторе набега доступны 1×/2×: ускоряем только бой, не камеру.
-      const pb = CC.Battle.state;
-      const speed = (pb && pb.kind === 'replay') ? (CC.App.replaySpeed || 1) : 1;
-      CC.Battle.update(dt * speed);
+      // В первые 3 секунды база только показывается: бой и таймер стоят.
+      if (!CC.App.prepActive) {
+        const pb = CC.Battle.state;
+        const speed = (pb && pb.kind === 'replay') ? (CC.App.replaySpeed || 1) : 1;
+        CC.Battle.update(dt * speed);
+      }
     }
     if (CC.Sound && CC.Sound.setMode) CC.Sound.setMode(CC.App.mode);
     stepCamTween(dt);
