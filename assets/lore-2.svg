@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="260" viewBox="0 0 640 260" role="img" aria-labelledby="l2t l2d">
+  <title id="l2t">Мёртвая колония</title>
+  <desc id="l2d">Брошенные марсианские модули в пыльной буре, погасшие огни.</desc>
+  <defs>
+    <linearGradient id="l2-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#17161b"/>
+      <stop offset=".38" stop-color="#302026"/>
+      <stop offset=".66" stop-color="#6d3830"/>
+      <stop offset=".86" stop-color="#7c4134"/>
+      <stop offset="1" stop-color="#41231f"/>
+    </linearGradient>
+    <linearGradient id="l2-ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#643427"/>
+      <stop offset=".55" stop-color="#47251f"/>
+      <stop offset="1" stop-color="#251515"/>
+    </linearGradient>
+    <linearGradient id="l2-metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#77807d"/>
+      <stop offset=".5" stop-color="#525b5a"/>
+      <stop offset="1" stop-color="#2d3538"/>
+    </linearGradient>
+    <linearGradient id="l2-metal-dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#434c4c"/>
+      <stop offset="1" stop-color="#242b2e"/>
+    </linearGradient>
+    <linearGradient id="l2-rust" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#864936"/>
+      <stop offset="1" stop-color="#4b2923"/>
+    </linearGradient>
+    <linearGradient id="l2-dust" x1="0" y1="0" x2="1" y2=".25">
+      <stop offset="0" stop-color="#dd9a70" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#dd9a70" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#dd9a70" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="l2-ember" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ff9e68" stop-opacity=".8"/>
+      <stop offset=".45" stop-color="#b75034" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#7b3228" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="640" height="260" fill="url(#l2-sky)"/>
+
+  <!-- пыльная буря: диагональные полосы -->
+  <g opacity=".5">
+    <path d="M-40 48 300 18 280 30-60 60z" fill="url(#l2-dust)"/>
+    <path d="M120 96 520 44 500 57 100 110z" fill="url(#l2-dust)"/>
+    <path d="M-20 144 680 82 660 95-40 160z" fill="url(#l2-dust)"/>
+    <path d="M40 196 700 138 690 150 30 210z" fill="url(#l2-dust)"/>
+  </g>
+  <g fill="#c88765" opacity=".18">
+    <circle cx="110" cy="70" r="2"/>
+    <circle cx="210" cy="118" r="1.4"/>
+    <circle cx="362" cy="66" r="1.8"/>
+    <circle cx="468" cy="120" r="1.2"/>
+    <circle cx="556" cy="86" r="1.5"/>
+  </g>
+
+  <!-- дальние скалы и мёртвые купола -->
+  <path d="M0 158 62 136 118 148 176 126 236 146 300 132 350 145 414 128 472 143 532 132 590 146 640 137v28H0z" fill="#3d2423" opacity=".8"/>
+  <g opacity=".85">
+    <path d="M150 158c0-15 11-25 27-25s27 10 27 25z" fill="url(#l2-metal-dark)"/>
+    <rect x="151" y="157" width="52" height="7" rx="2" fill="#2a3032"/>
+    <path d="M212 159c0-10 8-18 18-18s18 8 18 18z" fill="#353d3e"/>
+    <rect x="214" y="158" width="34" height="6" fill="#222a2d"/>
+    <path d="M264 158 284 139 312 157z" fill="#3d4647"/>
+    <path d="M286 142 292 159" stroke="#596362" stroke-width="2"/>
+    <rect x="320" y="151" width="52" height="10" rx="2" fill="url(#l2-metal)"/>
+    <path d="M330 151 338 136 356 151z" fill="#30383a"/>
+    <rect x="388" y="145" width="2" height="16" fill="#5e6866"/>
+    <path d="M386 145 396 139" stroke="#6e7875" stroke-width="1.6"/>
+  </g>
+
+  <!-- крупный мёртвый купол: читается и в мелком размере -->
+  <g>
+    <ellipse cx="188" cy="181" rx="88" ry="15" fill="#1d1414" opacity=".5"/>
+    <path d="M106 178c0-46 34-76 82-76s82 30 82 76z" fill="#2f383a"/>
+    <path d="M116 176c0-39 30-64 72-64s72 25 72 64z" fill="#465052"/>
+    <path d="M132 172c5-27 24-44 54-44s50 17 54 44z" fill="#5b6665" opacity=".55"/>
+    <path d="M176 174c8-16 20-24 35-22l-5 20-18 6z" fill="#161d20"/>
+    <path d="M156 179c-12-26-7-48 8-62" fill="none" stroke="#6c7775" stroke-width="2" opacity=".35"/>
+    <path d="M200 178c2-31 17-53 38-63" fill="none" stroke="#7a8582" stroke-width="2" opacity=".28"/>
+    <rect x="104" y="176" width="170" height="9" rx="3" fill="#252d2f"/>
+    <rect x="116" y="176" width="146" height="4" rx="2" fill="#4b5554" opacity=".5"/>
+    <rect x="248" y="145" width="2.6" height="33" fill="#4e5857"/>
+    <path d="M249 146 262 140" stroke="#5f6a68" stroke-width="1.6"/>
+    <circle cx="263" cy="139" r="2" fill="#3a4644"/>
+    <path d="M112 179c-8 10-10 20-4 30" fill="none" stroke="#1c2426" stroke-width="3"/>
+  </g>
+
+  <!-- дым и красная мгла -->
+  <ellipse cx="300" cy="150" rx="210" ry="35" fill="#b2654a" opacity=".1"/>
+  <g opacity=".28" fill="#8d8179">
+    <ellipse cx="220" cy="110" rx="58" ry="26"/>
+    <ellipse cx="300" cy="94" rx="76" ry="30"/>
+    <ellipse cx="400" cy="114" rx="62" ry="24"/>
+  </g>
+  <g opacity=".1" fill="#d7b298">
+    <ellipse cx="170" cy="100" rx="40" ry="12"/>
+    <ellipse cx="480" cy="88" rx="58" ry="14"/>
+  </g>
+
+  <!-- передний план: мёртвый модуль -->
+  <path d="M0 182 640 170v90H0z" fill="url(#l2-ground)"/>
+  <g>
+    <ellipse cx="398" cy="236" rx="165" ry="22" fill="#1e1212" opacity=".6"/>
+    <path d="M232 222 300 197 486 192 548 216 516 246 276 250z" fill="#242b2e"/>
+    <path d="M246 221 308 201 478 197 529 216 502 235 286 239z" fill="url(#l2-metal)"/>
+    <path d="M246 221 308 201 478 197 484 201 304 207 264 226z" fill="#7f8781" opacity=".28"/>
+    <path d="M286 226 500 220 494 236 292 240z" fill="#343d3f"/>
+    <path d="M318 207 354 202 338 232 306 235z" fill="url(#l2-rust)" opacity=".75"/>
+    <path d="M430 200 470 196 486 214 448 222z" fill="#5b3027" opacity=".7"/>
+    <path d="M380 199 408 198 398 230 370 232z" fill="#1c2325" opacity=".55"/>
+    <path d="M336 214 364 212 364 224 336 226z" fill="#182022" opacity=".6"/>
+    <path d="M276 217 250 188 272 194 288 222z" fill="#3e484a"/>
+    <path d="M500 204 522 180 534 190 514 215z" fill="#3a4345"/>
+    <path d="M258 236 C232 247 230 256 246 268" fill="none" stroke="#1c2427" stroke-width="3"/>
+    <path d="M504 231 C532 240 540 252 528 264" fill="none" stroke="#1a2226" stroke-width="3"/>
+    <!-- обломки -->
+    <path d="M168 246 208 238 226 250 190 258z" fill="#4b382f"/>
+    <path d="M178 245 206 240 214 247 190 252z" fill="#755847"/>
+    <path d="M548 243 590 235 608 248 570 255z" fill="#3d302b"/>
+    <path d="M558 243 586 238 596 245 570 250z" fill="#655044"/>
+  </g>
+
+  <!-- погасшая лампа и угли -->
+  <g>
+    <rect x="252" y="191" width="14" height="4" rx="2" fill="#333c3e"/>
+    <circle cx="259" cy="189" r="3" fill="#485556"/>
+    <circle cx="259" cy="189" r="1.1" fill="#6c7b79"/>
+    <circle cx="338" cy="249" r="12" fill="url(#l2-ember)" opacity=".55"/>
+    <circle cx="338" cy="249" r="1.6" fill="#d96f4c" opacity=".7"/>
+    <circle cx="468" cy="251" r="7" fill="url(#l2-ember)" opacity=".32"/>
+  </g>
+
+  <!-- низкая виньетка -->
+  <rect y="244" width="640" height="16" fill="#1b1112" opacity=".6"/>
+</svg>

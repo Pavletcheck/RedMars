@@ -158,7 +158,7 @@
     <div class="quest-list" id="quest-list"></div>
   </div>
 
-  <!-- Вступительный лор Сержанта: 4 страницы только на новом сейве.
+  <!-- Вступительный лор Сержанта: 3 кадра только на новом сейве.
        Кнопки «Далее» и «Пропустить» открывают обычную панель обучения. -->
   <div class="overlay hidden" id="sergeant-lore" role="dialog" aria-modal="true"
        aria-labelledby="lore-name" aria-describedby="lore-text">
@@ -169,9 +169,10 @@
         </div>
         <div class="lore__who">
           <b class="lore__name" id="lore-name">Сержант</b>
-          <span class="lore__step" id="lore-step">1/4</span>
+          <span class="lore__step" id="lore-step">1/3</span>
         </div>
       </div>
+      <img class="lore__art hidden" id="lore-art" alt="">
       <p class="lore__text" id="lore-text"></p>
       <div class="lore__dots" id="lore-dots" aria-hidden="true"></div>
       <div class="lore__actions">
@@ -370,6 +371,7 @@
     <div class="overlay__card levels map-wrap">
       <div class="levels__head">
         <h2 class="overlay__title">Карта Марса</h2>
+        <button class="chapter-btn" id="chapter-btn" type="button">Глава</button>
         <button class="levels__x" id="levels-x" title="Закрыть">✕</button>
       </div>
       <p class="levels__hint">5 эпох, 50 узлов. Звёзды — лучший результат. Для прохода хватит одной: 50% построек, снос центра или 100%.</p>
@@ -381,9 +383,29 @@
           <b class="map-card__name" id="map-card-name"></b>
           <span class="map-card__th" id="map-card-th"></span>
         </div>
+        <p class="map-card__chapter" id="map-card-chapter"></p>
         <p class="map-card__loot" id="map-card-loot"></p>
         <p class="map-card__best" id="map-card-best"></p>
         <button class="map-card__go" id="map-card-go" type="button" data-map-go="1">Атаковать</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="chapter">
+    <div class="overlay__card chapter-card">
+      <div class="chapter-head">
+        <button class="chapter-arrow" id="chapter-prev" type="button" title="Предыдущая глава">‹</button>
+        <h2 class="overlay__title chapter-title" id="chapter-title">Глава 1</h2>
+        <button class="chapter-arrow" id="chapter-next" type="button" title="Следующая глава">›</button>
+        <button class="levels__x" id="chapter-x" title="Закрыть">✕</button>
+      </div>
+      <p class="chapter-sub" id="chapter-sub"></p>
+      <div class="chapter-goals" id="chapter-goals"></div>
+      <p class="chapter-reward" id="chapter-reward">За каждый сектор: +1 платина · всего 10</p>
+      <p class="chapter-done hidden" id="chapter-done">Глава пройдена</p>
+      <div class="chapter-claim hidden" id="chapter-claim">
+        <span class="chapter-claim__reward">Награда главы: <b>+1 платина</b></span>
+        <button class="chapter-claim__btn" id="chapter-claim-btn" type="button">Получить</button>
       </div>
     </div>
   </div>

@@ -5877,6 +5877,28 @@ body {
 /* Заглушка в разметке больше не нужна: портрет рисует SVG. */
 #app .sergeant__face { display: none; }
 
+/* В окне лора тот же портрет Сержанта, что и в панели: SVG-фон вместо
+   скрытого эмодзи. ui.css задаёт золотую рамку и скругление, здесь только
+   картинка и тёмная подложка. */
+#app .lore__portrait {
+  background-color: #0a1014;
+  background-image:
+    url("../assets/sergeant-portrait.svg"),
+    radial-gradient(circle at 50% 35%, rgba(70, 224, 200, .18), transparent 64%);
+  background-repeat: no-repeat, no-repeat;
+  background-position: center, center;
+  background-size: cover, 100% 100%;
+}
+
+/* На 844×390 окно лора выше вьюпорта: чуть поджимаем арт и поля,
+   чтобы портрет и кнопки оставались целиком в кадре. */
+#app.is-short #sergeant-lore.overlay { padding: 12px; }
+#app.is-short .lore {
+  gap: 6px;
+  padding: 9px 12px;
+}
+#app.is-short .lore__art { height: 104px; }
+
 #app .sergeant__body {
   flex: 1 1 auto;
   min-width: 0;

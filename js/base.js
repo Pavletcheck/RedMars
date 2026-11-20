@@ -666,6 +666,9 @@ CC.Game = (function () {
         elixirEarned: 0, lootGold: 0, wallsPlaced: 0
       },
       achClaimed: {},
+      // Награды за завершённые главы кампании: era → true. Одна платина
+      // на главу, всего пять. Старый сейв без поля читается как пустой.
+      chapterClaims: {},
       army: copyArmy(CC.START_ARMY),
       extract: {},
       queue: [],
@@ -3769,6 +3772,51 @@ CC.Game = (function () {
     return i <= maxCleared + 1 || st.cleared.indexOf(i) !== -1;
   }
 
+  /* ---------- награды за главы кампании ---------- */
+
+  // Глава завершена, когда выполнены все три цели: 10 секторов, 30 звёзд
+  // и финальный сектор эпохи.
+  function chapterComplete(era) {
+    const e = Math.floor(Number(era));
+    if (!(e >= 0 && e < 5)) return false;
+    const start = e * 10;
+    const end = Math.min(LEVELS.length, start + 10);
+    let done = 0;
+    let stars = 0;
+    for (let i = start; i < end; i++) {
+      if (st.cleared.indexOf(i) !== -1) done++;
+      stars += st.stars[i] | 0;
+    }
+    return done >= 10 && stars >= 30 && st.cleared.indexOf(start + 9) !== -1;
+  }
+
+  function chapterClaimed(era) {
+    const e = Math.floor(Number(era));
+    if (!(e >= 0 && e < 5)) return false;
+    return !!(st.chapterClaims && st.chapterClaims[e]);
+  }
+
+  // Одна платина за главу. Повторный вызов и незавершённая глава ничего
+  // не выдают; состояние сразу пишется в сейв.
+  function claimChapterReward(era) {
+    const e = Math.floor(Number(era));
+    if (!(e >= 0 && e < 5)) return { error: 'Неизвестная глава' };
+    if (chapterClaimed(e)) {
+      return { error: 'Награда уже получена', claimed: true, chapter: e };
+    }
+    if (!chapterComplete(e)) {
+      return { error: 'Глава не завершена', chapter: e, complete: false };
+    }
+
+    st.chapterClaims[e] = true;
+    st.gems += 1;
+    save();
+
+    return {
+      ok: true, chapter: e, gems: 1, gemsTotal: gemsNow(), claimed: true
+    };
+  }
+
   // Выбор уровня для боя. Открытый уровень можно переиграть: меняется только
   // selected, прогресс st.level остаётся на первом непройденном.
   function selectLevel(index) {
@@ -3946,6 +3994,7 @@ CC.Game = (function () {
         xp: st.xp,
         stats: st.stats,
         achClaimed: st.achClaimed,
+        chapterClaims: st.chapterClaims,
         army: st.army,
         extract: st.extract,
         queue: st.queue,
@@ -4125,6 +4174,12 @@ CC.Game = (function () {
           }
         }
         s.achClaimed[id] = list;
+      }
+    }
+    if (d.chapterClaims && typeof d.chapterClaims === 'object') {
+      for (const era in d.chapterClaims) {
+        const n = Math.floor(num(era, -1));
+        if (n >= 0 && n < 5 && d.chapterClaims[era]) s.chapterClaims[n] = true;
       }
     }
     s.lastSeen = num(d.lastSeen, Date.now());
@@ -4858,6 +4913,9 @@ CC.Game = (function () {
     markLooted: markLooted,
     clearLooted: clearLooted,
     isLevelUnlocked: isLevelUnlocked,
+    chapterComplete: chapterComplete,
+    chapterClaimed: chapterClaimed,
+    claimChapterReward: claimChapterReward,
     selectLevel: selectLevel,
     upgradeSpent: upgradeSpent,
     gold: function () { return Math.floor(st.gold); },

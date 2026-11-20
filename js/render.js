@@ -235,7 +235,9 @@ CC.Render = (function () {
 
   function box(ctx, x0, y0, x1, y1, h, cBase) {
     prism(ctx, x0, y0, x1, y1, 0, h,
-      shade(cBase, 0.1), cBase, shade(cBase, -0.18));
+      mix(cBase, '#ffe1b4', 0.08),
+      mix(cBase, '#ffd2a0', 0.03),
+      shade(cBase, -0.24));
   }
 
   // мягкая тень под объёмом
@@ -246,16 +248,23 @@ CC.Render = (function () {
     const C = P(x1, y1);
     const D = P(x0, y1);
 
-    ctx.fillStyle = 'rgba(60,28,14,.16)';
+    ctx.fillStyle = 'rgba(60,28,14,.14)';
     diamond(ctx,
-      { x: A.x + 5 * s, y: A.y + 9 * s }, { x: B.x + 5 * s, y: B.y + 9 * s },
-      { x: C.x + 5 * s, y: C.y + 9 * s }, { x: D.x + 5 * s, y: D.y + 9 * s });
+      { x: A.x + 7 * s, y: A.y + 12 * s }, { x: B.x + 7 * s, y: B.y + 12 * s },
+      { x: C.x + 7 * s, y: C.y + 12 * s }, { x: D.x + 7 * s, y: D.y + 12 * s });
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(60,28,14,.22)';
+    ctx.fillStyle = 'rgba(60,28,14,.21)';
     diamond(ctx,
-      { x: A.x + 2 * s, y: A.y + 4 * s }, { x: B.x + 2 * s, y: B.y + 4 * s },
-      { x: C.x + 2 * s, y: C.y + 4 * s }, { x: D.x + 2 * s, y: D.y + 4 * s });
+      { x: A.x + 3 * s, y: A.y + 6 * s }, { x: B.x + 3 * s, y: B.y + 6 * s },
+      { x: C.x + 3 * s, y: C.y + 6 * s }, { x: D.x + 3 * s, y: D.y + 6 * s });
+    ctx.fill();
+
+    // дальний мягкий хвост длинной тени
+    ctx.fillStyle = 'rgba(60,28,14,.07)';
+    diamond(ctx,
+      { x: A.x + 12 * s, y: A.y + 20 * s }, { x: B.x + 12 * s, y: B.y + 20 * s },
+      { x: C.x + 12 * s, y: C.y + 20 * s }, { x: D.x + 12 * s, y: D.y + 20 * s });
     ctx.fill();
   }
 
@@ -1692,22 +1701,30 @@ CC.Render = (function () {
     { kind: 'arch', gx: -2.6, gy: G * 0.72, s: 1.0 }
   ];
 
-  function drawBattleEdges(ctx) {
-    if (CC.App && CC.App.mode !== 'battle') return;
+  // У базы — свой спокойный реквизит у кромки: модуль, скала и антенна.
+  const BASE_EDGES = [
+    { kind: 'pod', gx: -2.8, gy: G * 0.44, s: 1.15 },
+    { kind: 'arch', gx: G * 0.78, gy: -2.8, s: 0.95 },
+    { kind: 'tower', gx: G + 2.8, gy: G * 0.33, s: 1.05 }
+  ];
 
+  function drawEdgeProps(ctx, battle) {
     // Пыльная дымка у дальних краёв арены: несколько мягких пятен.
-    ctx.globalAlpha = 0.05;
-    ctx.fillStyle = 'rgba(236,196,152,1)';
-    const haze = [P(G * 0.28, -2.3), P(G * 0.7, -2.6), P(-2.1, G * 0.34)];
-    for (let i = 0; i < haze.length; i++) {
-      ctx.beginPath();
-      ctx.ellipse(haze[i].x, haze[i].y - 10, 46, 12, 0, 0, Math.PI * 2);
-      ctx.fill();
+    if (battle) {
+      ctx.globalAlpha = 0.05;
+      ctx.fillStyle = 'rgba(236,196,152,1)';
+      const haze = [P(G * 0.28, -2.3), P(G * 0.7, -2.6), P(-2.1, G * 0.34)];
+      for (let i = 0; i < haze.length; i++) {
+        ctx.beginPath();
+        ctx.ellipse(haze[i].x, haze[i].y - 10, 46, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
 
-    for (let i = 0; i < BATTLE_EDGES.length; i++) {
-      const it = BATTLE_EDGES[i];
+    const list = battle ? BATTLE_EDGES : BASE_EDGES;
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
       const p = P(it.gx, it.gy);
       if (!pointVisible(p.x, p.y, 100)) continue;
       const sp = battleEdgeSprite(it.kind);
@@ -1716,6 +1733,42 @@ CC.Render = (function () {
       const h = sp.h * it.s;
       ctx.drawImage(sp.canvas, p.x - sp.ax * it.s, p.y - sp.ay * it.s, w, h);
     }
+  }
+
+  const lightCache = { key: '', canvas: null };
+
+  // Тёплый ключевой свет сверху-слева и мягкий холодный уход вправо-вниз.
+  // Один закэшированный прямоугольник на кадр: интерфейс не затрагивается,
+  // потому что слой лежит на canvas под DOM-HUD.
+  function drawLightPass(ctx, view) {
+    const key = view.w + 'x' + view.h;
+
+    if (lightCache.key !== key || !lightCache.canvas) {
+      try {
+        const c = makeCanvas(view.w, view.h);
+        const cx = c.getContext('2d');
+        const g = cx.createLinearGradient(0, 0, view.w * 0.92, view.h);
+        g.addColorStop(0, 'rgba(255,214,160,.10)');
+        g.addColorStop(0.36, 'rgba(255,214,160,.025)');
+        g.addColorStop(0.62, 'rgba(28,44,52,.015)');
+        g.addColorStop(1, 'rgba(20,34,42,.07)');
+        cx.fillStyle = g;
+        cx.fillRect(0, 0, view.w, view.h);
+
+        const b = cx.createLinearGradient(0, view.h * 0.68, 0, view.h);
+        b.addColorStop(0, 'rgba(24,12,8,0)');
+        b.addColorStop(1, 'rgba(24,12,8,.10)');
+        cx.fillStyle = b;
+        cx.fillRect(0, 0, view.w, view.h);
+
+        lightCache.canvas = c;
+        lightCache.key = key;
+      } catch (e) {
+        lightCache.canvas = null;
+      }
+    }
+
+    if (lightCache.canvas) ctx.drawImage(lightCache.canvas, 0, 0, view.w, view.h);
   }
 
   const vigCache = { key: '', canvas: null };
@@ -12309,7 +12362,7 @@ CC.Render = (function () {
     );
 
     drawGround(ctx);
-    drawBattleEdges(ctx);
+    drawEdgeProps(ctx, battle);
     drawBuildGrid(ctx);
 
     if (battle) {
@@ -12341,6 +12394,7 @@ CC.Render = (function () {
     }
 
     ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    drawLightPass(ctx, view);
     drawVignette(ctx, view);
     drawFinal(ctx, view);
     syncBuyHud();

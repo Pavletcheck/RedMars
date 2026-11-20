@@ -3338,6 +3338,342 @@ html, body { width: 100%; height: 100%; }
 
 .map-card.is-locked { border-color: #8b7d66; }
 
+/* ---- P2: глава кампании ---- */
+
+.chapter-btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 2px solid #6f5a38;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff4c8, #edcd83);
+  color: #4a3418;
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 2px 0 rgba(70, 50, 20, .28);
+}
+
+#app .chapter-card {
+  width: min(560px, calc(100vw - 20px));
+  max-width: min(560px, calc(100vw - 20px));
+  max-height: calc(100dvh - 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  overflow: hidden;
+}
+
+.chapter-head {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+  align-items: center;
+  gap: 6px;
+}
+
+.chapter-title {
+  margin: 0;
+  font-size: var(--fs-20);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chapter-arrow {
+  min-width: 44px;
+  min-height: 44px;
+  border: 2px solid #6f5a38;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff8e8, #e8d8b6);
+  color: #4a3418;
+  font: inherit;
+  font-size: 1.3rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chapter-arrow:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.chapter-head .levels__x {
+  position: static;
+  width: 44px;
+  height: 44px;
+}
+
+.chapter-sub {
+  margin: 0;
+  font-size: var(--fs-12);
+  font-weight: 800;
+  color: var(--hud-muted);
+  text-align: center;
+}
+
+.chapter-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chapter-goal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(90, 62, 28, .28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff8e8, #efe0c2);
+}
+
+.chapter-goal__text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.chapter-goal__text b {
+  font-size: var(--fs-12);
+  font-weight: 900;
+  color: #3a2812;
+}
+
+.chapter-goal__text span {
+  font-size: var(--fs-12);
+  font-weight: 900;
+  color: #7a5a12;
+  font-variant-numeric: tabular-nums;
+}
+
+.chapter-goal__bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(90, 62, 28, .18);
+  overflow: hidden;
+}
+
+.chapter-goal__bar b {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #76c25a, #3d8a2a);
+}
+
+.chapter-goal__go {
+  min-width: 104px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 2px solid #2f6423;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #76c25a, #3d8a2a);
+  color: #fff;
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.chapter-goal__go:disabled {
+  border-color: #7b6d57;
+  background: linear-gradient(180deg, #cdc2ae, #9f937e);
+  color: #4d4232;
+  text-shadow: none;
+  cursor: default;
+}
+
+.chapter-goal.is-done {
+  border-color: rgba(61, 138, 42, .55);
+  background: linear-gradient(180deg, #f4fbe9, #dcecc8);
+}
+
+.chapter-reward {
+  margin: 0;
+  font-size: var(--fs-12);
+  font-weight: 800;
+  color: var(--hud-muted);
+  text-align: center;
+}
+
+.chapter-done {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #76c25a, #3d8a2a);
+  color: #fff;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.chapter-done.hidden { display: none; }
+
+.chapter-claim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid rgba(255, 207, 74, .42);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 207, 74, .16), rgba(255, 207, 74, .07));
+}
+
+.chapter-claim.hidden { display: none; }
+
+.chapter-claim__reward {
+  font-size: var(--fs-12);
+  font-weight: 700;
+  color: var(--hud-muted);
+}
+
+.chapter-claim__reward b {
+  color: var(--hud-gold);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.chapter-claim__btn {
+  flex: 0 0 auto;
+  min-width: 124px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 2px solid #2f6423;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #76c25a, #3d8a2a);
+  color: #fff;
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(20, 60, 15, .45);
+}
+
+.chapter-claim__btn:disabled {
+  border-color: #7b6d57;
+  background: linear-gradient(180deg, #cdc2ae, #9f937e);
+  color: #4d4232;
+  text-shadow: none;
+  cursor: default;
+}
+
+.chapter-claim__btn.is-claimed {
+  border-color: rgba(147, 167, 173, .35);
+  background: rgba(147, 167, 173, .16);
+  color: var(--hud-muted);
+}
+
+/* ---- P2: сундуки на карте и линия пути ---- */
+
+#app .map-link.is-done {
+  background: linear-gradient(90deg, #4f9a3c, #76c25a);
+}
+
+#app .map-link.is-open {
+  background: repeating-linear-gradient(90deg,
+    rgba(181, 122, 18, .85) 0 6px, rgba(181, 122, 18, .15) 6px 11px);
+}
+
+/* 10 узлов + 3 сундука должны влезать в 620 px карты без обрезки. */
+#app .map-era__track .map-node {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+}
+
+.map-era__track .map-chest {
+  flex: 0 0 32px;
+  width: 32px;
+}
+
+.map-era__track .map-chest__icon { font-size: .9rem; }
+.map-era__track .map-chest__label { font-size: .46rem; }
+
+#app .map-era__track .map-link { min-width: 4px; }
+.map-node--current {
+  border-color: #b57a12;
+  box-shadow: 0 0 0 3px rgba(240, 196, 84, .55), 0 2px 0 rgba(70, 50, 20, .28);
+}
+
+.map-chest {
+  flex: 0 0 40px;
+  width: 40px;
+  min-height: 44px;
+  padding: 1px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border: 2px dashed rgba(122, 98, 55, .6);
+  border-radius: 10px;
+  background: rgba(255, 248, 232, .7);
+  font: inherit;
+  cursor: pointer;
+}
+
+.map-chest__icon { font-size: 1rem; line-height: 1.1; }
+
+.map-chest__label {
+  font-size: .5rem;
+  font-weight: 900;
+  color: #7a5a12;
+  white-space: nowrap;
+}
+
+.map-chest.is-open {
+  border-style: solid;
+  border-color: #b57a12;
+  background: linear-gradient(180deg, #fff4c8, #f2cf74);
+}
+
+.map-chest.is-open .map-chest__label { color: #3d6b27; }
+
+.map-card__chapter {
+  grid-column: 1 / 2;
+  margin: 0;
+  font-size: .62rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #4a6b1f;
+}
+
+@media (max-height: 430px) {
+  /* Верхний HUD на телефоне перекрывает шапку карты: опускаем карточку
+     ниже чипов, чтобы «Карта Марса», «Глава» и ✕ были видны целиком. */
+  #levels { padding-top: 52px; padding-bottom: 8px; }
+  #app .map-wrap { max-height: calc(100dvh - 62px); }
+  #chapter { padding-top: 52px; padding-bottom: 8px; }
+
+  #app .chapter-card { gap: 4px; padding: 8px 10px 9px; max-height: calc(100dvh - 62px); }
+  .chapter-head { grid-template-columns: 44px minmax(0, 1fr) 44px 44px; }
+  .chapter-title { font-size: var(--fs-16); }
+  .chapter-goal { padding: 2px 7px; }
+  .chapter-goal__bar { height: 4px; }
+  .chapter-goal__go { min-width: 92px; }
+  .chapter-reward { font-size: .62rem; }
+  .chapter-done { padding: 3px 8px; font-size: .62rem; line-height: 1.2; }
+  /* Когда появилась награда главы, строка «за сектор» дублируется — убираем
+     её, чтобы все три цели влезали без обрезки. */
+  #app .chapter-card:has(.chapter-claim:not(.hidden)) .chapter-reward { display: none; }
+  .chapter-claim { padding: 4px 6px 4px 10px; gap: 6px; }
+  .chapter-claim__reward { font-size: .62rem; }
+  .chapter-claim__btn { min-width: 112px; }
+  .map-chest { flex-basis: 36px; width: 36px; }
+}
+
 @media (max-width: 520px) {
   .map-card { grid-template-columns: 1fr; }
   .map-card__go { grid-column: 1 / 2; grid-row: auto; width: 100%; }
@@ -4762,6 +5098,19 @@ html, body { width: 100%; height: 100%; }
 
 .lore__portrait .sergeant__face { font-size: 2rem; }
 
+.lore__art {
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(233, 242, 243, .16);
+}
+
+.lore__art.hidden { display: none !important; }
+
 .lore__who {
   min-width: 0;
   display: flex;
@@ -4774,14 +5123,14 @@ html, body { width: 100%; height: 100%; }
   font-weight: 900;
   letter-spacing: .04em;
   text-transform: uppercase;
-  color: #4a2f12;
+  color: var(--hud-text);
 }
 
 .lore__step {
   font-size: .7rem;
   font-weight: 800;
-  opacity: .65;
-  color: #4a2f12;
+  opacity: .75;
+  color: var(--hud-muted);
 }
 
 .lore__text {
@@ -4793,7 +5142,7 @@ html, body { width: 100%; height: 100%; }
   font-size: .92rem;
   font-weight: 700;
   line-height: 1.4;
-  color: #33210f;
+  color: var(--hud-text);
 }
 
 .lore__dots {
@@ -4836,10 +5185,17 @@ html, body { width: 100%; height: 100%; }
   padding: 10px 12px;
 }
 
+.is-short .lore__art { height: 120px; }
+#app.is-short .lore__art { height: 120px; }
+
 .is-short .lore__portrait { width: 48px; height: 48px; }
 .is-short .lore__portrait .sergeant__face { font-size: 1.5rem; }
 .is-short .lore__name { font-size: .86rem; }
-.is-short .lore__text { font-size: .78rem; line-height: 1.32; }
+.is-short .lore__text {
+  font-size: .82rem;
+  line-height: 1.34;
+  color: var(--hud-text);
+}
 .is-short .lore__actions .overlay__btn { min-height: 44px; font-size: .74rem; }
 
 /* ---------- герой «Сержант» ---------- */

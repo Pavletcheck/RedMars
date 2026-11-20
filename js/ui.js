@@ -102,6 +102,18 @@ CC.UI = (function () {
   const levelsEl = document.getElementById('levels');
   const levelsGrid = document.getElementById('levels-grid');
   const levelsX = document.getElementById('levels-x');
+  const chapterEl = document.getElementById('chapter');
+  const chapterX = document.getElementById('chapter-x');
+  const chapterPrev = document.getElementById('chapter-prev');
+  const chapterNext = document.getElementById('chapter-next');
+  const chapterTitle = document.getElementById('chapter-title');
+  const chapterSub = document.getElementById('chapter-sub');
+  const chapterGoals = document.getElementById('chapter-goals');
+  const chapterReward = document.getElementById('chapter-reward');
+  const chapterDone = document.getElementById('chapter-done');
+  const chapterClaim = document.getElementById('chapter-claim');
+  const chapterClaimBtn = document.getElementById('chapter-claim-btn');
+  const chapterBtn = document.getElementById('chapter-btn');
   const xpLevel = document.getElementById('xp-level');
   const xpLabel = document.getElementById('xp-label');
   const xpBar = document.getElementById('xp-bar');
@@ -139,6 +151,7 @@ CC.UI = (function () {
   const loreName = document.getElementById('lore-name');
   const loreStepEl = document.getElementById('lore-step');
   const loreText = document.getElementById('lore-text');
+  const loreArtEl = document.getElementById('lore-art');
   const loreDots = document.getElementById('lore-dots');
   const loreNextBtn = document.getElementById('lore-next');
   const loreSkipBtn = document.getElementById('lore-skip');
@@ -208,6 +221,7 @@ CC.UI = (function () {
   const mapCard = document.getElementById('map-card');
   const mapCardName = document.getElementById('map-card-name');
   const mapCardTh = document.getElementById('map-card-th');
+  const mapCardChapter = document.getElementById('map-card-chapter');
   const mapCardLoot = document.getElementById('map-card-loot');
   const mapCardBest = document.getElementById('map-card-best');
   const mapCardGo = document.getElementById('map-card-go');
@@ -287,6 +301,8 @@ CC.UI = (function () {
   let questGoal = null; // следующий центр после всех заданий
   let dailyOpen = false;
   let mapSelected = null;      // индекс уровня, открытого в карточке карты
+  let chapterOpen = false;
+  let chapterIndex = 0;
   let replaysOpen = false;
   let replayRecord = null;     // запись, которую сейчас смотрим
   let replayEndShown = false;
@@ -490,6 +506,49 @@ CC.UI = (function () {
     if (lvlChip) lvlChip.addEventListener('click', openLevels);
     if (levelsX) levelsX.addEventListener('click', closeLevels);
     if (levelsGrid) levelsGrid.addEventListener('click', onLevelsClick);
+
+    // Глава кампании: стрелки ‹ ›, цели и возврат на карту.
+    if (chapterBtn) {
+      chapterBtn.addEventListener('click', function () {
+        const era = mapSelected === null ? Math.floor(CC.Game.currentLevel() / 10)
+          : Math.floor(mapSelected / 10);
+        openChapter(era);
+      });
+    }
+    if (chapterX) chapterX.addEventListener('click', closeChapter);
+    if (chapterPrev) {
+      chapterPrev.addEventListener('click', function () {
+        if (chapterIndex <= 0) return;
+        chapterIndex--;
+        syncChapter();
+      });
+    }
+    if (chapterNext) {
+      chapterNext.addEventListener('click', function () {
+        if (chapterIndex >= 4) return;
+        chapterIndex++;
+        syncChapter();
+      });
+    }
+    if (chapterGoals) {
+      chapterGoals.addEventListener('click', function (e) {
+        const go = e.target.closest('[data-chapter-go]');
+        if (!go || go.disabled) return;
+        const target = go.getAttribute('data-chapter-go');
+        if (target === '') return;
+        chapterGo(Number(target));
+      });
+    }
+    if (chapterClaimBtn) {
+      chapterClaimBtn.addEventListener('click', function () {
+        claimChapter();
+      });
+    }
+    if (chapterEl) {
+      chapterEl.addEventListener('click', function (e) {
+        if (e.target === chapterEl) closeChapter();
+      });
+    }
     if (mapCard) {
       mapCard.addEventListener('click', function (e) {
         const go = e.target.closest('[data-map-go]');
@@ -1598,7 +1657,7 @@ CC.UI = (function () {
   // Открыт ли поверх сцены хоть один экран. Нужен, чтобы служебные тосты
   // не всплывали поверх кнопок модальных окон.
   function anyOverlayOpen() {
-    if (shopOpen || levelsOpen || achOpen || dailyOpen || arenaOpen ||
+    if (shopOpen || levelsOpen || chapterOpen || achOpen || dailyOpen || arenaOpen ||
         replaysOpen || buyResOpen || buyPlatOpen || askState) return true;
     if (overlayShown) return true;
     if (replayEnd && !replayEnd.classList.contains('hidden')) return true;
@@ -2173,6 +2232,164 @@ CC.UI = (function () {
     'Красные пески', 'Кратеры', 'Ледяные жилы', 'Разлом', 'Купол'
   ];
 
+  /* ---------- глава кампании ---------- */
+
+  function chapterRange(era) {
+    return { start: era * 10, end: Math.min(CC.LEVELS.length, era * 10 + 10) };
+  }
+
+  function chapterStats(era) {
+    const r = chapterRange(era);
+    const cleared = CC.Game.clearedLevels();
+    let done = 0;
+    let stars = 0;
+    for (let i = r.start; i < r.end; i++) {
+      if (cleared.indexOf(i) !== -1) done++;
+      stars += CC.Game.levelStars(i);
+    }
+    const finalDone = cleared.indexOf(r.start + 9) !== -1;
+    const complete = done >= 10 && stars >= 30 && finalDone;
+    return { done: done, stars: stars, final: finalDone, complete: complete,
+      start: r.start, end: r.end };
+  }
+
+  function firstChapterTarget(era, needStars) {
+    const r = chapterRange(era);
+    const cleared = CC.Game.clearedLevels();
+    for (let i = r.start; i < r.end; i++) {
+      if (needStars) {
+        if (CC.Game.levelStars(i) < 3) return i;
+      } else if (cleared.indexOf(i) === -1) {
+        return i;
+      }
+    }
+    // Всё пройдено — хотя бы последний сектор главы, как ориентир.
+    return r.start + 9;
+  }
+
+  function chapterTargetInfo(index) {
+    const target = Number(index);
+    if (!(target >= 0 && target < CC.LEVELS.length)) {
+      return { ok: false, target: null, label: 'Недоступно' };
+    }
+    const unlocked = CC.Game.isLevelUnlocked(target);
+    return {
+      ok: unlocked, target: target,
+      label: unlocked ? 'Перейти' : 'Недоступно'
+    };
+  }
+
+  function syncChapter() {
+    if (!chapterOpen || !chapterEl) return;
+
+    const era = Math.max(0, Math.min(4, chapterIndex));
+    const st = chapterStats(era);
+    if (chapterTitle) chapterTitle.textContent = 'Глава ' + (era + 1) + ': ' + MAP_ERAS[era];
+    if (chapterSub) {
+      chapterSub.textContent = 'Эпоха ' + (era + 1) + ' из 5 · сектора ' +
+        (st.start + 1) + '–' + (st.end) + ' · ★ ' + st.stars + '/30';
+    }
+    if (chapterPrev) chapterPrev.disabled = era <= 0;
+    if (chapterNext) chapterNext.disabled = era >= 4;
+    if (chapterReward) {
+      chapterReward.textContent = 'За каждый сектор: +1 платина · всего 10';
+    }
+    if (chapterDone) chapterDone.classList.toggle('hidden', !st.final);
+
+    // Награда главы: только когда закрыты все три цели. Одна платина,
+    // после получения кнопка гаснет и остаётся «Получено».
+    const claimed = CC.Game.chapterClaimed ? CC.Game.chapterClaimed(era) : false;
+    if (chapterClaim) chapterClaim.classList.toggle('hidden', !st.complete);
+    if (chapterClaimBtn) {
+      chapterClaimBtn.disabled = !st.complete || claimed;
+      const label = claimed ? 'Получено' : 'Получить';
+      if (chapterClaimBtn.textContent !== label) chapterClaimBtn.textContent = label;
+      chapterClaimBtn.classList.toggle('is-claimed', claimed);
+    }
+
+    if (chapterGoals) {
+      const goals = [
+        { id: 'sectors', name: 'Пройдено секторов', cur: st.done, max: 10,
+          done: st.done >= 10, target: firstChapterTarget(era, false) },
+        { id: 'stars', name: 'Собрано звёзд', cur: st.stars, max: 30,
+          done: st.stars >= 30, target: firstChapterTarget(era, true) },
+        { id: 'final', name: 'Финал главы', cur: st.final ? 1 : 0, max: 1,
+          done: st.final, target: st.start + 9 }
+      ];
+
+      let html = '';
+      goals.forEach(function (g) {
+        const info = chapterTargetInfo(g.target);
+        const pct = Math.round(Math.min(1, g.cur / g.max) * 100);
+        html += '<div class="chapter-goal' + (g.done ? ' is-done' : '') +
+          '" data-goal="' + g.id + '">' +
+          '<div class="chapter-goal__text">' +
+            '<b>' + g.name + '</b>' +
+            '<span>' + g.cur + '/' + g.max + '</span>' +
+            '<i class="chapter-goal__bar"><b style="width:' + pct + '%"></b></i>' +
+          '</div>' +
+          '<button class="chapter-goal__go" type="button" data-chapter-go="' +
+            (g.done || !info.target ? '' : info.target) + '"' +
+            (g.done || !info.ok ? ' disabled' : '') +
+            '>' + (g.done ? 'Готово' : info.label) + '</button>' +
+          '</div>';
+      });
+      if (chapterGoals.innerHTML !== html) chapterGoals.innerHTML = html;
+    }
+  }
+
+  function openChapter(era) {
+    let n = Number(era);
+    if (!isFinite(n)) {
+      const base = mapSelected === null ? CC.Game.currentLevel() : mapSelected;
+      n = Math.floor(base / 10);
+    }
+    chapterIndex = Math.max(0, Math.min(4, Math.floor(n)));
+    chapterOpen = true;
+    if (chapterEl) chapterEl.classList.remove('hidden');
+    syncChapter();
+    return { ok: true, chapter: chapterIndex };
+  }
+
+  function closeChapter() {
+    chapterOpen = false;
+    if (chapterEl) chapterEl.classList.add('hidden');
+  }
+
+  function chapterGo(index) {
+    const info = chapterTargetInfo(index);
+    if (!info.ok) {
+      toast('Сначала пройди предыдущий сектор');
+      return { error: 'Недоступно', target: info.target };
+    }
+    mapSelected = info.target;
+    cache.levelSig = null;
+    closeChapter();
+    syncLevels();
+    return { ok: true, level: info.target };
+  }
+
+  // Забрать платину за завершённую главу. Глава считается завершённой,
+  // когда закрыты все три цели: сектора, звёзды и финал. Повторная выдача
+  // исключена в CC.Game.claimChapterReward и заблокированной кнопкой.
+  function claimChapter() {
+    if (!chapterOpen) return { error: 'Глава закрыта' };
+    const era = chapterIndex;
+    if (!CC.Game || !CC.Game.claimChapterReward) {
+      return { error: 'Награда недоступна' };
+    }
+
+    const res = CC.Game.claimChapterReward(era);
+    if (res.ok) {
+      toast('Глава ' + (era + 1) + ': +1 платина');
+      syncChapter();
+      sync();
+    } else if (res.error === 'Награда уже получена') {
+      syncChapter();
+    }
+    return res;
+  }
+
   function openLevels() {
     if (drag) dragCancel();
     cancelArm();
@@ -2198,6 +2415,7 @@ CC.UI = (function () {
 
   function closeLevels() {
     levelsOpen = false;
+    closeChapter();
     if (levelsEl) levelsEl.classList.add('hidden');
   }
 
@@ -2247,6 +2465,8 @@ CC.UI = (function () {
       const eras = [];
       for (let era = 0; era < 5; era++) {
         const nodes = [];
+        const eraStars = mapEraStars(era);
+        const chests = [3, 6, 10];
         for (let i = era * 10; i < era * 10 + 10 && i < CC.LEVELS.length; i++) {
           const lvl = CC.LEVELS[i];
           const state = mapNodeState(i);
@@ -2267,8 +2487,31 @@ CC.UI = (function () {
               : '') +
             '</button>'
           );
+          const step = i - era * 10 + 1; // номер сектора внутри главы: 1..10
           if (i < era * 10 + 9 && i + 1 < CC.LEVELS.length) {
-            nodes.push('<span class="map-link" aria-hidden="true"></span>');
+            // Линия пути: пройденный отрезок залит, открытый — пунктиром.
+            const next = i + 1;
+            const prevCleared = cleared.indexOf(i) !== -1;
+            const nextOpen = CC.Game.isLevelUnlocked(next);
+            nodes.push('<span class="map-link' +
+              (prevCleared ? ' is-done' : '') +
+              (nextOpen && !prevCleared ? ' is-open' : '') +
+              '" aria-hidden="true"></span>');
+          }
+          if (chests.indexOf(step) !== -1) {
+            const need = step;
+            const open = eraStars >= need;
+            nodes.push(
+              '<button class="map-chest' + (open ? ' is-open' : '') +
+                '" type="button" data-chest="' + need + '" data-open="' +
+                (open ? '1' : '0') + '"' +
+                ' title="Сундук главы: ' + (open ? 'открыт' : 'нужно ' + need + '★') + '">' +
+                '<span class="map-chest__icon" aria-hidden="true">' +
+                  (open ? '🎁' : '🧰') + '</span>' +
+                '<span class="map-chest__label">' +
+                  (open ? 'Открыт' : need + '★') + '</span>' +
+              '</button>'
+            );
           }
         }
 
@@ -2310,6 +2553,12 @@ CC.UI = (function () {
 
     if (mapCardName) mapCardName.textContent = lvl.name;
     if (mapCardTh) mapCardTh.textContent = 'TH' + lvl.th;
+    if (mapCardChapter) {
+      const era = Math.floor(i / 10);
+      const st = chapterStats(era);
+      mapCardChapter.textContent = 'Глава ' + (era + 1) + ': ' + MAP_ERAS[era] +
+        ' · ★ ' + st.stars + '/30 · +1 платина за сектор';
+    }
     if (mapCardLoot) {
       mapCardLoot.textContent = 'Добыча: ' + fmtNum(pool.gold) + ' руды, ' +
         fmtNum(pool.elixir) + ' энергии';
@@ -2386,6 +2635,13 @@ CC.UI = (function () {
   }
 
   function onLevelsClick(e) {
+    const chest = e.target.closest('[data-chest]');
+    if (chest) {
+      const need = Number(chest.dataset.chest);
+      const open = chest.dataset.open === '1';
+      toast(open ? 'Сундук открыт' : 'Сундук главы: нужно ' + need + ' звёзд');
+      return { ok: true, chest: need, open: open };
+    }
     const node = e.target.closest('[data-level]');
     if (!node) return;
     // Клик по узлу открывает карточку, а не запускает бой сразу.
@@ -5214,6 +5470,19 @@ CC.UI = (function () {
     if (loreStepEl) {
       loreStepEl.textContent = (lorePage + 1) + '/' + pages.length;
     }
+    if (loreArtEl) {
+      const art = (CC.SERGEANT && CC.SERGEANT.loreArt) ? CC.SERGEANT.loreArt[lorePage] : null;
+      if (art) {
+        if (loreArtEl.dataset.art !== art) {
+          loreArtEl.dataset.art = art;
+          loreArtEl.onerror = function () { loreArtEl.classList.add('hidden'); };
+          loreArtEl.classList.remove('hidden');
+          loreArtEl.src = art;
+        }
+      } else {
+        loreArtEl.classList.add('hidden');
+      }
+    }
     if (loreText) {
       const text = pages[lorePage] || '';
       if (loreText.textContent !== text) loreText.textContent = text;
@@ -6808,6 +7077,15 @@ CC.UI = (function () {
     battleAgain: battleAgain,
     openLevels: openLevels,
     closeLevels: closeLevels,
+    openChapter: openChapter,
+    closeChapter: closeChapter,
+    syncChapter: syncChapter,
+    chapterStats: function (era) { return chapterStats(era); },
+    chapterTargetInfo: function (index) { return chapterTargetInfo(index); },
+    chapterGo: function (index) { return chapterGo(index); },
+    claimChapter: function () { return claimChapter(); },
+    isChapterOpen: function () { return chapterOpen; },
+    chapterIndex: function () { return chapterIndex; },
     onBattleButton: onBattleButton,
     chooseLevel: chooseLevel,
     attackMapLevel: attackMapLevel,
