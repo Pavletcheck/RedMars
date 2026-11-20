@@ -158,6 +158,18 @@ CC.BUILDINGS = {
     name: 'Ангар', desc: 'даёт места и тренирует',
     w: 2, h: 2, hp: 700, height: 34,
     color: '#7b5a3a', top: '#c9a06a'
+  },
+  lab: {
+    name: 'Исследовательский центр', desc: 'изучает войска и ускоряет исследования',
+    w: 2, h: 2, hp: 600, height: 32,
+    color: '#2f6b6b', top: '#63c9c1',
+    research: true
+  },
+  herohall: {
+    name: 'Академия героя', desc: 'готовит Сержанта и ускоряет прокачку',
+    w: 2, h: 2, hp: 800, height: 40,
+    color: '#8a3a32', top: '#d9a441',
+    heroHall: true
   }
 };
 
@@ -557,6 +569,8 @@ CC.PLACE_COST = {
   storage: { gold: 800 },
   estorage: { gold: 800 },
   barracks: { elixir: 1000 },
+  lab: { elixir: 1200 },
+  herohall: { gold: 2500 },
   townhall: {}
 };
 
@@ -632,7 +646,9 @@ CC.UPGRADES = {
   elixir: { max: 10, cost: { gold: 200 }, time: 40 },
   storage: { max: 10, cost: { gold: 400 }, time: 45 },
   estorage: { max: 10, cost: { gold: 400 }, time: 45 },
-  barracks: { max: 10, cost: { elixir: 500 }, time: 60 }
+  barracks: { max: 10, cost: { elixir: 500 }, time: 60 },
+  lab: { max: 10, cost: { elixir: 500 }, time: 60 },
+  herohall: { max: 10, cost: { gold: 800 }, time: 60 }
 };
 
 /* Армия: каждое место даёт ангар — 20 за каждый свой уровень
@@ -672,7 +688,9 @@ CC.REQUIREMENTS = {
   spring: { minTh: 4 },
   airmine: { minTh: 5 },
   ambush: { minTh: 7 },
-  beam: { minTh: 9 }
+  beam: { minTh: 9 },
+  lab: { minTh: 2 },
+  herohall: { minTh: 5 }
 };
 
 CC.MAX_TH = 10;
@@ -1400,7 +1418,9 @@ CC.LIMITS_BY_TH = {
   elixir: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
   storage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
   estorage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
-  barracks: [1, 1, 2, 2, 3, 3, 4, 4, 4, 4]
+  barracks: [1, 1, 2, 2, 3, 3, 4, 4, 4, 4],
+  lab: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  herohall: [0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
 };
 
 // Лимит типа на конкретном уровне центра (кривое th не ломает счёт).
@@ -1430,7 +1450,9 @@ CC.LIMITS = {
   elixir: 6,
   storage: 5,
   estorage: 5,
-  barracks: 4
+  barracks: 4,
+  lab: 1,
+  herohall: 1
 };
 
 /* 50 уровней строятся после таблицы лимитов: генератор сверяется с
@@ -1573,7 +1595,7 @@ CC.Loot = (function () {
 CC.PALETTE = [
   'townhall', 'cannon', 'archer', 'mortar', 'airdef', 'mage',
   'ambush', 'beam', 'wall', 'mine', 'spring', 'airmine',
-  'goldmine', 'elixir', 'storage', 'estorage', 'barracks'
+  'goldmine', 'elixir', 'storage', 'estorage', 'barracks', 'lab', 'herohall'
 ];
 
 /* Иконки для палитры. */
@@ -1594,5 +1616,7 @@ CC.ICONS = {
   elixir: '⚡',
   storage: '🗄️',
   estorage: '🔋',
-  barracks: '🏗️'
+  barracks: '🏗️',
+  lab: '🔬',
+  herohall: '🏛️'
 };

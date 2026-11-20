@@ -1714,10 +1714,51 @@ html, body { width: 100%; height: 100%; }
   z-index: 7;
 }
 
-/* Ангар шире панели постройки: две карточки войск видны без прокрутки.
-   Обычная карточка постройки остаётся 340 px. */
-.selbar:has(.selarmy:not(.hidden)) {
+/* Ангар, лаборатория и академия шире панели постройки: две карточки
+   или карточка героя видны без прокрутки. Обычная постройка — 340 px. */
+.selbar:has(.selarmy:not(.hidden)),
+.selbar[data-type="lab"],
+.selbar[data-type="herohall"] {
   width: min(620px, calc(100% - 96px));
+}
+
+/* ---------- исследовательский центр и академия героя ---------- */
+
+.selhero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(90, 62, 28, .16);
+}
+
+.selhero.hidden { display: none; }
+
+.selhero__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+}
+
+.selhero__hint { white-space: nowrap; }
+
+.hero-list {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hero-list::-webkit-scrollbar { display: none; }
+
+.hero-list .tcard {
+  flex: 0 0 auto;
+  width: min(320px, 100%);
+  max-width: 320px;
 }
 
 .selbar::-webkit-scrollbar { display: none; }
@@ -1730,17 +1771,61 @@ html, body { width: 100%; height: 100%; }
     max-height: calc(100dvh - 78px);
   }
 
-  /* Ангар на низком экране: уже и ниже верхнего HUD, но выше нижнего меню.
-     На 844×390 это x≈132…712, y≈84…318. */
-  .selbar:has(.selarmy:not(.hidden)) {
+  /* Ангар, лаборатория и академия на низком экране: уже и ниже верхнего
+     HUD, но выше нижнего меню. На 844×390 это x≈132…712, y≈84…318. */
+  .selbar:has(.selarmy:not(.hidden)),
+  .selbar[data-type="lab"],
+  .selbar[data-type="herohall"] {
     bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
     width: min(580px, calc(100% - 140px));
     max-height: calc(100dvh - 156px);
   }
 
   /* В ангаре та же цифра есть в заголовке армии: не тратим высоту. */
-  .selbar:has(.selarmy:not(.hidden)) .selbar__stats { display: none; }
+  .selbar:has(.selarmy:not(.hidden)) .selbar__stats,
+  .selbar[data-type="lab"] .selbar__stats,
+  .selbar[data-type="herohall"] .selbar__stats { display: none; }
   #app .tcard { min-height: 138px; }
+
+  /* Академия на 844×390: карточка героя идёт сразу под заголовком,
+     апгрейд здания — ниже и при необходимости уходит в скролл. */
+  .selbar[data-type="herohall"] .selbar__head { order: -3; }
+  .selbar[data-type="herohall"] .selhero {
+    order: -2;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .selbar[data-type="herohall"] .selhero__head { display: none; }
+  .selbar[data-type="herohall"] .hero-list .tcard {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    grid-auto-rows: auto;
+    align-items: center;
+    justify-items: start;
+    column-gap: 8px;
+    row-gap: 1px;
+    width: min(380px, 100%);
+    min-height: 0;
+    padding: 5px 8px;
+    text-align: left;
+  }
+  .selbar[data-type="herohall"] .hero-list .tcard__icon {
+    grid-column: 1;
+    grid-row: 1 / span 6;
+    align-self: start;
+    margin: 0;
+  }
+  .selbar[data-type="herohall"] .hero-list .tcard__name,
+  .selbar[data-type="herohall"] .hero-list .tcard__desc,
+  .selbar[data-type="herohall"] .hero-list .tcard__meta,
+  .selbar[data-type="herohall"] .hero-list .tcard__actions,
+  .selbar[data-type="herohall"] .hero-list .hero-card__bar {
+    grid-column: 2;
+    text-align: left;
+  }
+  .selbar[data-type="herohall"] .hero-list .tcard__actions {
+    justify-content: flex-start;
+  }
   #app .selarmy .tcard {
     min-height: 132px;
     gap: 0;
@@ -2172,6 +2257,8 @@ html, body { width: 100%; height: 100%; }
     height: 56px;
     flex-basis: 56px;
   }
+
+  .hero-list .tcard { width: min(300px, 100%); }
 }
 
 .tcard__name {

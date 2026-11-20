@@ -35,6 +35,9 @@ CC.UI = (function () {
   const selUpgradeSpeed = document.getElementById('sel-upgrade-speed');
   const selPrice = document.getElementById('sel-upgrade-cost');
   const selArmy = document.getElementById('sel-army');
+  const labUp = document.getElementById('lab-up');
+  const selHero = document.getElementById('sel-hero');
+  const heroList = document.getElementById('hero-list');
   const trainList = document.getElementById('train-list');
   const trainQueue = document.getElementById('train-queue');
   const trainPrev = document.getElementById('train-prev');
@@ -3222,6 +3225,7 @@ CC.UI = (function () {
     cache.qhead = null;
     cache.trainSig = null;
     cache.troopSig = null;
+    cache.heroSig = null;
     cache.queueSig = null;
     cache.selLevel = null;
     cache.selStats = null;
@@ -3255,6 +3259,10 @@ CC.UI = (function () {
     } else if (type === 'barracks') {
       parts.push('Мест в армии +' + s.capacity);
       parts.push('тренирует параллельно');
+    } else if (type === 'lab') {
+      parts.push('Исследования −5%/ур.');
+    } else if (type === 'herohall') {
+      parts.push('Прокачка героя −5%/ур.');
     }
 
     // Ловушки: понятная подпись вместо «прочности 1». Уровень уже стоит
@@ -3499,7 +3507,10 @@ CC.UI = (function () {
     }
 
     selbar.classList.remove('hidden');
+    const prevType = selbar.dataset.type;
     selbar.dataset.type = it.type;
+    // Новая постройка открывается с верха панели, а не с чужой прокрутки.
+    if (prevType !== it.type) selbar.scrollTop = 0;
 
     if (selIcon) {
       if (selIcon.dataset.type !== it.type) {
@@ -3513,6 +3524,8 @@ CC.UI = (function () {
     selStats.classList.remove('hidden');
     selUp.classList.remove('hidden');
     selArmy.classList.add('hidden');
+    if (labUp) labUp.classList.add('hidden');
+    if (selHero) selHero.classList.add('hidden');
 
     const s = CC.Game.stats(id);
     if (s) {
@@ -3538,9 +3551,17 @@ CC.UI = (function () {
     if (it.type === 'barracks') {
       selArmy.classList.remove('hidden');
       syncTraining();
+    } else if (it.type === 'lab') {
+      if (labUp) labUp.classList.remove('hidden');
+      syncTroopUpgrade();
+    } else if (it.type === 'herohall') {
+      if (selHero) selHero.classList.remove('hidden');
+      syncHeroCard();
     } else {
       cache.trainSig = null;
       cache.queueSig = null;
+      cache.troopSig = null;
+      cache.heroSig = null;
     }
   }
 
@@ -3699,6 +3720,7 @@ CC.UI = (function () {
         let label = 'Улучшить';
         if (check.busy) label = 'Занято';
         else if (check.needTh) label = 'Центр ' + check.needTh;
+        else if (check.needHeroHall) label = 'Нет академии';
         else if (check.reason === 'Максимальный уровень') label = 'Макс.';
         else if (check.missing) label = 'Нет руды';
         btn = '<button class="tcard__hire" disabled title="' +
@@ -3729,20 +3751,13 @@ CC.UI = (function () {
     const elixir = CC.Game.elixir();
     const th = CC.Game.townhallLevel();
     const maxLvl = (CC.TROOP_LEVEL && CC.TROOP_LEVEL.max) || 10;
-    const heroUp = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
-    const heroSpeed = heroUp && CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
-    const heroSig = 'hero:' + CC.Game.heroLevel() + ':' +
-      (heroUp ? heroUp.to + ':' + Math.ceil(heroUp.left) : 'idle') + ':' +
-      (heroSpeed ? heroSpeed.gems : 0) + ':' + CC.Game.gems() + ':' +
-      (CC.Game.heroUpgradeCost ? JSON.stringify(CC.Game.heroUpgradeCost()) : '');
     const armySig = CC.ARMY_ORDER.map(function (t) {
       const need = CC.troopUnlock ? CC.troopUnlock(t) : 1;
       return CC.Game.state.army[t] + ':' + (CC.Game.canTrain(t).error ? 1 : 0) +
         ':' + need + ':' + CC.Game.batchFit(t) + ':' + CC.Game.troopLevel(t);
     }).join(',') + '|' + cap + '|' + parallel + '|' + queue.length + '|' +
       CC.Game.queuedSpace() + '|' +
-      Math.floor(elixir / 10) + '|th' + th + '|sel' + (state.trainSel || '') +
-      '|' + heroSig;
+      Math.floor(elixir / 10) + '|th' + th + '|sel' + (state.trainSel || '');
 
     if (cache.trainSig !== armySig) {
       cache.trainSig = armySig;
@@ -3751,7 +3766,7 @@ CC.UI = (function () {
       // чтобы найм с дальней карточки не «прыгал» в начало ленты.
       const trainScroll = trainList.scrollLeft || 0;
 
-      trainList.innerHTML = heroCardHtml(th) + CC.ARMY_ORDER.map(function (type) {
+      trainList.innerHTML = CC.ARMY_ORDER.map(function (type) {
         const d = CC.TROOPS[type];
         const space = d.space || 1;
         const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
@@ -3850,8 +3865,30 @@ CC.UI = (function () {
         }
       }
     }
+  }
 
-    syncTroopUpgrade();
+  // Карточка героя для отдельной академии. Свой кэш, чтобы таймер
+  // обновлялся только при открытой панели herohall.
+  function syncHeroCard() {
+    if (!heroList) return;
+
+    const th = CC.Game.townhallLevel();
+    const lvl = CC.Game.heroLevel();
+    const up = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
+    const cost = CC.Game.heroUpgradeCost ? CC.Game.heroUpgradeCost() : null;
+    const check = CC.Game.canUpgradeHero ? CC.Game.canUpgradeHero() : null;
+    const speed = up && CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
+    const sig = 'hero:' + th + ':' + lvl + ':' +
+      (up ? up.to + ':' + Math.ceil(up.left) : 'idle') + ':' +
+      (speed ? speed.gems : 0) + ':' + CC.Game.gems() + ':' +
+      (cost ? JSON.stringify(cost) : 'max') + ':' +
+      (check ? JSON.stringify({ ok: check.ok, reason: check.reason,
+        needTh: check.needTh, busy: check.busy, missing: check.missing,
+        needHeroHall: check.needHeroHall }) : '');
+
+    if (cache.heroSig === sig) return;
+    cache.heroSig = sig;
+    heroList.innerHTML = heroCardHtml(th);
   }
 
   // Раздел «Улучшение войск» в панели ангара: только открытые войска.
@@ -3930,6 +3967,7 @@ CC.UI = (function () {
         let label = 'Улучшить';
         if (check.busy) label = 'Занято';
         else if (check.needTh) label = 'Центр ' + check.needTh;
+        else if (check.needLab) label = 'Нет лаборатории';
         else if (check.reason === 'Максимальный уровень') label = 'Макс.';
         else if (check.missing) label = 'Нет энергии';
         else if (check.needStorage) label = 'Склад мал';

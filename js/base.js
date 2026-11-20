@@ -773,6 +773,27 @@ CC.Game = (function () {
     return th || 1;
   }
 
+  // Уровень готовой постройки типа: стройплощадка ещё ничего не даёт.
+  // 0 — здания нет. Нужен лаборатории и академии героя.
+  function readyBuildingLevel(type) {
+    const list = CC.Base.list();
+    let best = 0;
+
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].type !== type) continue;
+      if (isBuilding(list[i].id)) continue;
+      const l = level(list[i].id);
+      if (l > best) best = l;
+    }
+
+    return best;
+  }
+
+  function labLevel() { return readyBuildingLevel('lab'); }
+  function heroHallLevel() { return readyBuildingLevel('herohall'); }
+  function hasLab() { return labLevel() > 0; }
+  function hasHeroHall() { return heroHallLevel() > 0; }
+
   // townhall — до MAX_TH, башня отстаёт на 1. Ангар теперь даёт места в
   // армии, поэтому качается вместе с центром: на TH2 доступен L2 (40 мест),
   // на TH10 — L10 (200 мест), как и прежняя кривая «20 за уровень центра».
@@ -2155,7 +2176,11 @@ CC.Game = (function () {
     const tg = isFinite(TROOP_LVL.timeGrowth) ? TROOP_LVL.timeGrowth : 1.5;
 
     const rawCost = (d.cost || 0) * cf * Math.pow(2, k);
-    const rawTime = (d.time || 0) * tf * Math.pow(tg, k);
+    // Лаборатория ускоряет исследование: −5% за каждый уровень после первого.
+    // L1 оставляем ровно прежним, чтобы старые ожидания не менялись.
+    const lab = labLevel();
+    const speed = lab > 1 ? Math.pow(0.95, lab - 1) : 1;
+    const rawTime = (d.time || 0) * tf * Math.pow(tg, k) * speed;
 
     return {
       type: type,
@@ -2219,6 +2244,16 @@ CC.Game = (function () {
       return {
         ok: false, error: reason, reason: reason,
         needTh: need, cost: null
+      };
+    }
+
+    // Исследовать войска можно только в готовом исследовательском центре.
+    // Старое идущее исследование этот запрет не отменяет.
+    if (!hasLab()) {
+      const reason = 'Построй исследовательский центр';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: null, needLab: true, cost: null
       };
     }
 
@@ -2421,6 +2456,9 @@ CC.Game = (function () {
     if (!isFinite(time) || time <= 0) {
       time = Math.min(24 * 3600, 30 * 60 * Math.pow(2, to - 2));
     }
+    // Академия героя ускоряет прокачку: −5% за уровень после первого.
+    const hall = heroHallLevel();
+    if (hall > 1) time = Math.round(time * Math.pow(0.95, hall - 1));
 
     return {
       type: HERO.id || 'hero',
@@ -2471,6 +2509,16 @@ CC.Game = (function () {
       return {
         ok: false, error: reason, reason: reason,
         needTh: need, cost: null
+      };
+    }
+
+    // Прокачка героя — только в готовой академии героя. Сам герой в бою
+    // остаётся доступен по TH5 и без академии.
+    if (!hasHeroHall()) {
+      const reason = 'Построй академию героя';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: null, needHeroHall: true, cost: null
       };
     }
 
@@ -4692,6 +4740,10 @@ CC.Game = (function () {
     level: level,
     maxLevel: maxLevel,
     townhallLevel: townhallLevel,
+    labLevel: labLevel,
+    heroHallLevel: heroHallLevel,
+    hasLab: hasLab,
+    hasHeroHall: hasHeroHall,
     needThFor: needThFor,
     canBuild: canBuild,
     placeTime: placeTimeOf,

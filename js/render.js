@@ -103,6 +103,10 @@ CC.Render = (function () {
     elixir: { h: 18, wall: PAL.stone, roof: PAL.elixir, flag: null },
     storage: { h: 20, wall: PAL.wood, roof: PAL.wood, flag: null },
     estorage: { h: 34, wall: PAL.metal, roof: PAL.elixir, flag: null },
+    // научная станция: тёмно-синие панели и бирюзовое стекло
+    lab: { h: 32, wall: '#2f465a', roof: '#4d6b82', flag: null },
+    // академия героя: бетон, красные знамёна и золото
+    herohall: { h: 40, wall: '#8a8175', roof: '#5f584f', flag: PAL.gold, door: '#3a2a1f' },
     wall: { h: 16, wall: PAL.stone, roof: PAL.stone, flag: null }
   };
 
@@ -4541,6 +4545,833 @@ CC.Render = (function () {
     ctx.fill();
   }
 
+  /* ---------- исследовательский центр ----------
+     Приземистая научная станция: тёмно-синие панели, бирюзовое остекление,
+     купол обсерватории, терминалы и кабели. Силуэт намеренно низкий и
+     округлый, чтобы не путаться с реактором (высокие капсулы) и ангаром
+     (плоская крыша с воротами). */
+
+  const LAB_BLUE = '#2f465a';
+  const LAB_BLUE_LIGHT = '#49667d';
+  const LAB_BLUE_DARK = '#1d2c38';
+
+  // Малая/большая тарелка связи: мачта, наклонная чаша и облучатель.
+  function labDish(ctx, x, y, s, tilt, hot) {
+    ctx.strokeStyle = PAL.metalDark;
+    ctx.lineWidth = 1.6 * s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + 2 * s, y - 10 * s);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(x + 2 * s, y - 12 * s);
+    ctx.rotate(tilt || 0);
+    ctx.fillStyle = PAL.metalDark;
+    ctx.beginPath();
+    ctx.ellipse(0, 1.2 * s, 7.4 * s, 4.2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PAL.metalLight;
+    ctx.beginPath();
+    ctx.ellipse(-0.4 * s, 0, 6.6 * s, 3.6 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = LAB_BLUE_DARK;
+    ctx.beginPath();
+    ctx.ellipse(0, 0.2 * s, 5.2 * s, 2.7 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(127,233,255,.5)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 0.2 * s, 3.2 * s, 1.6 * s, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = PAL.metalLight;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 0.2 * s);
+    ctx.lineTo(4.6 * s, -2.2 * s);
+    ctx.stroke();
+    spot(ctx, 4.6 * s, -2.4 * s, 0.9 * s, hot || PAL.cold);
+    ctx.restore();
+  }
+
+  // Голо-стол: эмиттер на тонкой стойке и парящая схема над ним.
+  function labHolo(ctx, x, y, h, s, bright) {
+    ctx.fillStyle = 'rgba(12,26,32,.45)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 0.6, 4.6 * s, 1.7 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PAL.metalDark;
+    ctx.fillRect(x - 2.6 * s, y - 1.6 * s, 5.2 * s, 1.8 * s);
+    ctx.strokeStyle = PAL.metalLight;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 1.6 * s);
+    ctx.lineTo(x, y - h);
+    ctx.stroke();
+    spot(ctx, x, y - h - 1, 1.2 * s, bright ? PAL.gold : PAL.cold);
+
+    const prev = ctx.globalAlpha;
+    const hy = y - h - 10 * s;
+    ctx.globalAlpha = prev * (bright ? 0.8 : 0.55);
+    ctx.strokeStyle = bright ? 'rgba(255,207,74,.8)' : 'rgba(127,233,255,.72)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.ellipse(x, hy + i * 3.2 * s, (5.5 + i * 1.7) * s,
+        (2 + i * 0.6) * s, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    poly(ctx, [
+      { x: x, y: hy - 4.6 * s },
+      { x: x + 2.6 * s, y: hy - 0.4 * s },
+      { x: x - 2.6 * s, y: hy - 0.4 * s }
+    ], bright ? 'rgba(255,207,74,.4)' : 'rgba(127,233,255,.32)');
+    spot(ctx, x, hy, 1.1 * s, bright ? PAL.gold : PAL.glass);
+    spot(ctx, x, hy, (bright ? 10 : 7) * s,
+      bright ? 'rgba(255,207,74,.12)' : 'rgba(70,224,200,.1)');
+    ctx.globalAlpha = prev;
+  }
+
+  // Пульт с бирюзовым экраном на переднем крае станции.
+  function labTerminal(ctx, x, y, s, hot) {
+    ctx.fillStyle = 'rgba(10,22,28,.3)';
+    ctx.beginPath();
+    ctx.ellipse(x + 0.8, y + 0.6, 3.6 * s, 1.4 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PAL.metalDark;
+    ctx.fillRect(x - 2.4 * s, y - 5.2 * s, 4.8 * s, 5.2 * s);
+    ctx.fillStyle = PAL.metal;
+    ctx.fillRect(x - 1.9 * s, y - 4.7 * s, 3.8 * s, 2.4 * s);
+    ctx.fillStyle = hot || PAL.glass;
+    ctx.fillRect(x - 1.5 * s, y - 4.3 * s, 3.0 * s, 1.6 * s);
+    spot(ctx, x + 1.2 * s, y - 1.2 * s, 0.6, PAL.cold);
+  }
+
+  function drawLab(ctx, b, lvl) {
+    const L = Math.max(1, Math.min(MAXLVL, Math.round(lvl || 1)));
+    const x0 = b.x;
+    const y0 = b.y;
+    const x1 = b.x + b.w;
+    const y1 = b.y + b.h;
+    const baseH = 3.4 + L * 0.26 + (L >= 5 ? 1 : 0);
+    const H = 12.5 + L * 0.85;
+
+    grassPad(ctx, x0, y0, x1, y1);
+    castShadow(ctx, x0, y0, x1, y1, 1.2);
+
+    // бетонная плита и технический пояс
+    prism(ctx, x0 + 0.05, y0 + 0.05, x1 - 0.05, y1 - 0.05, 0, baseH,
+      '#617d91', '#3b5062', '#273845');
+    prism(ctx, x0 + 0.09, y0 + 0.09, x1 - 0.09, y1 - 0.09, baseH, 1.4,
+      '#7d9aac', '#4b6274', '#2f4251');
+
+    const mx0 = x0 + 0.18;
+    const my0 = y0 + 0.18;
+    const mx1 = x1 - 0.16;
+    const my1 = y1 - 0.42;
+
+    // основной модуль
+    box(ctx, mx0, my0, mx1, my1, H, LAB_BLUE);
+    prism(ctx, mx0 - 0.04, my0 - 0.04, mx1 + 0.04, my1 + 0.04, H, 1.8,
+      LAB_BLUE_LIGHT, LAB_BLUE, LAB_BLUE_DARK);
+
+    const D = P(mx0, my1);
+    const C = P(mx1, my1);
+    const B = P(mx1, my0);
+
+    // лента остекления по фасаду
+    patchPx(ctx, D, C, H, 0.09, 0.91, 3.2, 7.8, 'rgba(10,22,30,.82)');
+    patchPx(ctx, D, C, H, 0.13, 0.87, 3.9, 7.0,
+      L >= 8 ? '#a9f7ff' : PAL.glass);
+    ribLines(ctx, D, C, H, 0.11, 0.89, 3.2, 7.8, 4,
+      'rgba(16,32,42,.65)', 1.1);
+    ctx.fillStyle = 'rgba(255,255,255,.18)';
+    ctx.fillRect(D.x + (C.x - D.x) * 0.18, D.y + (C.y - D.y) * 0.18 - 6.6, 7, 0.9);
+
+    // боковое окно
+    patchPx(ctx, C, B, H, 0.2, 0.52, 4.2, 7.0, 'rgba(127,233,255,.55)');
+
+    // вход с бирюзовой рамкой
+    patchPx(ctx, D, C, H, 0.42, 0.58, 0.2, 4.4, 'rgba(8,18,24,.9)');
+    patchPx(ctx, D, C, H, 0.405, 0.425, 0.2, 4.6, PAL.cyan);
+    patchPx(ctx, D, C, H, 0.575, 0.595, 0.2, 4.6, PAL.cyan);
+
+    // кабели к терминалам
+    ctx.strokeStyle = 'rgba(28,42,50,.7)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(D.x + 4, D.y - 1);
+    ctx.quadraticCurveTo(D.x - 2, D.y + 2, D.x - 8, D.y + 1.5);
+    ctx.moveTo(C.x - 4, C.y - 1);
+    ctx.quadraticCurveTo(C.x + 2, C.y + 2, C.x + 8, C.y + 1.5);
+    ctx.stroke();
+
+    // вентиляция на крыше
+    prism(ctx, x0 + 0.24, y0 + 0.24, x0 + 0.58, y0 + 0.48, baseH + H, 4.4,
+      PAL.metalLight, PAL.metal, PAL.metalDark);
+    ribLines(ctx, P(x0 + 0.24, y0 + 0.48), P(x0 + 0.58, y0 + 0.48),
+      4.4, 0.15, 0.85, 0.6, 3.6, 3, 'rgba(30,42,50,.5)', 0.8);
+
+    // солнечная панель с 4 уровня
+    if (L >= 4) {
+      const sp = P(x0 + 1.42, y0 + 0.36);
+      solarPanel(ctx, sp.x, sp.y - baseH - H - 2, 20, 8, -0.22);
+    }
+
+    // купол обсерватории
+    const dc = P(x0 + 0.78, y0 + 0.9);
+    const roofY = dc.y - baseH - H;
+    const drx = 10.5 + L * 0.8;
+    const dry = drx * 0.42;
+
+    ctx.fillStyle = LAB_BLUE_DARK;
+    ctx.beginPath();
+    ctx.ellipse(dc.x, roofY, drx + 1.5, dry * 0.76, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = LAB_BLUE_LIGHT;
+    ctx.beginPath();
+    ctx.ellipse(dc.x, roofY - 0.4, drx + 0.8, dry * 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = LAB_BLUE;
+    ctx.beginPath();
+    ctx.ellipse(dc.x, roofY, drx, dry * 1.08, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // остекление и рёбра купола
+    ctx.fillStyle = 'rgba(127,233,255,.22)';
+    ctx.beginPath();
+    ctx.ellipse(dc.x, roofY - 1.2, drx * 0.62, dry * 0.5, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(127,233,255,.5)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let k = 1; k <= 2; k++) {
+      const rr = k / 3;
+      ctx.moveTo(dc.x - drx * rr, roofY);
+      ctx.ellipse(dc.x, roofY, drx * rr, dry * rr, 0, Math.PI, Math.PI * 2);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = L >= 9 ? PAL.gold : PAL.metalLight;
+    ctx.lineWidth = L >= 9 ? 1.6 : 1.1;
+    ctx.beginPath();
+    ctx.ellipse(dc.x, roofY, drx, dry * 1.08, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+
+    // антенна на куполе — главный «маяк» L1
+    const apex = roofY - dry * 1.08;
+    antennaMast(ctx, dc.x + 1, apex, 8 + L * 0.7,
+      L >= 9 ? PAL.gold : PAL.metalLight, L >= 10 ? PAL.gold : PAL.glass);
+
+    // тарелка связи: малая с 3, большая с 8
+    if (L >= 8) {
+      const d = P(x0 + 1.46, y0 + 0.62);
+      labDish(ctx, d.x, d.y - baseH - H - 1, 1.35, -0.52, PAL.gold);
+      ctx.strokeStyle = PAL.metalLight;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y - baseH - H);
+      ctx.lineTo(d.x, d.y - baseH - H - 10);
+      ctx.stroke();
+    } else if (L >= 3) {
+      const d = P(x0 + 1.45, y0 + 0.6);
+      labDish(ctx, d.x, d.y - baseH - H, 0.75, -0.45, PAL.cold);
+    }
+
+    // второй модуль с 5 уровня
+    const upperH = L >= 5 ? 6.5 + (L - 5) * 0.45 : 0;
+    if (upperH > 0) {
+      const ux0 = x0 + 1.08;
+      const uy0 = y0 + 0.16;
+      const ux1 = x1 - 0.18;
+      const uy1 = y0 + 0.7;
+      prism(ctx, ux0, uy0, ux1, uy1, baseH + H, upperH,
+        LAB_BLUE_LIGHT, LAB_BLUE, LAB_BLUE_DARK);
+      const UD = P(ux0, uy1);
+      const UC = P(ux1, uy1);
+      patchPx(ctx, UD, UC, upperH, 0.12, 0.88, 1.2, upperH - 1.8, PAL.glass);
+      ribLines(ctx, UD, UC, upperH, 0.14, 0.86, 1.2, upperH - 1.8, 3,
+        'rgba(10,22,30,.55)', 0.9);
+      if (L >= 6) {
+        const mc = P((ux0 + ux1) / 2, (uy0 + uy1) / 2);
+        const my = mc.y - baseH - H - upperH;
+        ctx.fillStyle = LAB_BLUE_LIGHT;
+        ctx.beginPath();
+        ctx.ellipse(mc.x, my, 7, 2.8, 0, Math.PI, Math.PI * 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(127,233,255,.55)';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.ellipse(mc.x, my, 7, 2.8, 0, Math.PI, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // терминалы и голо-стол
+    if (L >= 2) {
+      const t1 = P(x0 + 0.34, y1 - 0.16);
+      labTerminal(ctx, t1.x, t1.y, 0.9, L >= 8 ? PAL.gold : PAL.glass);
+      if (L >= 6) {
+        const t2 = P(x1 - 0.3, y1 - 0.14);
+        labTerminal(ctx, t2.x, t2.y, 0.8, PAL.cyan);
+      }
+    }
+    if (L >= 5) {
+      const hp = P(x0 + 0.55, y1 - 0.22);
+      labHolo(ctx, hp.x, hp.y - baseH, 11 + (L - 5) * 0.7, 0.9, L >= 10);
+    }
+
+    // 7: кабельный лоток по борту
+    if (L >= 7) {
+      ctx.strokeStyle = 'rgba(24,38,48,.7)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(B.x, B.y - 3);
+      ctx.lineTo(B.x, B.y - H + 2);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const yy = B.y - 4 - i * 4;
+        ctx.beginPath();
+        ctx.moveTo(B.x - 1.4, yy);
+        ctx.lineTo(B.x + 2.4, yy - 0.4);
+        ctx.stroke();
+      }
+    }
+
+    // 9: золотая окантовка крыши
+    if (L >= 9) {
+      ctx.save();
+      ctx.translate(0, -baseH - H - 1.8);
+      ctx.strokeStyle = PAL.gold;
+      ctx.lineWidth = 1.4;
+      diamond(ctx, P(mx0 - 0.03, my0 - 0.03), P(mx1 + 0.03, my0 - 0.03),
+        P(mx1 + 0.03, my1 + 0.03), P(mx0 - 0.03, my1 + 0.03));
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 10: обсерватория над модулем — кольцо, телескоп и свечение
+    if (L >= 10) {
+      const oc = P(x0 + 1.38, y0 + 0.43);
+      const oy = oc.y - baseH - H - upperH - 10;
+      ctx.strokeStyle = PAL.metalLight;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(oc.x - 8, oy + 3);
+      ctx.lineTo(oc.x - 5, oy + 9);
+      ctx.moveTo(oc.x + 8, oy + 3);
+      ctx.lineTo(oc.x + 5, oy + 9);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(127,233,255,.16)';
+      ctx.beginPath();
+      ctx.ellipse(oc.x, oy + 1, 12, 8, 0, Math.PI, Math.PI * 2);
+      ctx.closePath();
+      ctx.fill();
+      ring(ctx, oc.x, oy + 1, 12, 5.2, PAL.gold, 2);
+      ring(ctx, oc.x, oy + 1, 9, 3.8, PAL.glass, 1);
+      ctx.strokeStyle = PAL.metalDark;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(oc.x - 5, oy - 1);
+      ctx.lineTo(oc.x + 4, oy - 7);
+      ctx.stroke();
+      spot(ctx, oc.x + 4, oy - 7.4, 1.2, PAL.gold);
+      // луч обсерватории: главный акцент L10
+      poly(ctx, [
+        { x: oc.x - 4, y: oy - 5 },
+        { x: oc.x + 4, y: oy - 5 },
+        { x: oc.x + 9, y: oy - 26 },
+        { x: oc.x - 9, y: oy - 26 }
+      ], 'rgba(127,233,255,.06)');
+      spot(ctx, oc.x, oy - 26, 2.2, 'rgba(236,255,251,.85)');
+      spot(ctx, oc.x, oy, 16, 'rgba(127,233,255,.16)');
+      spot(ctx, oc.x, oy - 1, 7, 'rgba(127,233,255,.22)');
+      spot(ctx, oc.x, oy - 1, 2.2, 'rgba(236,255,251,.95)');
+    }
+
+    ctx.lineCap = 'butt';
+  }
+
+  /* ---------- академия героя ----------
+     Штаб Сержанта: бетонно-металлический корпус с аркой, красными
+     знамёнами, золотой отделкой, подиумом со статуей (L10 — голограммой)
+     и оружейными стойками. Прямоугольный фасад и арка отличают его от
+     командного центра с куполом. */
+
+  const HH_STONE = '#868b8d';
+  const HH_STONE_LIGHT = '#b2b6b5';
+  const HH_STONE_DARK = '#565c5f';
+  const HH_ROOF = '#6f7576';
+  const HH_RED = '#a8402f';
+  const HH_RED_DARK = '#712a21';
+
+  // Мини-статуя Сержанта: плащ, песочная броня, золото, бирюзовый визор.
+  function heroStatue(ctx, x, baseY, s, holo) {
+    const prev = ctx.globalAlpha;
+    if (holo) ctx.globalAlpha = prev * 0.8;
+
+    const armor = holo ? '#9fe9e2' : '#c9b487';
+    const armorLight = holo ? '#d7fffb' : '#e3d2ab';
+    const dark = holo ? 'rgba(70,224,200,.55)' : '#6d5f48';
+    const cape = holo ? 'rgba(168,64,47,.7)' : HH_RED;
+    const trim = holo ? '#eafffb' : PAL.gold;
+
+    ctx.fillStyle = holo ? 'rgba(70,224,200,.18)' : 'rgba(40,26,16,.25)';
+    ctx.beginPath();
+    ctx.ellipse(x, baseY + 0.4, 6.8 * s, 2.2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // плащ
+    poly(ctx, [
+      { x: x - 4.6 * s, y: baseY - 13 * s },
+      { x: x + 4.6 * s, y: baseY - 13 * s },
+      { x: x + 5.6 * s, y: baseY - 2.2 * s },
+      { x: x + 1.2 * s, y: baseY - 1.0 * s },
+      { x: x - 5.4 * s, y: baseY - 2.4 * s }
+    ], cape);
+
+    // ноги и ботинки
+    ctx.fillStyle = dark;
+    ctx.fillRect(x - 2.8 * s, baseY - 7.4 * s, 2.2 * s, 6.4 * s);
+    ctx.fillRect(x + 0.6 * s, baseY - 7.4 * s, 2.2 * s, 6.4 * s);
+    ctx.fillStyle = holo ? 'rgba(70,224,200,.65)' : '#3d454b';
+    ctx.fillRect(x - 3.2 * s, baseY - 1.4 * s, 3.0 * s, 1.4 * s);
+    ctx.fillRect(x + 0.2 * s, baseY - 1.4 * s, 3.0 * s, 1.4 * s);
+
+    // корпус
+    poly(ctx, [
+      { x: x - 4.2 * s, y: baseY - 15 * s },
+      { x: x + 4.2 * s, y: baseY - 15 * s },
+      { x: x + 4.8 * s, y: baseY - 6.6 * s },
+      { x: x - 4.8 * s, y: baseY - 6.6 * s }
+    ], armor);
+    ctx.fillStyle = holo ? trim : HH_RED;
+    ctx.fillRect(x - 3.8 * s, baseY - 11 * s, 7.6 * s, 1.5 * s);
+    spot(ctx, x, baseY - 13.4 * s, 1.2 * s, trim);
+    spot(ctx, x - 4.8 * s, baseY - 14 * s, 2.6 * s, armorLight);
+    spot(ctx, x + 4.8 * s, baseY - 14 * s, 2.6 * s, armorLight);
+
+    // шлем и визор
+    spot(ctx, x, baseY - 18.4 * s, 3.4 * s, holo ? armor : PAL.panel);
+    spot(ctx, x, baseY - 18.6 * s, 2.8 * s, armorLight);
+    ctx.fillStyle = holo ? trim : PAL.glass;
+    ctx.fillRect(x - 2.6 * s, baseY - 18.8 * s, 5.2 * s, 1.5 * s);
+    ctx.fillStyle = trim;
+    ctx.fillRect(x - 0.5 * s, baseY - 21.4 * s, 1.0 * s, 2.0 * s);
+    ctx.strokeStyle = holo ? trim : PAL.metalLight;
+    ctx.lineWidth = 0.7 * s;
+    ctx.beginPath();
+    ctx.moveTo(x + 2.2 * s, baseY - 20.6 * s);
+    ctx.lineTo(x + 4.0 * s, baseY - 24.2 * s);
+    ctx.stroke();
+    spot(ctx, x + 4.0 * s, baseY - 24.4 * s, 0.8 * s, holo ? trim : PAL.cold);
+
+    // тяжёлое оружие на груди
+    if (!holo) {
+      ctx.strokeStyle = '#3d454b';
+      ctx.lineWidth = 1.6 * s;
+      ctx.beginPath();
+      ctx.moveTo(x - 3.4 * s, baseY - 8.4 * s);
+      ctx.lineTo(x + 5.4 * s, baseY - 9.6 * s);
+      ctx.stroke();
+      spot(ctx, x + 5.4 * s, baseY - 9.6 * s, 0.8 * s, PAL.gold);
+    }
+
+    ctx.globalAlpha = prev;
+  }
+
+  // Стойка с тремя карабинами у стены академии.
+  function weaponRack(ctx, x, y, s) {
+    ctx.fillStyle = 'rgba(34,24,16,.2)';
+    ctx.beginPath();
+    ctx.ellipse(x + 1, y + 0.4, 6.5 * s, 2.2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = PAL.metalDark;
+    ctx.lineWidth = 1.2 * s;
+    ctx.beginPath();
+    ctx.moveTo(x - 5 * s, y);
+    ctx.lineTo(x - 5 * s, y - 10 * s);
+    ctx.moveTo(x + 5 * s, y);
+    ctx.lineTo(x + 5 * s, y - 10 * s);
+    ctx.moveTo(x - 5 * s, y - 8.6 * s);
+    ctx.lineTo(x + 5 * s, y - 8.6 * s);
+    ctx.stroke();
+    ctx.strokeStyle = PAL.metalLight;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const xx = x - 3 + i * 3 * s;
+      ctx.beginPath();
+      ctx.moveTo(xx, y - 7.6 * s);
+      ctx.lineTo(xx + 1.2 * s, y - 2.2 * s);
+      ctx.stroke();
+    }
+    spot(ctx, x, y - 8.6 * s, 0.7, PAL.amber);
+  }
+
+  function drawHeroHall(ctx, b, lvl) {
+    const L = Math.max(1, Math.min(MAXLVL, Math.round(lvl || 1)));
+    const x0 = b.x;
+    const y0 = b.y;
+    const x1 = b.x + b.w;
+    const y1 = b.y + b.h;
+    const baseH = 3.6 + L * 0.22;
+    const H = 14 + L * 1.0;
+
+    grassPad(ctx, x0, y0, x1, y1);
+    castShadow(ctx, x0, y0, x1, y1, 1.25);
+
+    // каменный подиум и ступени к арке
+    prism(ctx, x0 + 0.04, y0 + 0.04, x1 - 0.04, y1 - 0.04, 0, baseH,
+      HH_STONE_LIGHT, HH_STONE, HH_STONE_DARK);
+    prism(ctx, x0 + 0.02, y1 - 0.3, x1 - 0.02, y1 - 0.02, 0, baseH * 0.62,
+      HH_STONE_LIGHT, HH_STONE, HH_STONE_DARK);
+
+    const mx0 = x0 + 0.16;
+    const my0 = y0 + 0.16;
+    const mx1 = x1 - 0.16;
+    const my1 = y1 - 0.46;
+
+    box(ctx, mx0, my0, mx1, my1, H, HH_STONE);
+    prism(ctx, mx0 - 0.04, my0 - 0.04, mx1 + 0.04, my1 + 0.04, H, 2.2,
+      HH_ROOF, HH_STONE, HH_STONE_DARK);
+    if (L >= 3) {
+      ctx.save();
+      ctx.translate(0, -(baseH + H + 2.2));
+      ctx.strokeStyle = L >= 9 ? PAL.gold : 'rgba(255,207,74,.42)';
+      ctx.lineWidth = L >= 9 ? 1.5 : 1;
+      diamond(ctx, P(mx0 - 0.04, my0 - 0.04), P(mx1 + 0.04, my0 - 0.04),
+        P(mx1 + 0.04, my1 + 0.04), P(mx0 - 0.04, my1 + 0.04));
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const D = P(mx0, my1);
+    const C = P(mx1, my1);
+
+    // фасадные пилястры
+    patchPx(ctx, D, C, H, 0.05, 0.15, 0.4, H - 1.4, HH_STONE_DARK);
+    patchPx(ctx, D, C, H, 0.85, 0.95, 0.4, H - 1.4, HH_STONE_DARK);
+    patchPx(ctx, D, C, H, 0.13, 0.15, 0.4, H - 1.4, HH_STONE_LIGHT);
+    patchPx(ctx, D, C, H, 0.85, 0.87, 0.4, H - 1.4, HH_STONE_LIGHT);
+
+    // окна верхнего пояса
+    windowRow(ctx, D, C, H, 0.19, 0.81, H * 0.7, H * 0.82,
+      L >= 7 ? 4 : 2, L >= 9 ? PAL.gold : PAL.amber);
+
+    // арка входа
+    const archTop = H * (L >= 5 ? 0.62 : 0.55);
+    const u0 = L >= 10 ? 0.28 : 0.36;
+    const u1 = 1 - u0;
+    const ax = D.x + (C.x - D.x) * u0;
+    const ay = D.y + (C.y - D.y) * u0;
+    const bx = D.x + (C.x - D.x) * u1;
+    const by = D.y + (C.y - D.y) * u1;
+    const mx = (ax + bx) / 2;
+    const my = (ay + by) / 2;
+
+    ctx.fillStyle = 'rgba(14,16,18,.86)';
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - 0.5);
+    ctx.lineTo(ax, ay - archTop);
+    ctx.quadraticCurveTo(mx, my - archTop - 10, bx, by - archTop);
+    ctx.lineTo(bx, by - 0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    // тёплый свет в проёме
+    const inU0 = u0 + 0.05;
+    const inU1 = u1 - 0.05;
+    const iax = D.x + (C.x - D.x) * inU0;
+    const iay = D.y + (C.y - D.y) * inU0;
+    const ibx = D.x + (C.x - D.x) * inU1;
+    const iby = D.y + (C.y - D.y) * inU1;
+    ctx.fillStyle = 'rgba(255,196,120,.18)';
+    ctx.beginPath();
+    ctx.moveTo(iax, iay - 1);
+    ctx.lineTo(iax, iay - archTop * 0.74);
+    ctx.quadraticCurveTo((iax + ibx) / 2, (iay + iby) / 2 - archTop * 0.74 - 7,
+      ibx, iby - archTop * 0.74);
+    ctx.lineTo(ibx, iby - 1);
+    ctx.closePath();
+    ctx.fill();
+
+    // золотая окантовка арки и створки
+    ctx.strokeStyle = L >= 5 ? PAL.gold : PAL.amber;
+    ctx.lineWidth = L >= 8 ? 1.8 : 1.2;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - 0.5);
+    ctx.lineTo(ax, ay - archTop);
+    ctx.quadraticCurveTo(mx, my - archTop - 10, bx, by - archTop);
+    ctx.lineTo(bx, by - 0.5);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(76,58,38,.65)';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(mx, my - archTop + 1);
+    ctx.lineTo(mx, my - 1);
+    ctx.stroke();
+
+    // красные знамёна на крыше
+    const flagX = L >= 2 ? mx0 + 0.55 : mx0 + 0.5;
+    const fy = P(flagX, my1).y - baseH - H - 2.8;
+    banner(ctx, P(flagX, my1).x, fy, 13, 6, 9, HH_RED);
+    if (L >= 2) banner(ctx, P(flagX, my1).x + 1, fy - 11, 8, 4, 5, HH_RED_DARK);
+    if (L >= 4) {
+      const f2x = mx1 - 0.55;
+      banner(ctx, P(f2x, my1).x, fy, 12, 5.5, 8, HH_RED);
+    }
+
+    // полотнища на фасаде: красный цвет читается даже на мелком тайле
+    if (L >= 2) {
+      const bu = 0.18;
+      const bxp = D.x + (C.x - D.x) * bu;
+      const byp = D.y + (C.y - D.y) * bu;
+      poly(ctx, [
+        { x: bxp, y: byp - H * 0.84 },
+        { x: bxp + 5.5, y: byp - H * 0.84 + 1.2 },
+        { x: bxp + 5.5, y: byp - H * 0.54 },
+        { x: bxp, y: byp - H * 0.57 }
+      ], HH_RED);
+      ctx.fillStyle = PAL.gold;
+      ctx.fillRect(bxp + 0.4, byp - H * 0.84 - 0.5, 4.7, 0.8);
+    }
+    if (L >= 7) {
+      const bu2 = 0.78;
+      const bxp2 = D.x + (C.x - D.x) * bu2;
+      const byp2 = D.y + (C.y - D.y) * bu2;
+      poly(ctx, [
+        { x: bxp2, y: byp2 - H * 0.84 },
+        { x: bxp2 + 5.0, y: byp2 - H * 0.84 + 1.0 },
+        { x: bxp2 + 5.0, y: byp2 - H * 0.52 },
+        { x: bxp2, y: byp2 - H * 0.55 }
+      ], HH_RED_DARK);
+      ctx.fillStyle = PAL.gold;
+      ctx.fillRect(bxp2 + 0.4, byp2 - H * 0.84 - 0.5, 4.2, 0.8);
+    }
+
+    // золотой карниз над аркой
+    ctx.strokeStyle = L >= 8 ? PAL.gold : 'rgba(255,207,74,.7)';
+    ctx.lineWidth = L >= 8 ? 1.8 : 1.1;
+    ctx.beginPath();
+    ctx.moveTo(ax - 2, ay - archTop - 5);
+    ctx.quadraticCurveTo(mx, my - archTop - (L >= 5 ? 17 : 14),
+      bx + 2, by - archTop - 5);
+    ctx.stroke();
+
+    // 6+: факелы у арки — тёплый акцент между ярусом и парадным фасадом
+    if (L >= 6) {
+      const tL = 0.3;
+      const tR = 0.7;
+      const tx0 = D.x + (C.x - D.x) * tL;
+      const ty0 = D.y + (C.y - D.y) * tL;
+      const tx1 = D.x + (C.x - D.x) * tR;
+      const ty1 = D.y + (C.y - D.y) * tR;
+      spot(ctx, tx0, ty0 - archTop * 0.6, 3.2, 'rgba(255,196,120,.16)');
+      spot(ctx, tx0, ty0 - archTop * 0.6, 1.0, PAL.amber);
+      spot(ctx, tx1, ty1 - archTop * 0.6, 3.2, 'rgba(255,196,120,.16)');
+      spot(ctx, tx1, ty1 - archTop * 0.6, 1.0, PAL.amber);
+    }
+
+    // подиум со статуей (с 3), на L10 — голограмма Сержанта
+    if (L >= 3) {
+      const pc = P(x0 + 0.58, y1 - 0.22);
+      const podH = 2.8 + (L >= 10 ? 0.8 : 0);
+      prism(ctx, x0 + 0.37, y1 - 0.45, x0 + 0.79, y1 - 0.03, 0, podH,
+        HH_STONE_LIGHT, HH_STONE, HH_STONE_DARK);
+      prism(ctx, x0 + 0.33, y1 - 0.49, x0 + 0.83, y1 + 0.01, podH, 1.0,
+        PAL.gold, PAL.amber, PAL.gold);
+      const sy = pc.y - podH - 0.3;
+      if (L >= 10) {
+        poly(ctx, [
+          { x: pc.x - 3, y: sy - 2 },
+          { x: pc.x + 3, y: sy - 2 },
+          { x: pc.x + 9, y: sy - 34 },
+          { x: pc.x - 9, y: sy - 34 }
+        ], 'rgba(70,224,200,.08)');
+        spot(ctx, pc.x, sy - 1, 9, 'rgba(70,224,200,.14)');
+        spot(ctx, pc.x, sy - 1, 3.6, 'rgba(200,255,250,.35)');
+        heroStatue(ctx, pc.x, sy, 1.3, true);
+      } else {
+        heroStatue(ctx, pc.x, sy, 1.0 + (L - 3) * 0.04, false);
+      }
+    }
+
+    // оружейные стойки
+    if (L >= 4) {
+      const w1 = P(x0 + 0.26, y1 - 0.18);
+      weaponRack(ctx, w1.x, w1.y - baseH * 0.4, 0.85);
+    }
+    if (L >= 7) {
+      const w2 = P(x1 - 0.24, y1 - 0.16);
+      weaponRack(ctx, w2.x, w2.y - baseH * 0.4, 0.8);
+    }
+
+    // второй ярус с 5 уровня
+    const upperH = L >= 5 ? 8 + (L - 5) * 0.5 : 0;
+    const ux0 = mx0 + 0.22;
+    const uy0 = my0 + 0.1;
+    const ux1 = mx1 - 0.22;
+    const uy1 = my0 + 0.95;
+    if (upperH > 0) {
+      prism(ctx, ux0, uy0, ux1, uy1, baseH + H, upperH,
+        HH_ROOF, HH_STONE, HH_STONE_DARK);
+      // парапет: только золотая кромка и зубцы, а не сплошная плита
+      ctx.save();
+      ctx.translate(0, -(baseH + H + upperH));
+      ctx.strokeStyle = PAL.gold;
+      ctx.lineWidth = 1.2;
+      diamond(ctx, P(ux0 - 0.03, uy0 - 0.03), P(ux1 + 0.03, uy0 - 0.03),
+        P(ux1 + 0.03, uy1 + 0.03), P(ux0 - 0.03, uy1 + 0.03));
+      ctx.stroke();
+      ctx.restore();
+      // зубцы по переднему краю крыши
+      const UD = P(ux0, uy1);
+      const UC = P(ux1, uy1);
+      ctx.strokeStyle = HH_STONE_LIGHT;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      for (let k = 1; k <= 4; k++) {
+        const uu = k / 5;
+        const cxx = UD.x + (UC.x - UD.x) * uu;
+        const cyy = UD.y + (UC.y - UD.y) * uu - upperH;
+        ctx.moveTo(cxx, cyy);
+        ctx.lineTo(cxx, cyy - 2.0);
+      }
+      ctx.stroke();
+      // люк и вентиляция на крыше яруса
+      prism(ctx, ux0 + 0.25, uy0 + 0.2, ux0 + 0.5, uy0 + 0.36,
+        baseH + H + upperH, 2.0, PAL.metalLight, PAL.metal, PAL.metalDark);
+      windowRow(ctx, UD, UC, upperH, 0.12, 0.88, 2.4, upperH - 2.0,
+        L >= 8 ? 4 : 3, L >= 9 ? PAL.gold : PAL.amber);
+      patchPx(ctx, UD, UC, upperH, 0.04, 0.1, 1.2, upperH - 1.2, PAL.gold);
+      patchPx(ctx, UD, UC, upperH, 0.9, 0.96, 1.2, upperH - 1.2, PAL.gold);
+      banner(ctx, P(ux0 + 0.2, uy1).x,
+        P(ux0 + 0.2, uy1).y - baseH - H - upperH - 1.8,
+        10, 5, 7, L >= 9 ? PAL.gold : HH_RED);
+    }
+
+    // 8: купол и прожекторы
+    if (L >= 8) {
+      const uc = P((ux0 + ux1) / 2, (uy0 + uy1) / 2);
+      const uy = uc.y - baseH - H - upperH;
+      ctx.fillStyle = HH_STONE_DARK;
+      ctx.beginPath();
+      ctx.ellipse(uc.x, uy, 15, 5.6, 0, Math.PI, Math.PI * 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = HH_STONE_LIGHT;
+      ctx.beginPath();
+      ctx.ellipse(uc.x, uy - 0.8, 13.8, 5.0, 0, Math.PI, Math.PI * 2);
+      ctx.closePath();
+      ctx.fill();
+      // рёбра купола и золотая кромка
+      ctx.strokeStyle = 'rgba(60,66,68,.4)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (let k = 1; k <= 2; k++) {
+        const rr = k / 3;
+        ctx.moveTo(uc.x - 13.8 * rr, uy - 0.8);
+        ctx.ellipse(uc.x, uy - 0.8, 13.8 * rr, 5.0 * rr, 0, Math.PI, Math.PI * 2);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = L >= 9 ? PAL.gold : PAL.metalLight;
+      ctx.lineWidth = L >= 9 ? 1.6 : 1.2;
+      ctx.beginPath();
+      ctx.ellipse(uc.x, uy - 0.8, 13.8, 5.0, 0, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      // фонарь на вершине купола
+      spot(ctx, uc.x, uy - 5.6, 2.2, L >= 10 ? PAL.gold : PAL.metalDark);
+      spot(ctx, uc.x, uy - 5.8, 1.0, L >= 10 ? 'rgba(255,252,232,.95)' : PAL.cold);
+      if (L >= 10) {
+        spot(ctx, uc.x, uy - 5.6, 9, 'rgba(255,207,74,.12)');
+      }
+
+      const lA = P(mx0 + 0.12, my1 - 0.1);
+      const lB = P(mx1 - 0.12, my1 - 0.1);
+      const lampY = lA.y - baseH - H - 2;
+      poly(ctx, [
+        { x: lA.x - 2, y: lampY },
+        { x: lA.x + 2, y: lampY },
+        { x: lA.x - 13, y: lampY - 30 },
+        { x: lA.x - 17, y: lampY - 29 }
+      ], L >= 10 ? 'rgba(255,240,190,.18)' : 'rgba(255,240,190,.11)');
+      poly(ctx, [
+        { x: lB.x - 2, y: lampY },
+        { x: lB.x + 2, y: lampY },
+        { x: lB.x + 13, y: lampY - 30 },
+        { x: lB.x + 17, y: lampY - 29 }
+      ], L >= 10 ? 'rgba(255,240,190,.18)' : 'rgba(255,240,190,.11)');
+      spot(ctx, lA.x, lampY, 2.4, PAL.gold);
+      spot(ctx, lB.x, lampY, 2.4, PAL.gold);
+      spot(ctx, lA.x, lampY, 1.0, 'rgba(255,252,232,.95)');
+      spot(ctx, lB.x, lampY, 1.0, 'rgba(255,252,232,.95)');
+      if (L >= 10) {
+        spot(ctx, lA.x, lampY, 7, 'rgba(255,240,190,.12)');
+        spot(ctx, lB.x, lampY, 7, 'rgba(255,240,190,.12)');
+      }
+    }
+
+    // 9: золотые навершия по углам
+    if (L >= 9) {
+      const corners = [
+        P(mx0 + 0.02, my0 + 0.02), P(mx1 - 0.02, my0 + 0.02),
+        P(mx0 + 0.02, my1 - 0.02), P(mx1 - 0.02, my1 - 0.02)
+      ];
+      for (let i = 0; i < corners.length; i++) {
+        spire(ctx, corners[i].x, corners[i].y - baseH - H - 2,
+          L >= 10 ? 11 : 8);
+      }
+    }
+
+    // 10: парадный фасад — золотая полоса, герб и свечение голограммы
+    if (L >= 10) {
+      ctx.strokeStyle = PAL.gold;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(D.x + (C.x - D.x) * 0.05, D.y + (C.y - D.y) * 0.05 - H + 2.2);
+      ctx.lineTo(C.x, C.y - H + 2.2);
+      ctx.stroke();
+
+      // золотые пилястры парадной арки
+      ctx.lineWidth = 2.4;
+      const p0 = D.x + (C.x - D.x) * 0.25;
+      const p0y = D.y + (C.y - D.y) * 0.25;
+      const p1 = D.x + (C.x - D.x) * 0.75;
+      const p1y = D.y + (C.y - D.y) * 0.75;
+      ctx.beginPath();
+      ctx.moveTo(p0, p0y - 1);
+      ctx.lineTo(p0, p0y - archTop - 1);
+      ctx.moveTo(p1, p1y - 1);
+      ctx.lineTo(p1, p1y - archTop - 1);
+      ctx.stroke();
+      spot(ctx, p0, p0y - archTop - 2, 1.4, PAL.gold);
+      spot(ctx, p1, p1y - archTop - 2, 1.4, PAL.gold);
+
+      const ex = mx;
+      const ey = my - archTop - 6;
+      poly(ctx, [
+        { x: ex, y: ey - 5 },
+        { x: ex + 4.5, y: ey - 1.5 },
+        { x: ex + 3, y: ey + 4 },
+        { x: ex, y: ey + 6 },
+        { x: ex - 3, y: ey + 4 },
+        { x: ex - 4.5, y: ey - 1.5 }
+      ], PAL.gold);
+      spot(ctx, ex, ey, 1.6, HH_RED_DARK);
+
+      const pc = P(x0 + 0.58, y1 - 0.22);
+      spot(ctx, pc.x, pc.y - 9, 16, 'rgba(70,224,200,.08)');
+      ring(ctx, pc.x, pc.y - 0.2, 9.5, 3.4, PAL.gold, 1.3);
+      ring(ctx, pc.x, pc.y - 0.2, 6.6, 2.4, PAL.glass, 0.8);
+    }
+
+    ctx.lineCap = 'butt';
+  }
+
   // Мешок руды: песочная ткань, тёмная завязка и золотой самородок сверху.
   function oreSack(ctx, x, y, s) {
     const cloth = '#c9a063';
@@ -6174,6 +7005,7 @@ CC.Render = (function () {
     townhall: 40, barracks: 28, archer: 44, cannon: 30,
     mortar: 38, airdef: 26, mage: 50,
     goldmine: 22, elixir: 18, storage: 20, estorage: 56, wall: 18,
+    lab: 32, herohall: 40,
     mine: 10, spring: 18, airmine: 34, ambush: 16, beam: 62
   };
 
@@ -6255,6 +7087,14 @@ CC.Render = (function () {
 
   // высота лесов: короткой турели нужен каркас выше корпуса, иначе он не читается
   function siteH(b) {
+    // у новых крупных зданий купол/ярус выше корпуса: леса не должны
+    // обрываться на середине крыши
+    if (b.type === 'lab') {
+      return Math.max(bodyHeight(b) + 8, 34 + levelOf(b) * 1.5);
+    }
+    if (b.type === 'herohall') {
+      return Math.max(bodyHeight(b) + 8, 40 + levelOf(b) * 1.6);
+    }
     return Math.max(bodyHeight(b) + 8, 28);
   }
 
@@ -6707,6 +7547,8 @@ CC.Render = (function () {
       drawBarracks(ctx, b, lvl);
       return;
     }
+    if (type === 'lab') { drawLab(ctx, b, lvl); return; }
+    if (type === 'herohall') { drawHeroHall(ctx, b, lvl); return; }
     if (type === 'cannon') { drawCannon(ctx, b, lvl); return; }
     if (type === 'mortar') { drawMortar(ctx, b, lvl); return; }
     if (type === 'archer') { drawTower(ctx, b, lvl); return; }
@@ -9552,6 +10394,8 @@ CC.Render = (function () {
     if (type === 'townhall' || type === 'barracks') return 5;
     if (type === 'goldmine' || type === 'storage') return 6;
     if (type === 'elixir' || type === 'estorage') return 7;
+    if (type === 'lab') return 7;
+    if (type === 'herohall') return 5;
     return 0;
   }
 
@@ -10662,7 +11506,9 @@ CC.Render = (function () {
     spring: [32, 33, 34, 36, 38, 41, 42, 44, 46, 49],
     airmine: [42, 43, 44, 46, 47, 50, 51, 52, 54, 56],
     ambush: [26, 27, 28, 31, 32, 35, 37, 40, 42, 46],
-    beam: [64, 67, 70, 73, 76, 79, 82, 85, 88, 93]
+    beam: [64, 67, 70, 73, 76, 79, 82, 85, 88, 93],
+    lab: [36, 38, 42, 46, 52, 56, 60, 70, 78, 84],
+    herohall: [30, 32, 36, 40, 46, 50, 56, 66, 72, 78]
   };
 
   function crown(b, lvl) {
