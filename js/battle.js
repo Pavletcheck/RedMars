@@ -1344,6 +1344,32 @@ CC.Battle = (function () {
     if (TROOPS[type]) S.selected = type;
   }
 
+  // Шаг «кисти» при зажатой ЛКМ/пальце. Решает, пора ли высаживать юнита:
+  // только новая клетка, не чаще ~85 мс. Чистая функция без DOM — тесты
+  // проверяют её напрямую, а ui.js лишь передаёт координаты курсора.
+  const PAINT_MS = 85;
+  function paintPlan(info) {
+    const x = Math.floor(Number(info && info.x));
+    const y = Math.floor(Number(info && info.y));
+    const now = Number(info && info.now);
+
+    if (!isFinite(x) || !isFinite(y) || x < 0 || y < 0 || x >= G || y >= G) {
+      return { deploy: false, x: x, y: y, reason: 'outside' };
+    }
+
+    if (info.lastX === x && info.lastY === y) {
+      return { deploy: false, x: x, y: y, reason: 'same-cell' };
+    }
+
+    const gap = Number(info.gapMs) > 0 ? Number(info.gapMs) : PAINT_MS;
+    const lastAt = Number(info.lastAt);
+    if (isFinite(lastAt) && lastAt > 0 && isFinite(now) && now - lastAt < gap) {
+      return { deploy: false, x: x, y: y, reason: 'throttle' };
+    }
+
+    return { deploy: true, x: x, y: y, reason: null };
+  }
+
   // Автовысадка всех войск на краю, ближайшем к командном центре (headless-набег).
   // schedule=true раскладывает высадку по времени: так в историю попадает
   // настоящий лог, а повтор показывает подходящие отряды, а не всех сразу.
@@ -1567,6 +1593,8 @@ CC.Battle = (function () {
     update: update,
     deploy: deploy,
     select: select,
+    deployPaintMs: PAINT_MS,
+    paintPlan: paintPlan,
     heroAbility: heroAbility,
     syncArmy: syncArmy,
     finishNow: finishNow,

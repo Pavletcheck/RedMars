@@ -1063,6 +1063,13 @@ html, body { width: 100%; height: 100%; }
   max-width: 560px;
 }
 
+/* Терминал шире покупок: на десктопе до 820 px, на узком экране 92vw.
+   В трек должны помещаться две карточки по 320 px и две стрелки. */
+#shop .overlay__card.shop,
+#shop .shop {
+  max-width: min(820px, 92vw);
+}
+
 .shop {
   max-width: 560px;
   max-height: min(86dvh, 640px);
@@ -1205,15 +1212,16 @@ html, body { width: 100%; height: 100%; }
 
 .shop-card {
   position: relative;
-  flex: 0 0 min(84%, 242px);
+  flex: 0 0 auto;
+  width: clamp(240px, calc(50% - 4px), 320px);
   scroll-snap-align: start;
   min-width: 0;
   min-height: 132px;
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: max-content minmax(0, 1fr);
   grid-template-rows: auto auto auto auto auto;
   align-items: center;
-  column-gap: 8px;
+  column-gap: 10px;
   padding: 7px 8px;
   border: 1px solid var(--hud-line);
   border-radius: 12px;
@@ -1269,6 +1277,62 @@ html, body { width: 100%; height: 100%; }
   border: 2px solid rgba(90, 62, 28, .3);
   font-size: 1.1rem;
   line-height: 1;
+}
+
+/* Арт художника: заметная область 72×72 вместо маленькой emoji-иконки.
+   #app перебивает базовые размеры style.css; псевдо-иконка художника
+   под картинкой не нужна. Явная колонка не даёт тексту заехать под арт. */
+.shop-card.has-art {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+/* Терминал: заметная площадь под арт есть у всех карточек, даже пока
+   художник не добавил buildingArt — там остаётся процедурная иконка. */
+#app #shop .shop-card {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+#app #shop .shop-card__icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+}
+
+#app .shop-card.has-art {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+#app .shop-card__icon.has-art {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 248, 230, .72);
+}
+
+#app .shop-card__icon.has-art::before,
+#app .shop-card__icon.has-art::after {
+  display: none;
+}
+
+.shop-card__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* Замок поверх арта: закрытая карточка всё равно показывает здание. */
+.shop-card__lock {
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  z-index: 2;
+  font-size: .78rem;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(40, 25, 8, .35));
 }
 
 .shop-card__name {
@@ -1650,6 +1714,12 @@ html, body { width: 100%; height: 100%; }
   z-index: 7;
 }
 
+/* Ангар шире панели постройки: две карточки войск видны без прокрутки.
+   Обычная карточка постройки остаётся 340 px. */
+.selbar:has(.selarmy:not(.hidden)) {
+  width: min(620px, calc(100% - 96px));
+}
+
 .selbar::-webkit-scrollbar { display: none; }
 
 /* На низком ландшафте (320–390 px) панель должна прокручиваться, а не
@@ -1660,9 +1730,28 @@ html, body { width: 100%; height: 100%; }
     max-height: calc(100dvh - 78px);
   }
 
+  /* Ангар на низком экране: уже и ниже верхнего HUD, но выше нижнего меню.
+     На 844×390 это x≈132…712, y≈84…318. */
+  .selbar:has(.selarmy:not(.hidden)) {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+    width: min(580px, calc(100% - 140px));
+    max-height: calc(100dvh - 156px);
+  }
+
   /* В ангаре та же цифра есть в заголовке армии: не тратим высоту. */
   .selbar:has(.selarmy:not(.hidden)) .selbar__stats { display: none; }
   #app .tcard { min-height: 138px; }
+  #app .selarmy .tcard {
+    min-height: 132px;
+    gap: 0;
+    padding-top: 1px;
+    padding-bottom: 1px;
+  }
+  #app .selarmy .tcard .tcard__icon { margin-bottom: 0; }
+
+  /* На 844×390 пустая очередь — только лишняя строка под карточкой:
+     скрываем её, чтобы карточка с артом не упиралась в край панели. */
+  .selarmy__queue:has(.qrow_empty) { display: none; }
 
   /* Карточки выше кнопки ускорения: сначала карусель, потом остальное. */
   .selarmy__speed { order: 5; }
@@ -1933,8 +2022,9 @@ html, body { width: 100%; height: 100%; }
 
 .tcard {
   position: relative;
-  flex: 0 0 clamp(168px, 78%, 222px);
-  scroll-snap-align: center;
+  flex: 0 0 auto;
+  width: clamp(220px, calc(50% - 6px), 300px);
+  scroll-snap-align: start;
   min-width: 0;
   min-height: 150px;
   display: flex;
@@ -2024,6 +2114,7 @@ html, body { width: 100%; height: 100%; }
 .tcard.is-off .tcard__batch { opacity: .5; }
 
 .tcard__icon {
+  flex: 0 0 auto;
   width: 27px;
   height: 27px;
   border-radius: 50%;
@@ -2033,6 +2124,54 @@ html, body { width: 100%; height: 100%; }
   color: #fff;
   font-size: .9rem;
   box-shadow: inset 0 -2px 4px rgba(0, 0, 0, .2);
+}
+
+/* Арт войска: та же заметная область, что и у здания в терминале.
+   #app и .tcard перебивают базовый круг и фон героя. */
+#app .tcard .tcard__icon.has-art,
+#app .tcard .tcard__icon[data-art="1"] {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 248, 230, .72);
+}
+
+/* Площадь под арт у всех карточек войск: пока картинки нет, там крупная
+   процедурная иконка style.css. */
+#app .tcard .tcard__icon {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  margin-bottom: 3px;
+  border-radius: 12px;
+}
+
+#app .tcard .tcard__icon.has-art::before,
+#app .tcard .tcard__icon.has-art::after,
+#app .tcard .tcard__icon[data-art="1"]::before,
+#app .tcard .tcard__icon[data-art="1"]::after {
+  display: none;
+}
+
+.tcard__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* Низкий экран: арт 56 px, чтобы карточка, «Нанять» и стрелки
+   оставались доступны над нижним меню. */
+@media (max-height: 420px) {
+  #app .tcard .tcard__icon,
+  #app .tcard .tcard__icon.has-art,
+  #app .tcard .tcard__icon[data-art="1"] {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+  }
 }
 
 .tcard__name {
@@ -4538,7 +4677,8 @@ html, body { width: 100%; height: 100%; }
 
 /* Карточка в карусели ангара: первая, с золотой рамкой. */
 .tcard_hero {
-  flex-basis: clamp(176px, 82%, 232px);
+  flex-basis: clamp(220px, calc(50% - 6px), 300px);
+  width: clamp(220px, calc(50% - 6px), 300px);
   border-color: #b8912f;
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, .6),
@@ -4660,6 +4800,7 @@ html, body { width: 100%; height: 100%; }
 
 .buy__grid .shop-card {
   flex-basis: min(84%, 206px);
+  width: min(84%, 206px);
   min-height: 122px;
 }
 
@@ -4696,6 +4837,7 @@ html, body { width: 100%; height: 100%; }
 
 .buy__rub .shop-card {
   flex: none;
+  width: auto;
   min-height: 112px;
   display: flex;
   flex-direction: column;

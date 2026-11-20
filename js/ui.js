@@ -2419,6 +2419,27 @@ CC.UI = (function () {
     return 1;
   }
 
+  // Картинка от художника для карточки карусели. Если CC.Render.buildingArt
+  // или troopArt ещё нет (или функция вернула пусто) — тихо оставляем emoji:
+  // игра не должна падать до того, как художник добавит арт.
+  function cardArt(kind, type, size, level, cls) {
+    const R = CC.Render;
+    if (!R) return null;
+    const fn = kind === 'building' ? R.buildingArt : R.troopArt;
+    if (typeof fn !== 'function') return null;
+
+    let src = null;
+    try {
+      src = fn(type, size, level);
+    } catch (e) {
+      src = null;
+    }
+    if (!src || typeof src !== 'string') return null;
+
+    return '<img class="' + cls + '" src="' + escHtml(src) + '" alt="" width="' +
+      size + '" height="' + size + '" draggable="false" decoding="async">';
+  }
+
   function shopCardHtml(type) {
     const d = CC.BUILDINGS[type];
     const have = CC.Base.count(type);
@@ -2448,10 +2469,16 @@ CC.UI = (function () {
     const poorGold = CC.Game.gold() < price.gold;
     const poorElixir = CC.Game.elixir() < price.elixir;
     const poor = !locked && !full && !lesson && (poorGold || poorElixir);
-    const cls = 'shop-card' + (locked ? ' is-locked' : '') +
+    const icon = locked ? '🔒' : CC.ICONS[type];
+    // Уровень для арта: обычная карточка показывает текущий TH (не выше 10),
+    // закрытая — 1, чтобы художнику не пришлось рисовать «нулевой» вид.
+    const artLevel = locked ? 1 : Math.min(CC.MAX_TH, th);
+    const art = cardArt('building', type, 72, artLevel, 'shop-card__art');
+    const cls = 'shop-card' + (art ? ' has-art' : '') + (locked ? ' is-locked' : '') +
       (full ? ' is-empty' : '') + (poor ? ' is-poor' : '') +
       (lesson ? ' is-lesson' : '');
-    const icon = locked ? '🔒' : CC.ICONS[type];
+    const iconCls = 'shop-card__icon cc-icon' + (art ? ' has-art' : '');
+    const lockBadge = locked ? '<span class="shop-card__lock" aria-hidden="true">🔒</span>' : '';
     // уровень открытия/текущий и состояние — зацепки для стилей художника
     const cardState = locked ? 'locked' : (lesson ? 'lesson' :
       (full || poor ? 'insufficient' : 'available'));
@@ -2478,7 +2505,9 @@ CC.UI = (function () {
       (d.trap ? ' data-trap="1"' : '') +
       ' data-level="' + cardLevel + '" data-state="' + cardState + '"' +
       (locked || full ? ' disabled' : '') + ' title="' + title + '">' +
-      '<span class="shop-card__icon cc-icon" data-type="' + type + '">' + icon + '</span>' +
+      lockBadge +
+      '<span class="' + iconCls + '" data-type="' + type + '">' +
+        (art || icon) + '</span>' +
       '<span class="shop-card__name">' + d.name + '</span>' +
       '<span class="shop-card__desc">' + (d.desc || '') + '</span>' +
       count + cost + req +
@@ -3612,8 +3641,11 @@ CC.UI = (function () {
     };
     const minTh = H.minTh || 5;
     const lvl = CC.Game.heroLevel();
-    const icon = '<span class="tcard__icon cc-icon" data-type="hero"' +
-      ' style="background:' + d.color + '">' + d.icon + '</span>';
+    const heroArtLvl = (th < minTh || lvl < 1) ? 1 : lvl;
+    const heroArt = cardArt('troop', 'hero', 72, heroArtLvl, 'tcard__art');
+    const icon = '<span class="tcard__icon cc-icon' + (heroArt ? ' has-art' : '') + '"' +
+      ' data-type="hero"' +
+      ' style="background:' + d.color + '">' + (heroArt || d.icon) + '</span>';
 
     if (th < minTh || lvl < 1) {
       return '<div class="tcard tcard_hero is-locked" data-hero="1"' +
@@ -3724,6 +3756,8 @@ CC.UI = (function () {
         const space = d.space || 1;
         const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
         const desc = d.desc || '';
+        const artLvl = th < need ? 1 : CC.Game.troopLevel(type);
+        const art = cardArt('troop', type, 72, artLvl, 'tcard__art');
 
         // Закрытое войско: серая карточка с замком, без найма и «×N».
         if (th < need) {
@@ -3732,7 +3766,8 @@ CC.UI = (function () {
             ' title="' + d.name + ' · откроется на ' + need + ' уровне центра">' +
             '<span class="tcard__lock" aria-hidden="true">🔒</span>' +
             '<span class="tcard__icon cc-icon" data-type="' + type + '"' +
-            ' style="background:' + d.color + '">' + d.icon + '</span>' +
+            (art ? ' data-art="1"' : '') +
+            ' style="background:' + d.color + '">' + (art || d.icon) + '</span>' +
             '<span class="tcard__name">' + d.name + '</span>' +
             '<span class="tcard__desc">' + desc + '</span>' +
             '<span class="tcard__cost">с центра ' + need + '</span>' +
@@ -3757,7 +3792,8 @@ CC.UI = (function () {
           ' title="' + batchTitle + '">' + batchLabel + '</button>' +
           '<span class="tcard__lvl">Ур. ' + lvl + '/' + maxLvl + '</span>' +
           '<span class="tcard__icon cc-icon" data-type="' + type + '"' +
-          ' style="background:' + d.color + '">' + d.icon + '</span>' +
+          (art ? ' data-art="1"' : '') +
+          ' style="background:' + d.color + '">' + (art || d.icon) + '</span>' +
           '<span class="tcard__name">' + d.name + '</span>' +
           '<span class="tcard__desc">' + desc + '</span>' +
           '<span class="tcard__meta">' + space + ' ' + spaceWord(space) +
@@ -4158,6 +4194,11 @@ CC.UI = (function () {
   let pinchInfo = null;
   let suppressTap = false;
   let lastTap = null;
+  // Кисть высадки: пока палец/ЛКМ зажаты, войска ставятся по новым клеткам.
+  // Это не камера: пока battlePaint жив, панораму не двигаем.
+  let battlePaint = null;
+  let lastPaintSoundAt = 0;
+  const PAINT_SOUND_MS = 120;
 
   function localPoint(e) {
     const rect = canvas.getBoundingClientRect();
@@ -4198,8 +4239,11 @@ CC.UI = (function () {
   }
 
   function onPointerDown(e) {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (CC.App.introOpen) return; // заставка не пускает ввод в сцену
+
+    // ЛКМ и палец — игра; правая кнопка мыши — только панорама.
+    const rightPan = e.pointerType === 'mouse' && e.button === 2;
+    if (e.pointerType === 'mouse' && e.button !== 0 && !rightPan) return;
     if (askState) return; // открытый модал блокирует поле и перетаскивание
 
     const p = localPoint(e);
@@ -4212,31 +4256,38 @@ CC.UI = (function () {
         id: e.pointerId,
         clientX: e.clientX,
         clientY: e.clientY,
-        moved: false
+        moved: rightPan
       };
       pinchInfo = null;
-      suppressTap = false;
+      suppressTap = rightPan;
 
-      // под постройкой начинаем кандидата на перетаскивание — только в режиме построек
-      if (drag) dragCancel();
-      if (CC.App.mode === 'base' && state.buildMode && !state.armed) {
-        const g = gridAtPoint(p);
-        const gx = Math.floor(g.x);
-        const gy = Math.floor(g.y);
-        const it = (gx >= 0 && gy >= 0 && gx < CC.GRID && gy < CC.GRID)
-          ? CC.Base.itemAt(gx, gy)
-          : null;
+      if (rightPan) {
+        battlePaint = null;
+      } else if (startBattlePaint(e, p)) {
+        // жест-кисть уже высадил первого юнита; панораму не начинаем
+      } else {
+        // под постройкой начинаем кандидата на перетаскивание — только в режиме построек
+        if (drag) dragCancel();
+        if (CC.App.mode === 'base' && state.buildMode && !state.armed) {
+          const g = gridAtPoint(p);
+          const gx = Math.floor(g.x);
+          const gy = Math.floor(g.y);
+          const it = (gx >= 0 && gy >= 0 && gx < CC.GRID && gy < CC.GRID)
+            ? CC.Base.itemAt(gx, gy)
+            : null;
 
-        if (it) {
-          dragBegin(it.id, g.x, g.y);
-          if (drag) {
-            drag.sx = e.clientX;
-            drag.sy = e.clientY;
+          if (it) {
+            dragBegin(it.id, g.x, g.y);
+            if (drag) {
+              drag.sx = e.clientX;
+              drag.sy = e.clientY;
+            }
           }
         }
       }
     } else if (pointers.size === 2) {
       if (drag) dragCancel();
+      battlePaint = null;
       tapInfo = null;
       suppressTap = true;
       pinchInfo = pointerPair();
@@ -4267,6 +4318,14 @@ CC.UI = (function () {
       }
       pinchInfo = info;
       suppressTap = true;
+      return;
+    }
+
+    // кисть высадки: курсор ведёт войска, камера стоит на месте
+    if (battlePaint && battlePaint.pointerId === e.pointerId) {
+      if (tapInfo) tapInfo.moved = true;
+      paintDeployAt(p);
+      updateCursor();
       return;
     }
 
@@ -4310,6 +4369,18 @@ CC.UI = (function () {
     const p = localPoint(e);
     pointers.delete(e.pointerId);
     try { canvas.releasePointerCapture(e.pointerId); } catch (err) { /* уже отпущен */ }
+
+    // Отпустили кисть: юнит уже высажен на pointerdown/move, тап не повторяем.
+    if (battlePaint && battlePaint.pointerId === e.pointerId) {
+      battlePaint = null;
+      tapInfo = null;
+      pinchInfo = null;
+      suppressTap = false;
+      if (e.pointerType !== 'mouse') hoverAt = null;
+      updateGhost();
+      updateCursor();
+      return;
+    }
 
     if (drag) {
       const g = gridAtPoint(p);
@@ -4364,6 +4435,7 @@ CC.UI = (function () {
   function onPointerCancel(e) {
     pointers.delete(e.pointerId);
     if (drag) dragCancel();
+    battlePaint = null;
     tapInfo = null;
     pinchInfo = null;
     suppressTap = false;
@@ -4376,6 +4448,7 @@ CC.UI = (function () {
     // указатель ушёл за canvas — не оставляем «зажатых» пальцев
     if (pointers.size > 0) {
       pointers.clear();
+      battlePaint = null;
       tapInfo = null;
       pinchInfo = null;
       suppressTap = false;
@@ -4546,6 +4619,77 @@ CC.UI = (function () {
       return;
     }
     if (CC.Sound) CC.Sound.play('deploy', undefined, CC.Battle.state.selected);
+    dismissBattleIntro();
+    hideTip();
+  }
+
+  /* ---------- высадка «кистью» ---------- */
+
+  // Можно ли начать жест-кисть: бой идёт, войско выбрано и ещё не кончилось,
+  // палец опущен на свободную клетку (постройки не трогаем — там панорама).
+  function startBattlePaint(e, p) {
+    if (CC.App.mode !== 'battle' || !CC.Battle || !CC.Battle.state) return false;
+    const S = CC.Battle.state;
+    if (S.over || S.kind === 'replay' || S.viewReplay) return false;
+
+    const type = S.selected;
+    if (!type || !CC.TROOPS[type] || (S.army[type] | 0) <= 0) return false;
+
+    const g = gridAtPoint(p);
+    const x = Math.floor(g.x);
+    const y = Math.floor(g.y);
+    if (x < 0 || y < 0 || x >= CC.GRID || y >= CC.GRID) return false;
+    if (S.occ && S.occ[y * CC.GRID + x] >= 0) return false;
+
+    battlePaint = {
+      pointerId: e.pointerId,
+      lastX: null,
+      lastY: null,
+      lastAt: 0,
+      toasted: false
+    };
+    suppressTap = true;
+    paintDeployAt(p);
+    return true;
+  }
+
+  // Одна попытка высадки в текущей клетке. Повтор в той же клетке и частые
+  // пиксели отсекает чистая CC.Battle.paintPlan. Ошибки — один тост на жест,
+  // дальше молча: иначе «армия кончилась» звенит на каждый пиксель.
+  function paintDeployAt(p) {
+    if (!battlePaint || !CC.Battle || !CC.Battle.state) return;
+    const S = CC.Battle.state;
+    const g = gridAtPoint(p);
+    const now = Date.now();
+    const plan = CC.Battle.paintPlan({
+      x: g.x,
+      y: g.y,
+      now: now,
+      lastX: battlePaint.lastX,
+      lastY: battlePaint.lastY,
+      lastAt: battlePaint.lastAt,
+      gapMs: CC.Battle.deployPaintMs
+    });
+    if (!plan.deploy) return;
+
+    battlePaint.lastX = plan.x;
+    battlePaint.lastY = plan.y;
+    battlePaint.lastAt = now;
+
+    const res = CC.Battle.deploy(plan.x, plan.y);
+    if (res && res.error) {
+      if (!battlePaint.toasted) {
+        toast(res.error);
+        battlePaint.toasted = true;
+      }
+      return;
+    }
+
+    // Звук высадки не чаще ~120 мс, даже если клетки проскакивают быстрее.
+    if (CC.Sound && now - lastPaintSoundAt >= PAINT_SOUND_MS) {
+      CC.Sound.play('deploy', undefined, S.selected);
+      lastPaintSoundAt = now;
+    }
     dismissBattleIntro();
     hideTip();
   }
