@@ -252,18 +252,10 @@
         <span>Ангар · армия <b id="army-cap">0/0</b></span>
         <span class="selarmy__hint">тренируется <b id="army-queue">0 · 0 в очереди</b></span>
       </div>
+      <button class="selbar__btn selbar__btn_go selarmy__recruit" id="hangar-recruit" type="button">Нанять войска</button>
       <button class="selbar__btn selbar__btn_speed selarmy__speed hidden" data-act="speed-train" id="speed-train">
         Ускорить
       </button>
-
-      <div class="carousel carousel_army">
-        <button class="carousel__arrow carousel__arrow_prev" id="train-prev" type="button"
-                data-carousel="train" data-dir="-1" title="Предыдущее войско" aria-label="Предыдущее войско">‹</button>
-        <div class="selarmy__troops carousel__track" id="train-list" tabindex="0"
-             role="listbox" aria-label="Войска в ангаре"></div>
-        <button class="carousel__arrow carousel__arrow_next" id="train-next" type="button"
-                data-carousel="train" data-dir="1" title="Следующее войско" aria-label="Следующее войско">›</button>
-      </div>
 
       <div class="selarmy__queue" id="train-queue"></div>
     </div>
@@ -406,6 +398,24 @@
       <div class="chapter-claim hidden" id="chapter-claim">
         <span class="chapter-claim__reward">Награда главы: <b>+1 платина</b></span>
         <button class="chapter-claim__btn" id="chapter-claim-btn" type="button">Получить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="recruit">
+    <div class="overlay__card recruit">
+      <div class="recruit__head">
+        <div class="recruit__title-wrap">
+          <h2 class="overlay__title recruit__title">Найм</h2>
+          <span class="recruit__sub" id="recruit-sub"></span>
+        </div>
+        <button class="levels__x recruit__x" id="recruit-x" title="Закрыть">✕</button>
+      </div>
+      <div class="recruit__body">
+        <div class="recruit__left">
+          <div class="recruit__grid" id="recruit-grid" role="listbox" aria-label="Войска"></div>
+        </div>
+        <aside class="recruit__side" id="recruit-side"></aside>
       </div>
     </div>
   </div>
