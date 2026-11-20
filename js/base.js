@@ -164,7 +164,9 @@ CC.Base = (function () {
     // и за 5 секунд. Любое другое здание — по обычной цене и времени.
     const lesson = CC.Game && CC.Game.tutorialPlace
       ? CC.Game.tutorialPlace(type) : null;
-    const cost = lesson
+    const rescue = !lesson && CC.Game && CC.Game.storageRescue
+      ? CC.Game.storageRescue(type) : false;
+    const cost = (lesson || rescue)
       ? { gold: 0, elixir: 0 }
       : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 });
     const time = lesson
@@ -233,6 +235,7 @@ CC.Base = (function () {
       id: it.id,
       spent: { gold: cost.gold, elixir: cost.elixir },
       lesson: !!lesson,
+      rescue: !!rescue,
       build: build
     };
   }
@@ -1096,6 +1099,34 @@ CC.Game = (function () {
     return caps()[res] || 0;
   }
 
+  /* Первый склад при тупике: если склада этого ресурса нет ни готового,
+     ни строящегося и ёмкость 0, постановка бесплатная. Старые сейвы без
+     складов получают rescue сразу, сейв не сбрасывается. */
+  function storageRescue(type) {
+    const res = type === 'storage' ? 'gold'
+      : (type === 'estorage' ? 'elixir' : null);
+    if (!res) return false;
+
+    const list = CC.Base.list();
+    let completed = 0;
+    let building = 0;
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      if (!it || it.type !== type) continue;
+      if (isBuilding(it.id)) building++;
+      else completed++;
+    }
+
+    // Уже есть склад или он строится — rescue не нужен.
+    if (completed > 0 || building > 0) return false;
+    if (cap(res) > 0) return false;
+
+    return {
+      ok: true, rescue: true, type: type, res: res,
+      cost: { gold: 0, elixir: 0 }
+    };
+  }
+
   // Плашка «Full!»: бур/реактор полны, когда полон их собственный накопитель;
   // склад — когда заполнен ресурс именно этого склада.
   function isFull(id) {
@@ -1366,6 +1397,17 @@ CC.Game = (function () {
       : 0;
     if (!amount) return { error: 'Курс не задан' };
 
+    // Нет склада — покупать некуда: отказ до списания платины.
+    const capNow = cap(res);
+    if (capNow <= 0) {
+      return {
+        error: 'Сначала построй склад ' + (res === 'gold' ? 'руды' : 'энергии'),
+        code: 'no-cap',
+        res: res,
+        gems: gemsNow()
+      };
+    }
+
     if (st.gems < n) {
       const no = noGems(n);
       no.code = 'no-gems';
@@ -1373,7 +1415,6 @@ CC.Game = (function () {
       return no;
     }
 
-    const capNow = cap(res);
     const held = res === 'gold' ? st.gold : st.elixir;
     const free = Math.max(0, Math.floor(capNow - held));
     if (free <= 0) {
@@ -4810,6 +4851,7 @@ CC.Game = (function () {
     produceAt: produceAt,
     rate: rate,
     cap: cap,
+    storageRescue: storageRescue,
     collect: collect,
     collectAll: collectAll,
     extract: extractInfo,

@@ -5562,6 +5562,21 @@ html, body { width: 100%; height: 100%; }
   font-weight: 900;
 }
 
+/* Первый склад при тупике: тоже бесплатный, но с обычным таймером. */
+.shop-card.is-rescue {
+  border-color: #b57a12;
+  box-shadow:
+    inset 0 0 0 2px rgba(240, 196, 84, .42),
+    0 4px 10px rgba(120, 80, 20, .22);
+}
+.shop-card.is-rescue .shop-card__cost { color: #7a5a12; font-weight: 900; }
+.shop-card.is-rescue .shop-card__req_rescue {
+  white-space: normal;
+  line-height: 1.15;
+  font-size: .56rem;
+  color: #7a5a12;
+}
+
 /* Портрет: квест-бар стоит выше нижней панели, поэтому Сержант
    поднимается над ним и не налезает на верхний HUD. */
 .is-portrait .sergeant {

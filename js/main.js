@@ -1074,9 +1074,10 @@ CC.CamMath = (function () {
      фиксированное число тайлов. Нормы ниже — только для запасного
      варианта без рамки (пустая база/тесты). */
   const DEFAULT_TILES = 13;
-  const MIN_TILE_PX = 44;
+  const MIN_TILE_PX = 40;    // дефолт деревни: крупно и читаемо, обзор — зум-аут
+  const BATTLE_MIN_TILE_PX = 34; // дефолт боя: читаемо, края — панорамой
   const MAX_TILE_PX = 104;   // на мониторе не приближаем тайл сильнее
-  const MIN_VISIBLE_Y = 6;   // по высоте полосы — хотя бы столько тайлов
+  const MIN_VISIBLE_Y = 4.5; // по высоте полосы — хотя бы 4.5 тайла
   const BASE_PAD = 1.5;      // отступ вокруг ядра построек в тайлах
   const BASE_CORE_MAX = 12;  // максимум рамки: ядро + запас, без дальних стен
   // Мир в деревне и в бою опускается относительно фона. Небольшой сдвиг
@@ -1213,15 +1214,28 @@ CC.CamMath = (function () {
   // Базовый зум: в деревне вписываем рамку построек, в бою — базу врага.
   // Запасной вариант без рамки — 12-14 тайлов по ширине.
   function defaultZoomFor(w, h, bandH, tw, th, fit, focus, homeRect, topPad) {
-    if (focus) return MIN_ZOOM;          // в бою вписываем базу врага
+    if (focus) {
+      // В бою важнее читаемость: минимум 30 px на тайл, даже если база
+      // выше полосы и её края доступны панорамой.
+      const minBattle = BATTLE_MIN_TILE_PX / tw;
+      return clamp(minBattle / fit, MIN_ZOOM, MAX_ZOOM);
+    }
     if (h > w) return MIN_ZOOM;          // портрет: вписываем сцену с полями
 
     if (homeRect) {
+      // На очень маленьких экранах (683×320) держим прежний минимум 30,
+      // чтобы база не превращалась в один обрезанный кусок.
+      const minTile = (w < 700 && h <= 360) ? 30 : MIN_TILE_PX;
       let s = fitScaleFor(homeRect, w, bandH, topPad || 0, tw, th);
       // Даже если база не влезает целиком, тайл на телефоне должен
       // оставаться читаемым и тапабельным. «Всё поле» — кнопка ◎.
-      s = Math.max(s, MIN_TILE_PX / tw);
+      s = Math.max(s, minTile / tw);
       s = Math.min(s, MAX_TILE_PX / tw);
+      // Не приближаем базу сильнее, чем позволяет полоса HUD, но не
+      // опускаемся ниже минимального читаемого тайла: лучше лёгкая
+      // обрезка и панорама, чем мелкая база.
+      const safe = fitScaleFor(homeRect, w, bandH, 0, tw, th);
+      if (s > safe) s = Math.max(safe, minTile / tw);
       return clamp(s / fit, MIN_ZOOM, MAX_ZOOM);
     }
 
@@ -1244,9 +1258,10 @@ CC.CamMath = (function () {
     const battle = !!focus;
 
     // Деревня вписывает ядро почти на всю ширину, бой — 55–70% ширины,
-    // чтобы база читалась как объект, а не как обои.
+    // чтобы база читалась как объект, а не как обои. Небольшой запас
+    // сверху/снизу не даёт прижаться к HUD при новой высоте тайла.
     const widthShare = battle ? 0.68 : 0.96;
-    const padForFit = battle ? 8 : (topPad || 0);
+    const padForFit = battle ? 8 : 12;
     const rawFit = Math.min((w * widthShare) / box.w, bandH / (box.h + padForFit));
     const fit = Math.min(rawFit, MAX_FIT_SCALE);
 
@@ -1395,6 +1410,7 @@ CC.CamMath = (function () {
     BASE_CORE_MAX: BASE_CORE_MAX,
     DEFAULT_TILES: DEFAULT_TILES,
     MIN_TILE_PX: MIN_TILE_PX,
+    BATTLE_MIN_TILE_PX: BATTLE_MIN_TILE_PX,
     MAX_TILE_PX: MAX_TILE_PX,
     BASE_DROP: BASE_DROP,
     BASE_DROP_LIMIT: BASE_DROP_LIMIT,

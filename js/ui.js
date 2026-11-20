@@ -2806,12 +2806,16 @@ CC.UI = (function () {
     // карточка честно показывает «Бесплатно · 0:05».
     const lesson = !locked && !full && CC.Game.tutorialPlace
       ? CC.Game.tutorialPlace(type) : null;
-    const price = lesson
+    // Тупик без склада: первый склад ресурса ставится бесплатно.
+    const rescue = !locked && !full && !lesson && CC.Game.storageRescue
+      ? CC.Game.storageRescue(type) : null;
+    const free = !!(lesson || rescue);
+    const price = free
       ? { gold: 0, elixir: 0 }
       : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 });
     const poorGold = CC.Game.gold() < price.gold;
     const poorElixir = CC.Game.elixir() < price.elixir;
-    const poor = !locked && !full && !lesson && (poorGold || poorElixir);
+    const poor = !locked && !full && !free && (poorGold || poorElixir);
     const icon = locked ? '🔒' : CC.ICONS[type];
     // Уровень для арта: обычная карточка показывает текущий TH (не выше 10),
     // закрытая — 1, чтобы художнику не пришлось рисовать «нулевой» вид.
@@ -2819,24 +2823,27 @@ CC.UI = (function () {
     const art = cardArt('building', type, 72, artLevel, 'shop-card__art');
     const cls = 'shop-card' + (art ? ' has-art' : '') + (locked ? ' is-locked' : '') +
       (full ? ' is-empty' : '') + (poor ? ' is-poor' : '') +
-      (lesson ? ' is-lesson' : '');
+      (lesson ? ' is-lesson' : '') + (rescue ? ' is-rescue' : '');
     const iconCls = 'shop-card__icon cc-icon' + (art ? ' has-art' : '');
     const lockBadge = locked ? '<span class="shop-card__lock" aria-hidden="true">🔒</span>' : '';
     // уровень открытия/текущий и состояние — зацепки для стилей художника
     const cardState = locked ? 'locked' : (lesson ? 'lesson' :
-      (full || poor ? 'insufficient' : 'available'));
+      (rescue ? 'rescue' : (full || poor ? 'insufficient' : 'available')));
     const cardLevel = locked ? needTh : th;
     const count = '<span class="shop-card__count">' + have + ' / ' + limit + '</span>';
     const ptime = lesson ? lesson.seconds
       : (CC.Game.placeTime ? CC.Game.placeTime(type) : 0);
-    const costText = (lesson ? 'Бесплатно' : placePriceText(price)) +
+    const costText = (free ? 'Бесплатно' : placePriceText(price)) +
       (ptime > 0 ? ' · ' + formatTime(ptime) : '');
     const cost = '<span class="shop-card__cost">' + costText + '</span>';
-    const req = locked ? '<span class="shop-card__req">с командного центра ' + needTh + '</span>' : '';
+    const req = locked ? '<span class="shop-card__req">с командного центра ' + needTh + '</span>'
+      : (rescue ? '<span class="shop-card__req shop-card__req_rescue">' +
+        'Первый склад: бесплатно</span>' : '');
     let title;
     if (locked) title = lockReason;
     else if (full) title = 'Лимит исчерпан';
     else if (lesson) title = 'Сержант: бесплатно за ' + lesson.seconds + ' с';
+    else if (rescue) title = 'Первый склад: бесплатно, чтобы не потерять ресурсы';
     else if (poor) {
       const lack = [];
       if (poorGold) lack.push('ещё ' + fmtNum(price.gold - CC.Game.gold()) + ' руды');
@@ -2935,12 +2942,14 @@ CC.UI = (function () {
     const gems = CC.Game.gems();
     const balance = 'Платина: ' + platText(gems);
     const held = res === 'elixir' ? CC.Game.elixir() : CC.Game.gold();
+    const noCap = CC.Game.cap(res) <= 0;
     const full = Math.floor(CC.Game.cap(res) - held) <= 0;
-    const text = buyResNoteText || (full ? 'Склад полон' : balance);
+    const capMsg = 'Сначала построй склад ' + (res === 'gold' ? 'руды' : 'энергии');
+    const text = buyResNoteText || (noCap ? capMsg : (full ? 'Склад полон' : balance));
     const kind = buyResNoteText
       ? (buyResNoteKind || 'error')
-      : (full ? 'full' : 'balance');
-    const hasMsg = !!buyResNoteText || full;
+      : (noCap ? 'no-cap' : (full ? 'full' : 'balance'));
+    const hasMsg = !!buyResNoteText || full || noCap;
 
     if (buyResNote) {
       if (buyResNote.textContent !== text) buyResNote.textContent = text;
@@ -3010,7 +3019,10 @@ CC.UI = (function () {
 
     if (out.error) {
       toast(out.error);
-      if (out.code === 'no-gems') {
+      if (out.code === 'no-cap') {
+        buyResNoteText = out.error;
+        buyResNoteKind = 'no-cap';
+      } else if (out.code === 'no-gems') {
         buyResNoteText = 'Не хватает ' + out.missing + ' платины';
         buyResNoteKind = 'short';
       } else {
