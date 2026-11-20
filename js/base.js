@@ -63,7 +63,7 @@ CC.Base = (function () {
 
   const G = CC.GRID;
   const DEFS = CC.BUILDINGS;
-  const KEY = 'clash-base-v1';
+  const KEY = 'clash-base-v2';
 
   let items = [];
   let nextId = 1;
@@ -209,7 +209,7 @@ CC.Base = (function () {
       st.elixir -= cost.elixir;
     }
 
-    // Таймер стройки живёт в прогрессе деревни (clash-village-v1).
+    // Таймер стройки живёт в прогрессе деревни (clash-village-v2).
     let build = null;
     if (time > 0 && CC.Game && CC.Game.startBuild) {
       build = CC.Game.startBuild(it.id, time, now);
@@ -306,6 +306,7 @@ CC.Base = (function () {
 
     if (!data || !Array.isArray(data.items)) {
       defaultBase();
+      save(); // новый ключ v2 появляется сразу, старый v1 не трогаем
       return;
     }
 
@@ -341,6 +342,7 @@ CC.Base = (function () {
 
     if (!kept.length) {
       defaultBase();
+      save();
       return;
     }
 
@@ -439,11 +441,12 @@ CC.Base = (function () {
 })();
 
 /* Прогресс деревни: ресурсы, апгрейды по реальному времени, армия и тренировка.
-   Живёт отдельно от раскладки (clash-base-v1), поэтому старый сейв читается как есть. */
+   Живёт отдельно от раскладки (clash-base-v2). Ключи v1 больше не читаются:
+   жёсткий сброс прогресса, старые сейвы остаются в браузере как резерв. */
 CC.Game = (function () {
   'use strict';
 
-  const KEY = 'clash-village-v1';
+  const KEY = 'clash-village-v2';
   const DEFS = CC.BUILDINGS;
   const TROOPS = CC.TROOPS;
   const ECON = CC.ECONOMY;
@@ -4647,6 +4650,7 @@ CC.Game = (function () {
       };
     }
 
+    save(); // фиксируем состояние уже в ключе v2
     return st;
   }
 

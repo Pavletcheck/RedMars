@@ -261,7 +261,7 @@ CC.MusicCore = (function () {
 CC.TabGuard = (function () {
   'use strict';
 
-  const KEY = 'clash-tab-v1';
+  const KEY = 'clash-tab-v2';
   let paused = false;
   let id = '';
 
@@ -1798,7 +1798,7 @@ CC.CamMath = (function () {
       if (!e) return;
 
       const isTab = e.key === CC.TabGuard.KEY;
-      const isData = e.key === 'clash-base-v1' || e.key === 'clash-village-v1';
+      const isData = e.key === 'clash-base-v2' || e.key === 'clash-village-v2';
       if (!isTab && !isData) return;
       if (CC.App.storagePaused) return;
 
