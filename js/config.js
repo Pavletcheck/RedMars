@@ -149,12 +149,12 @@ CC.BUILDINGS = {
   // Два разных склада: старый storage теперь хранит только руду,
   // estorage — только энергию. Командный центр ёмкости не даёт.
   storage: {
-    name: 'Хранилище руды', desc: 'хранит только руду',
+    name: 'Склад руды', desc: 'хранит только руду',
     w: 1, h: 1, hp: 600, height: 28, resource: true, store: 'gold',
     color: '#77644a', top: '#d0ad6a'
   },
   estorage: {
-    name: 'Хранилище энергии', desc: 'хранит только энергию',
+    name: 'Склад энергии', desc: 'хранит только энергию',
     w: 1, h: 1, hp: 600, height: 28, resource: true, store: 'elixir',
     color: '#4a5a74', top: '#7fc4ff'
   },

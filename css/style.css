@@ -2385,6 +2385,20 @@ body {
    лёд, разлом и купол. Фон собран из градиентов и масок, без картинок.
    =================================================================== */
 
+/* Подложка кампании: марсианский рельеф вокруг панели. Сама панель
+   остаётся тёмной, поэтому узлы, звёзды и сундуки не теряются. */
+#app #levels.overlay {
+  background:
+    radial-gradient(140% 105% at 50% 42%,
+      rgba(9, 9, 12, .56) 0%,
+      rgba(7, 9, 13, .78) 58%,
+      rgba(4, 5, 8, .92) 100%),
+    url("../assets/map-mars.png") center / cover no-repeat,
+    #05070a;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 #app .map-wrap {
   position: relative;
   isolation: isolate;

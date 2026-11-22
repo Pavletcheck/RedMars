@@ -964,7 +964,7 @@ CC.UI = (function () {
       cache.gold = gold;
     }
     if (cache.gcap !== gcap) {
-      resGoldCap.textContent = 'из ' + gcap;
+      resGoldCap.textContent = gcap > 0 ? 'из ' + gcap : 'нет склада';
       cache.gcap = gcap;
     }
     if (cache.elixir !== elixir) {
@@ -972,7 +972,7 @@ CC.UI = (function () {
       cache.elixir = elixir;
     }
     if (cache.ecap !== ecap) {
-      resElixirCap.textContent = 'из ' + ecap;
+      resElixirCap.textContent = ecap > 0 ? 'из ' + ecap : 'нет склада';
       cache.ecap = ecap;
     }
 
@@ -1675,7 +1675,7 @@ CC.UI = (function () {
 
     const lost = (res.lost.gold || 0) + (res.lost.elixir || 0);
     toast('Контракт: ' + parts.join(', ') +
-      (lost > 0 ? ' · часть не влезла в хранилища' : ''));
+      (lost > 0 ? ' · часть не влезла в склады' : ''));
 
     if (CC.Sound) CC.Sound.play('questDone');
     cache.dailySig = null;
@@ -1961,7 +1961,7 @@ CC.UI = (function () {
         if (reward.gold > 0) {
           toast('Задания: +' + reward.gold + ' руды · ' + reward.lost + ' потеряно' + gemText);
         } else {
-          toast('Хранилища полны: ' + reward.lost + ' руды потеряно' + gemText);
+          toast('Склады полны: ' + reward.lost + ' руды потеряно' + gemText);
         }
       } else if (reward.gold > 0) {
         toast((reward.count > 1 ? 'Задания' : 'Задание') + ': +' + reward.gold + ' руды' + gemText);
@@ -2565,9 +2565,13 @@ CC.UI = (function () {
         const locked = CC.LEVELS.slice(era * 10, era * 10 + 10)
           .filter(function (lvl, k) { return mapNodeState(era * 10 + k) === 'locked'; }).length;
         const complete = locked === 0 && mapEraStars(era) > 0;
+        // Текущая эпоха — та, где находится незакрытый сектор: подсвечиваем
+        // её рамкой, чтобы карта читалась как маршрут, а не список.
+        const eraCurrent = current >= era * 10 && current < era * 10 + 10;
 
         eras.push(
           '<section class="map-era' + (complete ? ' is-complete' : '') +
+            (eraCurrent ? ' is-current' : '') +
             '" data-era="' + era + '">' +
             '<header class="map-era__head">' +
               '<span class="map-era__name">' + escHtml(MAP_ERAS[era]) + '</span>' +
@@ -3235,8 +3239,8 @@ CC.UI = (function () {
     if (shopNote) {
       let hint = '';
       const missing = [];
-      if (CC.Game.cap('gold') <= 0) missing.push('Поставь хранилище руды');
-      if (CC.Game.cap('elixir') <= 0) missing.push('Поставь хранилище энергии');
+      if (CC.Game.cap('gold') <= 0) missing.push('Поставь склад руды');
+      if (CC.Game.cap('elixir') <= 0) missing.push('Поставь склад энергии');
       if (missing.length) hint = missing.join(' · ');
       else if (CC.Game.townhallLevel() === 1) {
         hint = 'На 1 уровне доступны центр, турель и лазерная вышка.' +
@@ -3252,9 +3256,15 @@ CC.UI = (function () {
 
     // Шапка с ресурсами.
     if (shopResGold) shopResGold.textContent = fmtNum(CC.Game.gold());
-    if (shopResGoldCap) shopResGoldCap.textContent = '/' + fmtNum(CC.Game.cap('gold'));
+    if (shopResGoldCap) {
+      const gc = CC.Game.cap('gold');
+      shopResGoldCap.textContent = gc > 0 ? '/' + fmtNum(gc) : ' · нет склада';
+    }
     if (shopResElixir) shopResElixir.textContent = fmtNum(CC.Game.elixir());
-    if (shopResElixirCap) shopResElixirCap.textContent = '/' + fmtNum(CC.Game.cap('elixir'));
+    if (shopResElixirCap) {
+      const ec = CC.Game.cap('elixir');
+      shopResElixirCap.textContent = ec > 0 ? '/' + fmtNum(ec) : ' · нет склада';
+    }
     if (shopResGems) shopResGems.textContent = fmtNum(CC.Game.gems());
 
     const tutor = CC.Game.tutorial ? CC.Game.tutorial() : null;
@@ -4166,10 +4176,11 @@ CC.UI = (function () {
     const line = used + '/' + cap;
     if (armyCapEl.textContent !== line) armyCapEl.textContent = line;
 
-    // Параллельность: «2 · 3 в очереди» — два ангара тренируют, три юнита ждут.
+    // Очередь без «дробей»: «6 в очереди · 1 слот».
+    const slots = qs ? Math.max(0, qs.slots | 0) : 0;
     const qline = battle || !qs
-      ? '0 · 0 в очереди'
-      : qs.training + ' · ' + qs.queued + ' в очереди';
+      ? '0 в очереди · 0 слотов'
+      : qs.queued + ' в очереди · ' + slots + ' ' + slotWord(slots);
     if (armyQueueEl.textContent !== qline) armyQueueEl.textContent = qline;
 
     if (hudArmyUsed) {
@@ -4321,7 +4332,7 @@ CC.UI = (function () {
             '</div>';
         }).join('')
         : '<div class="qrow qrow_empty">Очередь пуста' +
-          (stats && stats.slots ? ' · слотов: ' + stats.slots : '') + '</div>';
+          (stats && stats.slots ? ' · ' + stats.slots + ' ' + slotWord(stats.slots) : '') + '</div>';
     }
 
     if (speedTrainBtn) {
@@ -4442,7 +4453,8 @@ CC.UI = (function () {
     cache.recruitSig = sig;
 
     if (recruitSub) {
-      recruitSub.textContent = 'Армия ' + used + '/' + cap + ' · очередь ' + queued;
+      recruitSub.textContent = 'Армия ' + used + '/' + cap + ' · ' + queued +
+        ' в очереди · ' + qSlots + ' ' + slotWord(qSlots);
     }
 
     recruitGrid.innerHTML = CC.ARMY_ORDER.map(recruitCardHtml).join('');
@@ -4465,7 +4477,7 @@ CC.UI = (function () {
         '</div>';
       }).join('')
       : '<p class="recruit-q recruit-q_empty">Очередь пуста' +
-        (stats.slots ? ' · слотов: ' + stats.slots : '') + '</p>';
+        (stats.slots ? ' · ' + stats.slots + ' ' + slotWord(stats.slots) : '') + '</p>';
 
     let action;
     if (locked) {
@@ -4504,7 +4516,8 @@ CC.UI = (function () {
           '<i class="recruit-limit__bar"><b style="width:' + armyPct + '%"></b></i>' +
         '</div>' +
         '<div class="recruit-limit">' +
-          '<span>Очередь <b id="recruit-queue">' + queued + '/' + qSlots + '</b></span>' +
+          '<span>Очередь <b id="recruit-queue">' + queued + ' в очереди · ' +
+            qSlots + ' ' + slotWord(qSlots) + '</b></span>' +
           '<i class="recruit-limit__bar"><b style="width:' + queuePct + '%"></b></i>' +
         '</div>' +
         '<div class="recruit-train-line">Тренируется <b id="recruit-training">' +
@@ -4513,7 +4526,8 @@ CC.UI = (function () {
       '</div>' +
       '<p class="recruit-price">' + price + '</p>' +
       '<div class="recruit-actions">' + action + batch + '</div>' +
-      '<div class="recruit-minihead">Очередь <span>' + queued + '</span></div>' +
+      '<div class="recruit-minihead">Очередь <span>' + queued + ' · ' +
+        qSlots + ' ' + slotWord(qSlots) + '</span></div>' +
       '<div class="recruit-queue">' + mini + '</div>' +
       '<p class="recruit-hint">Улучшение войск — в Исследовательском центре</p>';
     bindRecruitPortraits(recruitSide);
@@ -4539,8 +4553,9 @@ CC.UI = (function () {
     // Окно найма перекрывает низ экрана: Сержант не должен выглядывать.
     if (sergeantEl) sergeantEl.classList.add('hidden');
     if (recruitSub) {
+      const qs = CC.Game.queueStats();
       recruitSub.textContent = 'Армия ' + CC.Game.armyUsed() + '/' + CC.Game.capacity() +
-        ' · очередь ' + CC.Game.queueStats().queued;
+        ' · ' + qs.queued + ' в очереди · ' + qs.slots + ' ' + slotWord(qs.slots);
     }
     syncRecruit();
     return { ok: true, selected: pick };
@@ -4830,7 +4845,7 @@ CC.UI = (function () {
       const res = CC.Game.cancelTrain(Number(cancelQ.dataset.qcancel));
       if (res.error) toast(res.error);
       else if (res.refund && res.refund.lost.elixir > 0) {
-        toast('Хранилища полны: ' + res.refund.lost.elixir + ' энергии потеряно');
+        toast('Склады полны: ' + res.refund.lost.elixir + ' энергии потеряно');
       }
       sync();
       return;
@@ -6235,8 +6250,8 @@ CC.UI = (function () {
     placeArcher: 'Терминал → «Лазерная вышка» → поставь рядом с центром',
     placeGoldmine: 'Терминал → «Бур» → поставь на свободную клетку',
     placeElixir: 'Терминал → «Реактор» → поставь рядом с буром',
-    placeStorage: 'Терминал → «Хранилище руды» → поставь рядом с центром',
-    placeEstorage: 'Терминал → «Хранилище энергии» → поставь рядом с центром',
+    placeStorage: 'Терминал → «Склад руды» → поставь рядом с центром',
+    placeEstorage: 'Терминал → «Склад энергии» → поставь рядом с центром',
     placeBarracks: 'Терминал → «Ангар» → поставь на свободную клетку',
     train5: 'Открой ангар, выбери штурмовика и жми «Нанять» или «×5»',
     battle: 'Жми «В БОЙ» внизу, выбери войско и тапни по свободной клетке',
@@ -6367,6 +6382,196 @@ CC.UI = (function () {
     });
   }
 
+  // Мини-превью базы соперника: изометрические клетки и домики по
+  // ghost.layout. Полноценный рендер здесь не нужен — важны силуэт,
+  // плотность обороны и читаемость на 120×80.
+  function arenaColour(type) {
+    if (type === 'townhall') return '#f2d27a';
+    if (type === 'wall') return '#8e9498';
+    if (type === 'goldmine') return '#e0b54a';
+    if (type === 'elixir') return '#a86ad6';
+    if (type === 'storage' || type === 'estorage') return '#6fb3c7';
+    if (type === 'barracks' || type === 'lab' || type === 'herohall') return '#8fb56a';
+    if (type === 'mine' || type === 'spring' || type === 'airmine') return '#b05a4a';
+    if (CC.isTrap && CC.isTrap(type)) return '#b05a4a';
+    return '#d9813f';
+  }
+
+  function drawArenaPreview(canvas, ghost) {
+    if (!canvas || !canvas.getContext) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const W = 160;
+    const H = 100;
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#2a1811');
+    sky.addColorStop(0.55, '#25130d');
+    sky.addColorStop(1, '#170c08');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    const rows = (ghost && Array.isArray(ghost.layout) ? ghost.layout : [])
+      .map(function (r) {
+        const d = CC.BUILDINGS[r.type] || {};
+        return {
+          type: r.type || 'cannon',
+          x: Number(r.x) || 0, y: Number(r.y) || 0,
+          w: d.w || 1, h: d.h || 1
+        };
+      });
+
+    // Сетка поля: лёгкие ромбы, чтобы превью читалось как база.
+    const unit = 1;
+    const projRaw = function (x, y) {
+      return { x: (x - y) * 0.72 * unit, y: (x + y) * 0.42 * unit };
+    };
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    if (rows.length) {
+      rows.forEach(function (r) {
+        [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]
+          .forEach(function (p) {
+            const q = projRaw(p[0], p[1]);
+            if (q.x < minX) minX = q.x;
+            if (q.x > maxX) maxX = q.x;
+            if (q.y < minY) minY = q.y;
+            if (q.y > maxY) maxY = q.y;
+          });
+      });
+    } else {
+      minX = -8; maxX = 8; minY = -4; maxY = 8;
+    }
+
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+    const scale = Math.min((W - 20) / spanX, (H - 24) / spanY);
+    const ox = W / 2 - (minX + maxX) / 2 * scale;
+    const oy = H / 2 - (minY + maxY) / 2 * scale + 2;
+
+    function proj(x, y) {
+      const q = projRaw(x, y);
+      return { x: ox + q.x * scale, y: oy + q.y * scale };
+    }
+
+    if (!rows.length) {
+      for (let gx = 0; gx < 6; gx++) {
+        for (let gy = 0; gy < 6; gy++) {
+          const a = proj(gx, gy);
+          const b = proj(gx + 1, gy);
+          const c = proj(gx + 1, gy + 1);
+          const d = proj(gx, gy + 1);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.lineTo(c.x, c.y);
+          ctx.lineTo(d.x, d.y);
+          ctx.closePath();
+          ctx.fillStyle = (gx + gy) % 2 ? 'rgba(160,95,50,.08)' : 'rgba(160,95,50,.14)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(224,162,74,.12)';
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = 'rgba(255,231,190,.62)';
+      ctx.font = '700 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('нет данных', W / 2, H / 2 + 4);
+      return;
+    }
+
+    // Земля под постройками: границы по фактическим клеткам, не по пикселям.
+    const pad = 0.7;
+    let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+    rows.forEach(function (r) {
+      gx0 = Math.min(gx0, r.x); gy0 = Math.min(gy0, r.y);
+      gx1 = Math.max(gx1, r.x + r.w); gy1 = Math.max(gy1, r.y + r.h);
+    });
+    gx0 -= pad; gy0 -= pad; gx1 += pad; gy1 += pad;
+    const p0 = proj(gx0, gy0);
+    const p1 = proj(gx1, gy0);
+    const p2 = proj(gx1, gy1);
+    const p3 = proj(gx0, gy1);
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.lineTo(p3.x, p3.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(126,85,52,.18)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(224,162,74,.42)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Сетка внутри базы.
+    for (let gx = Math.floor(gx0); gx <= Math.ceil(gx1); gx++) {
+      for (let gy = Math.floor(gy0); gy <= Math.ceil(gy1); gy++) {
+        if (gx < gx0 || gy < gy0) continue;
+        const a = proj(gx, gy);
+        const b = proj(gx + 1, gy);
+        const c = proj(gx + 1, gy + 1);
+        const d = proj(gx, gy + 1);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.lineTo(d.x, d.y);
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(224,162,74,.12)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+
+    rows.sort(function (a, b) { return (a.x + a.y) - (b.x + b.y); });
+    rows.forEach(function (r) {
+      const col = arenaColour(r.type);
+      const a = proj(r.x, r.y);
+      const b = proj(r.x + r.w, r.y);
+      const c = proj(r.x + r.w, r.y + r.h);
+      const d = proj(r.x, r.y + r.h);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(20,12,8,.35)';
+      ctx.fill();
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.9;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(255,226,170,.35)';
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+
+      // Небольшой объём: крыша/блок над клеткой.
+      const mid = proj(r.x + r.w / 2, r.y + r.h / 2);
+      const bw = Math.max(2.2, scale * 0.55);
+      const bh = Math.max(2.4, scale * 0.7);
+      ctx.fillStyle = col;
+      ctx.fillRect(mid.x - bw / 2, mid.y - bh, bw, bh);
+      ctx.fillStyle = 'rgba(255,244,214,.42)';
+      ctx.fillRect(mid.x - bw / 2, mid.y - bh, bw, Math.max(1, bh * 0.24));
+    });
+
+    // Рамка и виньетка — как у карты.
+    const vig = ctx.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, 92);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,.42)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(224,162,74,.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+  }
+
   function renderArena() {
     if (!arenaList) return;
 
@@ -6384,6 +6589,9 @@ CC.UI = (function () {
         ? ''
         : (info.empty ? ' · пул исчерпан' : ' · повтор: 75%');
       return '<div class="arena-card" data-arena-card="' + escHtml(g.id) + '">' +
+        '<canvas class="arena-card__map" width="320" height="200"' +
+          ' data-arena-map="' + escHtml(g.id) + '"' +
+          ' aria-label="Превью базы соперника"></canvas>' +
         '<div class="arena-card__head">' +
           '<b class="arena-card__name">' + escHtml(g.name) + '</b>' +
           '<span class="arena-card__rating">🏆 ' + g.rating + '</span>' +
@@ -6398,6 +6606,16 @@ CC.UI = (function () {
           escHtml(g.id) + '"' + (empty ? ' disabled' : '') + '>Атаковать</button>' +
         '</div>';
     }).join('');
+
+    // Рисуем превью после вставки разметки: canvas уже в DOM.
+    if (arenaList.querySelectorAll) {
+      const maps = arenaList.querySelectorAll('[data-arena-map]');
+      for (let i = 0; i < maps.length; i++) {
+        const id = maps[i].dataset ? maps[i].dataset.arenaMap : null;
+        const ghost = arenaTargets.find(function (g) { return g.id === id; });
+        drawArenaPreview(maps[i], ghost);
+      }
+    }
 
     syncArena();
   }
@@ -6623,7 +6841,7 @@ CC.UI = (function () {
       if (lost.gold > 0) parts.push(lost.gold + ' руды');
       if (lost.elixir > 0) parts.push(lost.elixir + ' энергии');
       if (parts.length) {
-        arenaResultLost.textContent = 'В хранилища не влезло: ' + parts.join(', ');
+        arenaResultLost.textContent = 'В склады не влезло: ' + parts.join(', ');
         arenaResultLost.classList.remove('hidden');
       } else {
         arenaResultLost.classList.add('hidden');
@@ -6631,7 +6849,7 @@ CC.UI = (function () {
     }
     if (arenaResultHint) {
       if (offered.gold > actual.gold || offered.elixir > actual.elixir) {
-        arenaResultHint.textContent = 'Улучши хранилища или потрать ресурсы';
+        arenaResultHint.textContent = 'Улучши склады или потрать ресурсы';
         arenaResultHint.classList.remove('hidden');
       } else {
         arenaResultHint.classList.add('hidden');
@@ -7135,8 +7353,8 @@ CC.UI = (function () {
 
       if (allLost) {
         overlayLost.textContent = 'Не влезло: ' + lostParts.join(', ') +
-          ' (хранилища полны)';
-        overlayHint.textContent = 'Улучши хранилища или потрать ресурсы';
+          ' (склады полны)';
+        overlayHint.textContent = 'Улучши склады или потрать ресурсы';
         overlayHint.classList.remove('hidden');
       } else {
         overlayLost.textContent = 'Не влезло: ' + lostParts.join(', ');
@@ -7401,6 +7619,16 @@ CC.UI = (function () {
   // 20500 → «20 500»: те же разряды, что и в причинах отказа.
   function fmtNum(v) {
     return String(Math.round(Number(v) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+
+  // «1 слот / 2 слота / 5 слотов» — для очереди и панели найма.
+  function slotWord(n) {
+    const k = Math.abs(Math.floor(Number(n) || 0)) % 100;
+    if (k >= 11 && k <= 14) return 'слотов';
+    const d = k % 10;
+    if (d === 1) return 'слот';
+    if (d >= 2 && d <= 4) return 'слота';
+    return 'слотов';
   }
 
   // «1 платина», «2 платины», «5 платин» для подписей, кнопок и тостов.

@@ -509,7 +509,7 @@ CC.Game = (function () {
     {
       id: 'placeStorage', text: 'Поставь склад руды',
       hint: 'Без него руда не хранится.', place: 'storage',
-      lore: 'Добыча без склада утекает в песок. Поставь хранилище — и руда ' +
+      lore: 'Добыча без склада утекает в песок. Поставь склад — и руда ' +
         'останется на чёрный день.'
     },
     {
@@ -1370,7 +1370,7 @@ CC.Game = (function () {
     const free = Math.max(0, Math.floor(capNow - held));
     if (offered > free) {
       return {
-        error: 'Хранилища полны: влезет ' + free,
+        error: 'Склады полны: влезет ' + free,
         res: res,
         offered: offered,
         free: free,
@@ -2025,8 +2025,8 @@ CC.Game = (function () {
     const capElixir = cap('elixir');
 
     if (c.gold > capGold) {
-      const reason = 'Хранилище руды мало: ' + numText(capGold) + ' из ' + numText(c.gold) +
-        '. Поставь ещё хранилище руды';
+      const reason = 'Склад руды мал: ' + numText(capGold) + ' из ' + numText(c.gold) +
+        '. Поставь ещё склад руды';
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         needStorage: true, resource: 'gold', cap: Math.round(capGold),
@@ -2035,8 +2035,8 @@ CC.Game = (function () {
     }
 
     if (c.elixir > capElixir) {
-      const reason = 'Хранилище энергии мало: ' + numText(capElixir) + ' из ' + numText(c.elixir) +
-        '. Поставь ещё хранилище энергии';
+      const reason = 'Склад энергии мал: ' + numText(capElixir) + ' из ' + numText(c.elixir) +
+        '. Поставь ещё склад энергии';
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         needStorage: true, resource: 'elixir', cap: Math.round(capElixir),
@@ -2330,8 +2330,8 @@ CC.Game = (function () {
 
     // Цена выше лимита склада — качать нечем, пока не расширено хранилище.
     if (c.elixir > cap('elixir')) {
-      const reason = 'Хранилище энергии мало: ' + numText(cap('elixir')) + ' из ' +
-        numText(c.elixir) + '. Поставь ещё хранилище энергии';
+      const reason = 'Склад энергии мал: ' + numText(cap('elixir')) + ' из ' +
+        numText(c.elixir) + '. Поставь ещё склад энергии';
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         needStorage: true, resource: 'elixir', cap: Math.round(cap('elixir')),

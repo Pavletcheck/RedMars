@@ -7835,3 +7835,296 @@ html, body { width: 100%; height: 100%; }
     font-size: 11px;
   }
 }
+
+/* ===================================================================
+   P2: карта-Марс, тёмная глава, превью арены и боевая выдача.
+   =================================================================== */
+
+/* Подложка карты: map-mars.png художника, поверх — тёмная виньетка.
+   Если файла ещё нет, остаётся марсианский градиент. */
+#levels .map-wrap {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  background: linear-gradient(180deg, rgba(37, 21, 13, .97), rgba(18, 10, 7, .98));
+  border-color: rgba(224, 162, 74, .42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 220, 160, .08),
+    0 18px 38px rgba(0, 0, 0, .42);
+}
+
+#levels .levels__hint { color: #d6b282; }
+
+#levels .map-scroll {
+  border: 1px solid rgba(224, 162, 74, .24);
+  border-radius: 12px;
+  background:
+    radial-gradient(110% 80% at 50% 0%, rgba(224, 162, 74, .10), transparent 52%),
+    linear-gradient(180deg, rgba(15, 9, 6, .52), rgba(14, 8, 5, .84)),
+    url("../assets/map-mars.png") center / cover no-repeat,
+    linear-gradient(160deg, #3b1c10, #1d0e08 58%, #2c160c);
+  box-shadow: inset 0 0 48px rgba(0, 0, 0, .5);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(224, 162, 74, .65) rgba(20, 12, 8, .35);
+}
+
+#levels .map {
+  gap: 9px;
+  padding: 7px;
+}
+
+#app .map-era {
+  border: 1px solid rgba(210, 139, 64, .26);
+  background: linear-gradient(180deg, rgba(48, 27, 16, .66), rgba(24, 13, 8, .72));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 224, 170, .06),
+    0 2px 5px rgba(0, 0, 0, .22);
+}
+
+#app .map-era.is-current {
+  border-color: rgba(240, 180, 86, .82);
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 180, 86, .18),
+    0 0 16px rgba(224, 130, 42, .18);
+}
+
+#app .map-era.is-complete {
+  border-color: rgba(211, 154, 66, .5);
+  box-shadow: inset 0 0 0 1px rgba(211, 154, 66, .12);
+}
+
+#app .map-era__head { margin-bottom: 5px; }
+#app .map-era__name {
+  color: #f5d6a0;
+  font-size: var(--fs-12);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .45);
+}
+#app .map-era__stars { color: #ffcf4a; font-size: var(--fs-11); }
+
+#app .map-era__track {
+  background: linear-gradient(180deg, transparent 45%, rgba(78, 45, 22, .26) 50%, transparent 55%);
+  padding: 3px 1px 5px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(224, 162, 74, .55) transparent;
+}
+
+/* Путь — пунктирные сегменты, а не сплошная полоса. */
+#app .map-era__track .map-link {
+  flex: 1 1 12px;
+  min-width: 6px;
+  height: 4px;
+  border-radius: 0;
+  background: repeating-linear-gradient(90deg,
+    rgba(224, 162, 74, .82) 0 5px, rgba(224, 162, 74, .10) 5px 9px);
+}
+
+#app .map-link.is-done {
+  background: repeating-linear-gradient(90deg,
+    rgba(255, 207, 74, .95) 0 6px, rgba(255, 207, 74, .18) 6px 9px);
+}
+
+#app .map-link.is-open {
+  background: repeating-linear-gradient(90deg,
+    rgba(224, 162, 74, .9) 0 5px, transparent 5px 10px);
+}
+
+/* Узлы крупнее: номер и звёзды читаются без прищура. */
+#app .map-era__track .map-node {
+  flex: 0 0 52px;
+  width: 52px;
+  height: 52px;
+  border: 2px solid #a86a30;
+  background: radial-gradient(circle at 50% 35%, #5b381f, #2d1a10 72%);
+  color: #ffe8bd;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 228, 172, .22),
+    0 3px 0 rgba(20, 10, 5, .55);
+}
+
+#app .map-node__num { font-size: var(--fs-14); }
+#app .map-node__stars { font-size: .56rem; color: #ffcf4a; margin-top: 1px; }
+
+#app .map-node--cleared {
+  border-color: #d79a42;
+  background: radial-gradient(circle at 50% 32%, #6d4320, #341d10 72%);
+}
+#app .map-node--current,
+#app .map-node--open {
+  border-color: #ffcf4a;
+  background: radial-gradient(circle at 50% 32%, #7a4b22, #3b2112 72%);
+}
+#app .map-node--current {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 180, .3),
+    0 0 0 3px rgba(255, 207, 74, .26),
+    0 0 15px rgba(255, 170, 60, .3);
+  animation: mapPulseDark 1.6s ease-in-out infinite;
+}
+#app .map-node--locked {
+  opacity: .46;
+  filter: grayscale(.72) brightness(.8);
+}
+#app .map-node.is-selected { outline: 3px solid rgba(70, 224, 200, .75); }
+
+@keyframes mapPulseDark {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,235,180,.3), 0 0 0 3px rgba(255,207,74,.24), 0 0 12px rgba(255,170,60,.22); }
+  50% { box-shadow: inset 0 1px 0 rgba(255,235,180,.3), 0 0 0 7px rgba(255,207,74,0), 0 0 18px rgba(255,170,60,.36); }
+}
+
+#app .map-era__track .map-chest {
+  flex: 0 0 42px;
+  width: 42px;
+  min-height: 48px;
+  border: 2px dashed rgba(224, 162, 74, .5);
+  background: rgba(45, 25, 14, .72);
+}
+#app .map-chest__label { color: #e0b77a; }
+#app .map-chest.is-open {
+  border-color: #ffcf4a;
+  background: radial-gradient(circle at 50% 35%, #6f4520, #382013 72%);
+}
+#app .map-chest.is-open .map-chest__label { color: #ffcf4a; }
+
+/* Закреплённая карточка: тёмная, компактная на низком экране. */
+#app .map-card {
+  flex-shrink: 0;
+  min-height: 88px;
+  margin-top: 5px;
+  border: 1px solid rgba(224, 162, 74, .5);
+  background: linear-gradient(180deg, rgba(52, 30, 17, .98), rgba(27, 14, 8, .99));
+  color: #f3e2c6;
+  box-shadow: inset 0 1px 0 rgba(255, 225, 170, .08), 0 -4px 14px rgba(0, 0, 0, .22);
+}
+#app .map-card__name { color: #ffe2ad; }
+#app .map-card__th { color: #d2a15e; }
+#app .map-card__loot,
+#app .map-card__best,
+#app .map-card__chapter { color: #d8b98a; }
+#app .map-card__free { color: #9bd07a; }
+#app .map-card__free.is-warn { color: #ff9b83; }
+#app .map-card__go {
+  border-color: #7a4a18;
+  background: linear-gradient(180deg, #e0a24a, #a8651f);
+  color: #2a1608;
+  text-shadow: none;
+}
+#app .map-card__go:disabled {
+  border-color: #6f5a40;
+  background: linear-gradient(180deg, #6b5138, #443323);
+  color: #cbb693;
+}
+#app .chapter-btn {
+  border-color: #a86a30;
+  background: linear-gradient(180deg, #5a361c, #2f1a0e);
+  color: #ffd89a;
+  box-shadow: inset 0 1px 0 rgba(255, 224, 170, .12);
+}
+
+/* ---- глава: тёмный Марс + янтарь/медь ---- */
+#app .chapter-card {
+  background: linear-gradient(180deg, rgba(39, 22, 13, .99), rgba(18, 10, 6, .99));
+  border-color: rgba(224, 162, 74, .5);
+  color: #f3e6cc;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 224, 170, .1),
+    0 18px 36px rgba(0, 0, 0, .42);
+}
+#app .chapter-sub,
+#app .chapter-reward { color: #d6b282; }
+#app .chapter-title { color: #ffe2ad; }
+#app .chapter-goal {
+  border-color: rgba(224, 162, 74, .28);
+  background: linear-gradient(180deg, rgba(100, 58, 28, .30), rgba(48, 27, 14, .38));
+}
+#app .chapter-goal__text b { color: #f6e6c8; }
+#app .chapter-goal__text span { color: #ffcf4a; }
+#app .chapter-goal__bar { background: rgba(255, 220, 160, .14); }
+#app .chapter-goal__bar b { background: linear-gradient(90deg, #b8742e, #ffcf4a); }
+#app .chapter-goal.is-done {
+  border-color: rgba(255, 207, 74, .46);
+  background: linear-gradient(180deg, rgba(224, 162, 74, .16), rgba(80, 46, 22, .22));
+}
+#app .chapter-goal__go,
+#app .chapter-claim__btn {
+  border-color: #7a4a18;
+  background: linear-gradient(180deg, #e0a24a, #a8651f);
+  color: #2a1608;
+  text-shadow: none;
+}
+#app .chapter-goal__go:disabled,
+#app .chapter-claim__btn:disabled {
+  border-color: rgba(180, 145, 100, .35);
+  background: rgba(92, 70, 47, .36);
+  color: #bdab8f;
+}
+#app .chapter-claim {
+  border-color: rgba(224, 162, 74, .38);
+  background: linear-gradient(180deg, rgba(224, 162, 74, .13), rgba(224, 162, 74, .05));
+}
+#app .chapter-claim__reward { color: #d6b282; }
+#app .chapter-done {
+  background: linear-gradient(180deg, #d18c37, #8f5018);
+  color: #fff2d8;
+  text-shadow: 0 1px 0 rgba(60, 25, 8, .45);
+}
+#app .chapter-claim__btn.is-claimed {
+  border-color: rgba(224, 162, 74, .3);
+  background: rgba(224, 162, 74, .12);
+  color: #c8b393;
+}
+#app .chapter-arrow {
+  border-color: #7a4a18;
+  background: linear-gradient(180deg, #5a361c, #2f1a0e);
+  color: #ffd89a;
+}
+
+/* ---- превью базы на арене ---- */
+#app .arena-card { padding: 6px; gap: 4px; }
+#app .arena-card__map {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  height: auto;
+  border: 1px solid rgba(224, 162, 74, .34);
+  border-radius: 8px;
+  background: #170c08;
+  box-shadow: inset 0 0 22px rgba(0, 0, 0, .45);
+}
+#app .arena-card__head { margin-top: 1px; }
+#app .arena-card__name { font-size: var(--fs-12); }
+
+@media (max-height: 430px) {
+  /* Низкий телефон: карта отдаёт место списку, а карточка сектора
+     остаётся компактной и не съедает весь экран. */
+  #levels .levels__hint { display: none; }
+  #levels .map-wrap {
+    height: calc(100dvh - 12px);
+    max-height: calc(100dvh - 12px);
+  }
+  #levels .map-scroll { max-height: calc(100dvh - 160px); }
+  #app .map { gap: 6px; padding: 5px; }
+  #app .map-era { padding: 5px 6px 6px; }
+  #app .map-era__head { margin-bottom: 3px; }
+  #app .map-era__track .map-node { flex-basis: 44px; width: 44px; height: 44px; }
+  #app .map-node__num { font-size: var(--fs-12); }
+  #app .map-era__track .map-chest { flex-basis: 38px; width: 38px; min-height: 42px; }
+  #app .map-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1px 8px;
+    min-height: 72px;
+    padding: 5px 8px;
+  }
+  #app .map-card__best { display: none; }
+  #app .map-card__chapter,
+  #app .map-card__loot,
+  #app .map-card__free { font-size: .58rem; }
+  #app .map-card__go { min-width: 104px; min-height: 40px; }
+  #app .arena-card__map { aspect-ratio: auto; height: 88px; }
+}
+
+@media (min-width: 1500px) {
+  /* Победа: крупный баннер слева, добыча чипами, один яркий CTA. */
+  #app .result-card { grid-template-columns: 300px minmax(0, 1fr); }
+  #app .result-banner-wrap { width: 300px; height: 210px; }
+  #app .result-banner { max-height: 210px; }
+  #app .result-banner__fallback { font-size: 128px; }
+}

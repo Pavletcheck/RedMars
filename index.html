@@ -78,7 +78,7 @@
         <span class="res-panel__icon">🔩</span>
         <div class="res-panel__body">
           <b class="res-panel__value" id="res-gold">0</b>
-          <span class="res-panel__cap" id="res-gold-cap">из 0</span>
+          <span class="res-panel__cap" id="res-gold-cap">нет склада</span>
           <span class="res-panel__track"><i id="res-gold-bar"></i></span>
         </div>
       </div>
@@ -89,7 +89,7 @@
         <span class="res-panel__icon">⚡</span>
         <div class="res-panel__body">
           <b class="res-panel__value" id="res-elixir">0</b>
-          <span class="res-panel__cap" id="res-elixir-cap">из 0</span>
+          <span class="res-panel__cap" id="res-elixir-cap">нет склада</span>
           <span class="res-panel__track"><i id="res-elixir-bar"></i></span>
         </div>
       </div>
@@ -246,7 +246,7 @@
 
     <div class="selbar__note hidden" id="sel-note"></div>
     <button class="selbar__btn selbar__btn_th hidden" data-act="goto-th" id="sel-goto-th">К командному центру</button>
-    <button class="selbar__btn selbar__btn_th hidden" data-act="goto-storage" id="sel-goto-storage">К хранилищу</button>
+    <button class="selbar__btn selbar__btn_th hidden" data-act="goto-storage" id="sel-goto-storage">К складу</button>
 
     <div class="selarmy hidden" id="sel-army">
       <div class="selarmy__head">
@@ -348,7 +348,8 @@
                 data-carousel="buyres" data-dir="1" title="Следующий набор" aria-label="Следующий набор">›</button>
       </div>
       <p class="buy__note hidden" id="buyres-note"></p>
-      <button class="overlay__btn overlay__btn_ghost buy__topup" id="buyres-topup" type="button">
+      <!-- Пополнение скрыто до подключения платёжного SDK. -->
+      <button class="overlay__btn overlay__btn_ghost buy__topup hidden" id="buyres-topup" type="button">
         Пополнить платину
       </button>
     </div>
