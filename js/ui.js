@@ -999,6 +999,14 @@ CC.UI = (function () {
       cache.ecap = ecap;
     }
 
+    // Переполнение: подсвечиваем панель, чтобы игрок видел, что пора тратить.
+    if (resGoldPanel) {
+      resGoldPanel.classList.toggle('is-overflow', gcap > 0 && gold >= gcap);
+    }
+    if (resElixirPanel) {
+      resElixirPanel.classList.toggle('is-overflow', ecap > 0 && elixir >= ecap);
+    }
+
     const gp = gcap > 0 ? Math.min(100, gold / gcap * 100) : 0;
     const ep = ecap > 0 ? Math.min(100, elixir / ecap * 100) : 0;
 
@@ -2947,6 +2955,7 @@ CC.UI = (function () {
     }
 
     const full = !locked && have >= limit;
+    const atLimit = limit > 0 && have >= limit;
     // Здание текущего шага Сержанта ставится бесплатно за 5 секунд —
     // карточка честно показывает «Бесплатно · 0:05».
     const lesson = !locked && !full && CC.Game.tutorialPlace
@@ -2980,7 +2989,8 @@ CC.UI = (function () {
       (rescue ? 'rescue' : (full || poor ? 'insufficient' : 'available')));
     const cardLevel = locked ? needTh : th;
     const count = '<span class="shop-card__count term-card__limit">' +
-      have + ' / ' + limit + '</span>';
+      (atLimit ? (limit <= 1 ? 'Максимум' : 'Лимит исчерпан')
+        : have + ' / ' + limit) + '</span>';
     const ptime = lesson ? lesson.seconds
       : (CC.Game.placeTime ? CC.Game.placeTime(type) : 0);
     const priceIcon = price.gold > 0 ? '🔩' : (price.elixir > 0 ? '⚡' : '');
@@ -2991,7 +3001,7 @@ CC.UI = (function () {
     const costText = costLabel + (ptime > 0 ? ' · ' + formatTime(ptime) : '');
     const cost = '<span class="shop-card__cost term-card__cost">' + costText + '</span>';
     let status = '';
-    if (locked) status = 'С командного центра ' + needTh;
+    if (locked) status = atLimit ? 'Максимум' : 'С командного центра ' + needTh;
     else if (full) status = 'Лимит исчерпан';
     else if (rescue) status = 'Первый склад: бесплатно';
     else if (lesson) status = 'Сержант: бесплатно';
@@ -6789,6 +6799,7 @@ CC.UI = (function () {
 
   function tutorialBlocked() {
     if (CC.App.introOpen || CC.App.modalOpen || CC.App.prepActive) return true;
+    if (anyOverlayOpen()) return true;
     if (loreOpen || askState || state.buildMode) return true;
     if (levelsOpen || achOpen || dailyOpen || arenaOpen || replaysOpen ||
         buyResOpen || buyPlatOpen || overlayShown) return true;
@@ -7968,6 +7979,8 @@ CC.UI = (function () {
       }
     }
 
+    if (toastEl && toastEl.classList.contains('show')) positionToast();
+
     syncTutorialPointer();
     syncBattlePrep();
   }
@@ -8408,9 +8421,40 @@ CC.UI = (function () {
     return s + ' с';
   }
 
+  // Тост во время открытого окна не должен ложиться на нижнюю панель:
+  // ставим его в шапку верхнего модала, где обычно есть свободное место.
+  function positionToast() {
+    if (!toastEl) return;
+    const open = anyOverlayOpen();
+    let card = null;
+    if (open && typeof document !== 'undefined' && document.querySelectorAll) {
+      const list = document.querySelectorAll('.overlay:not(.hidden) .overlay__card');
+      for (let i = 0; i < list.length; i++) {
+        const el = list[i];
+        if (!el || !el.getBoundingClientRect) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) { card = r; break; }
+      }
+    }
+    if (!card) {
+      toastEl.classList.remove('is-overlay');
+      toastEl.style.top = '';
+      toastEl.style.bottom = '';
+      return;
+    }
+    toastEl.classList.add('is-overlay');
+    const toastH = 34;
+    const top = card.top > toastH + 14
+      ? card.top - toastH - 8
+      : Math.max(6, card.top + 6);
+    toastEl.style.top = Math.round(top) + 'px';
+    toastEl.style.bottom = 'auto';
+  }
+
   function toast(text) {
     toastEl.textContent = text;
     toastEl.classList.add('show');
+    positionToast();
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
       toastEl.classList.remove('show');
