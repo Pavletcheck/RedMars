@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- модульная плита -->
+  <rect x="7" y="25" width="34" height="31" rx="5"
+        fill="#223038" stroke="#0a1014" stroke-width="2"/>
+  <rect x="11" y="29" width="12" height="11" rx="2"
+        fill="#31434c" stroke="#5c727c" stroke-width="1.2"/>
+  <rect x="25" y="29" width="12" height="11" rx="2"
+        fill="#1a252b" stroke="#5c727c" stroke-width="1.2"/>
+  <rect x="11" y="42" width="12" height="11" rx="2"
+        fill="#1a252b" stroke="#5c727c" stroke-width="1.2"/>
+  <rect x="25" y="42" width="12" height="11" rx="2"
+        fill="#96421f" stroke="#c46a3a" stroke-width="1.5"/>
+  <path d="M14 37 H22" stroke="#46e0c8" stroke-width="1.5"
+        stroke-linecap="round" opacity=".85"/>
+  <circle cx="28" cy="45" r="1.1" fill="#ffcf4a"/>
+  <circle cx="34" cy="50" r="1.1" fill="#ffcf4a"/>
+
+  <!-- молот -->
+  <path d="M16 52 L44 20" stroke="#0a1014" stroke-width="8" stroke-linecap="round"/>
+  <path d="M16 52 L44 20" stroke="#6f7b82" stroke-width="4.8" stroke-linecap="round"/>
+  <path d="M17.5 49.5 L43 21.5" stroke="#9aa7ad" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M19.5 49 L23.5 44.5" stroke="#c46a3a" stroke-width="4.8" stroke-linecap="round"/>
+  <path d="M24.5 43 L28.5 38.5" stroke="#c46a3a" stroke-width="4.8" stroke-linecap="round"/>
+  <g transform="translate(46 18) rotate(41)">
+    <rect x="-12" y="-6.5" width="24" height="13" rx="3"
+          fill="#cfd9dd" stroke="#0a1014" stroke-width="2.2"/>
+    <rect x="-2.5" y="-6.5" width="5" height="13" fill="#96421f"/>
+    <rect x="-12" y="-6.5" width="3" height="13" rx="1.5" fill="#eef4f5"/>
+    <circle cx="0" cy="0" r="1.5" fill="#ffcf4a" stroke="#8a5a00" stroke-width=".8"/>
+  </g>
+</svg>

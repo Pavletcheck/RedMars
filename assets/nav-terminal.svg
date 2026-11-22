@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- корпус консоли -->
+  <rect x="6" y="7" width="52" height="46" rx="7"
+        fill="#26343c" stroke="#0a1014" stroke-width="2"/>
+  <rect x="6" y="15" width="2.4" height="11" fill="#c46a3a"/>
+  <rect x="55.6" y="15" width="2.4" height="11" fill="#c46a3a"/>
+
+  <!-- экран -->
+  <rect x="11" y="12" width="42" height="27" rx="3"
+        fill="#0b2a2c" stroke="#46e0c8" stroke-width="1.8"/>
+  <path d="M14 20 H50 M14 26 H50" stroke="#46e0c8" stroke-width="1"
+        opacity=".18"/>
+  <path d="M15 33 L20 26 L25 33 L30 23 L35 33 L40 28 L48 33"
+        fill="none" stroke="#46e0c8" stroke-width="2.2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="15" y="15.5" width="7" height="2.4" rx="1.2" fill="#ffcf4a"/>
+
+  <!-- кнопки -->
+  <circle cx="18" cy="47" r="4.2" fill="#111a20" stroke="#0a1014" stroke-width="1.4"/>
+  <circle cx="32" cy="47" r="4.2" fill="#111a20" stroke="#0a1014" stroke-width="1.4"/>
+  <circle cx="46" cy="47" r="4.2" fill="#111a20" stroke="#0a1014" stroke-width="1.4"/>
+  <circle cx="18" cy="47" r="2.3" fill="#c46a3a"/>
+  <circle cx="32" cy="47" r="2.3" fill="#46e0c8"/>
+  <circle cx="46" cy="47" r="2.3" fill="#ffcf4a"/>
+
+  <!-- опора -->
+  <path d="M14 53.5 H50" stroke="#0a1014" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M16.5 53.5 H47.5" stroke="#4a5a63" stroke-width="2" stroke-linecap="round"/>
+</svg>

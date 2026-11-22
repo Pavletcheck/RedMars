@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- клинки за щитом -->
+  <g stroke-linecap="round">
+    <path d="M16 50 L50 14" stroke="#0a1014" stroke-width="6.2"/>
+    <path d="M16 50 L50 14" stroke="#cfd9dd" stroke-width="3.4"/>
+    <path d="M17.5 48 L48 16" stroke="#eef4f5" stroke-width="1.1"/>
+    <path d="M48 50 L14 14" stroke="#0a1014" stroke-width="6.2"/>
+    <path d="M48 50 L14 14" stroke="#cfd9dd" stroke-width="3.4"/>
+    <path d="M46.5 48 L16 16" stroke="#eef4f5" stroke-width="1.1"/>
+  </g>
+  <g transform="translate(18 48) rotate(45)">
+    <rect x="-7" y="-2.2" width="14" height="4.4" rx="2.2"
+          fill="#c46a3a" stroke="#0a1014" stroke-width="1.4"/>
+  </g>
+  <g transform="translate(46 48) rotate(-45)">
+    <rect x="-7" y="-2.2" width="14" height="4.4" rx="2.2"
+          fill="#c46a3a" stroke="#0a1014" stroke-width="1.4"/>
+  </g>
+  <circle cx="14" cy="52" r="2.4" fill="#ffcf4a" stroke="#0a1014" stroke-width="1.2"/>
+  <circle cx="50" cy="52" r="2.4" fill="#ffcf4a" stroke="#0a1014" stroke-width="1.2"/>
+
+  <!-- щит -->
+  <path d="M32 15 L48 21 V33 C48 43 41 48 32 52 C23 48 16 43 16 33 V21 Z"
+        fill="#26343c" stroke="#0a1014" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M32 20 L44 25 V33 C44 40 39 44 32 47 C25 44 20 40 20 33 V25 Z"
+        fill="#152027" stroke="#c46a3a" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M32 27 L37.5 34 L32 41 L26.5 34 Z"
+        fill="#46e0c8" stroke="#0b2b2c" stroke-width="1.4" stroke-linejoin="round"/>
+  <circle cx="32" cy="34" r="2.2" fill="#ffcf4a"/>
+</svg>

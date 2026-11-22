@@ -180,6 +180,13 @@ CC.UI = (function () {
   const buildBtn = document.getElementById('build-btn');
   const buildHint = document.getElementById('build-hint');
   const battleBtn = document.getElementById('battle-btn');
+  // Подробное окно «Информация» вместо поповера в панели постройки.
+  const infoEl = document.getElementById('info');
+  const infoBody = document.getElementById('info-body');
+  const infoX = document.getElementById('info-x');
+  const infoClose = document.getElementById('info-close');
+  const infoUpgradeBtn = document.getElementById('info-upgrade');
+  const infoReason = document.getElementById('info-reason');
   const btnRestart = document.getElementById('btn-restart');
   const btnFinish = document.getElementById('btn-finish');
   // Кнопка способности героя в бою: 40+ px, горячая клавиша Q.
@@ -319,6 +326,8 @@ CC.UI = (function () {
   let replaysOpen = false;
   let replayRecord = null;     // запись, которую сейчас смотрим
   let replayEndShown = false;
+  let infoOpen = false;        // подробное окно выбранной постройки
+  let infoBound = false;
 
   const DRAG_PX = 9; // порог «это тап, а не перетаскивание»
 
@@ -717,6 +726,7 @@ CC.UI = (function () {
     document.addEventListener('keydown', onKeyDown);
 
     selbar.addEventListener('click', onSelbarClick);
+    bindInfo();
     if (shopPrev) shopPrev.addEventListener('click', function () { scrollCarousel(shopGrid, -1); });
     if (shopNext) shopNext.addEventListener('click', function () { scrollCarousel(shopGrid, 1); });
     if (shopGrid) shopGrid.addEventListener('keydown', onCarouselKey);
@@ -903,6 +913,7 @@ CC.UI = (function () {
     state.dragId = null;
     closeBuilders();
     closeShop();
+    closeInfo();
     closeLevels();
     closeArena();
     closeDaily();
@@ -1690,7 +1701,7 @@ CC.UI = (function () {
   // не всплывали поверх кнопок модальных окон.
   function anyOverlayOpen() {
     if (shopOpen || levelsOpen || chapterOpen || recruitOpen || achOpen || dailyOpen || arenaOpen ||
-        replaysOpen || buyResOpen || buyPlatOpen || askState) return true;
+        replaysOpen || buyResOpen || buyPlatOpen || askState || infoOpen) return true;
     if (overlayShown) return true;
     if (replayEnd && !replayEnd.classList.contains('hidden')) return true;
     if (offlineEl && !offlineEl.classList.contains('hidden')) return true;
@@ -1719,6 +1730,30 @@ CC.UI = (function () {
 
   /* ---------- уровень кампании и режим построек ---------- */
 
+  /* ---------- кнопки режима и рейла ---------- */
+
+  // Сегмент нижней панели — иконка + подпись. Меняем только подпись, чтобы
+  // <img> не исчезал при смене режима; без span (старая разметка/тесты)
+  // откатываемся на textContent кнопки.
+  function navLabelEl(btn) {
+    if (!btn || typeof btn.querySelector !== 'function') return null;
+    try {
+      return btn.querySelector('.nav-seg__label');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function setNavLabel(btn, text) {
+    if (!btn) return;
+    const label = navLabelEl(btn);
+    if (label) {
+      if (label.textContent !== text) label.textContent = text;
+    } else if (btn.textContent !== text) {
+      btn.textContent = text;
+    }
+  }
+
   function syncModeButton() {
     if (!battleBtn) return;
 
@@ -1727,7 +1762,7 @@ CC.UI = (function () {
     const text = base ? 'В БОЙ' : 'НА БАЗУ';
 
     if (battleBtn.dataset.mode !== mode) battleBtn.dataset.mode = mode;
-    if (battleBtn.textContent !== text) battleBtn.textContent = text;
+    setNavLabel(battleBtn, text);
   }
 
   // Вход/выход в режим «Постройки». В нём видна сетка, постройки можно
@@ -1763,7 +1798,7 @@ CC.UI = (function () {
     if (buildBtn) {
       const on = state.buildMode;
       const text = on ? 'Готово' : 'Постройки';
-      if (buildBtn.textContent !== text) buildBtn.textContent = text;
+      setNavLabel(buildBtn, text);
       buildBtn.classList.toggle('is-active', on);
       buildBtn.title = on
         ? 'Выйти из режима построек (Esc)'
@@ -3689,6 +3724,13 @@ CC.UI = (function () {
 
     if (e.key !== 'Escape') return;
 
+    // Подробное окно постройки закрывается раньше остальных панелей.
+    if (infoOpen) {
+      closeInfo();
+      sync();
+      return;
+    }
+
     if (recruitOpen) {
       closeRecruit();
       sync();
@@ -3768,6 +3810,7 @@ CC.UI = (function () {
     cache.bpanelSig = null;
     cache.qSpeed = null;
     cache.gems = null;
+    cache.infoSig = null;
   }
 
   function describe(type, s) {
@@ -4046,15 +4089,13 @@ CC.UI = (function () {
     // Новая постройка открывается с верха панели, а не с чужой прокрутки.
     if (prevType !== it.type) {
       selbar.scrollTop = 0;
-      selbar.classList.remove('is-info-open');
     }
     const wide = it.type === 'barracks' || it.type === 'lab' || it.type === 'herohall';
     selbar.classList.toggle('is-strip', !wide);
+    // Подробности живут в отдельном #info, кнопка всегда называется «Инфо».
     if (selInfo) {
-      const open = selbar.classList.contains('is-info-open');
-      const label = open ? 'Скрыть' : 'Инфо';
-      if (selInfo.textContent !== label) selInfo.textContent = label;
-      selInfo.classList.toggle('is-active', open);
+      if (selInfo.textContent !== 'Инфо') selInfo.textContent = 'Инфо';
+      selInfo.classList.remove('is-active');
     }
 
     if (selIcon) {
@@ -4110,7 +4151,386 @@ CC.UI = (function () {
     }
   }
 
-  /* ---------- карусели карточек ---------- */
+  /* ---------- окно «Информация» о постройке ---------- */
+
+  function resWord(res) {
+    return res === 'elixir' ? 'энергии' : 'руды';
+  }
+
+  function capText(text) {
+    const s = String(text || '');
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+  }
+
+  // Текущие характеристики: только то, что реально есть у постройки.
+  function infoStatRows(type, s) {
+    const rows = [];
+    const add = function (label, value) {
+      if (value === null || value === undefined || value === '') return;
+      rows.push({ label: label, value: String(value) });
+    };
+
+    if (s.hp) add('Прочность', fmtNum(s.hp));
+    if (s.dmg) add('Урон', fmtNum(s.dmg));
+    if (s.range) add('Дальность', s.range + ' кл.');
+    if (s.minRange) add('Мин. дальность', s.minRange + ' кл.');
+    if (s.rate) add('Скорость', s.rate.toFixed(2) + '/с');
+    if (s.splash) add('Площадь', s.splash + ' кл.');
+    if (s.production) {
+      add('Производство', s.production + ' ' + resWord(s.res) + '/с');
+    }
+    if (s.extractCap) {
+      add('Накопитель', fmtNum(Math.floor(s.stored || 0)) + ' из ' +
+        fmtNum(s.extractCap));
+    }
+    if (s.capGold) add('Ёмкость склада', fmtNum(s.capGold));
+    if (s.capElixir) add('Ёмкость склада', fmtNum(s.capElixir));
+    if (s.capacity) add('Мест в армии', '+' + fmtNum(s.capacity));
+    if (s.trainSlots) add('Слотов тренировки', String(s.trainSlots));
+
+    if (s.trap) {
+      if (type === 'spring') {
+        add('Эффект', 'подбрасывает');
+        if (s.capacity) add('Поднимает', s.capacity + ' веса');
+      } else {
+        add('Эффект', type === 'airmine' ? 'взрыв по воздуху' : 'взрыв по земле');
+      }
+      if (s.radius) add('Радиус', s.radius + ' кл.');
+    }
+    if (s.hidden) add('Скрытность', 'до ' + (s.revealRange || 2.5) + ' кл.');
+    if (s.beam) add('Разгон луча', 'до ×' + (s.rampMax || 3));
+    if (s.onlyGround) add('Цели', 'только земля');
+    else if (s.targetsAir && s.dmg) add('Цели', 'земля и воздух');
+
+    return rows;
+  }
+
+  // «Что даёт»: короткие выгоды без процентов и формул.
+  function infoGives(type, s) {
+    const d = CC.BUILDINGS[type] || {};
+    const out = [];
+
+    if (type === 'townhall') {
+      out.push('Открывает постройки и новые уровни');
+      out.push('Предел базы: ур. ' + (s.max || 10));
+    } else if (type === 'goldmine' || type === 'elixir') {
+      out.push('Добывает ' + resWord(s.res) + ': ' + s.production + '/с');
+      if (s.extractCap) out.push('Накопитель: ' + fmtNum(s.extractCap));
+    } else if (type === 'storage' || type === 'estorage') {
+      const cap = type === 'storage' ? s.capGold : s.capElixir;
+      out.push('Ёмкость склада ' + resWord(type === 'storage' ? 'gold' : 'elixir') +
+        ': ' + fmtNum(cap));
+      out.push('Сейчас на складе: ' +
+        fmtNum(type === 'storage' ? CC.Game.gold() : CC.Game.elixir()));
+    } else if (type === 'barracks') {
+      out.push('Мест в армии: +' + fmtNum(s.capacity));
+      out.push('Слотов тренировки: ' + (s.trainSlots || 1));
+      out.push('Открывает найм войск');
+    } else if (type === 'lab') {
+      out.push('Исследования войск');
+      out.push('Скидка на исследования: 5% за уровень');
+    } else if (type === 'herohall') {
+      out.push('Прокачка Сержанта');
+      out.push('Скидка на прокачку: 5% за уровень');
+    } else if (type === 'wall') {
+      out.push('Задерживает врага');
+      out.push('Не пропускает проход');
+    } else if (s.trap) {
+      out.push('Одноразовая ловушка');
+      out.push('Срабатывает при подходе');
+      out.push('Не входит в процент разрушения');
+    } else if (s.beam) {
+      out.push('Непрерывный урон по цели');
+      out.push('Усиление до ×' + (s.rampMax || 3));
+    } else if (s.hidden) {
+      out.push('Оборона из засады');
+      out.push('Скрыта до ' + (s.revealRange || 2.5) + ' кл.');
+    } else if (s.dmg) {
+      out.push('Оборона базы');
+      out.push('Урон ' + fmtNum(s.dmg) + ', дальность ' + s.range + ' кл.');
+      out.push(s.onlyGround ? 'Цели: только земля'
+        : (s.targetsAir ? 'Цели: земля и воздух' : 'Цели: все'));
+    } else {
+      out.push(capText(d.desc || 'Постройка базы'));
+    }
+
+    return out;
+  }
+
+  // Строки «Следующий уровень»: только реально растущие значения.
+  function infoNextRows(type, s, next) {
+    const rows = [];
+    const add = function (label, from, to) {
+      if (to === null || to === undefined || to === '') return;
+      rows.push({ label: label, from: String(from), to: String(to) });
+    };
+
+    if (next.hp && next.hp !== s.hp) add('Прочность', fmtNum(s.hp), fmtNum(next.hp));
+    if (next.dmg && next.dmg !== s.dmg) add('Урон', fmtNum(s.dmg), fmtNum(next.dmg));
+    if (next.range && next.range !== s.range) {
+      add('Дальность', s.range + ' кл.', next.range + ' кл.');
+    }
+
+    if (CC.PRODUCTION[type]) {
+      const p0 = s.production || 0;
+      const p1 = CC.Game.produceAt ? CC.Game.produceAt(type, s.level + 1) : p0;
+      if (p1 !== p0) {
+        add('Производство', p0 + ' ' + resWord(s.res) + '/с',
+          p1 + ' ' + resWord(s.res) + '/с');
+      }
+      const b0 = s.extractCap || 0;
+      const b1 = CC.extractCap ? CC.extractCap(type, s.level + 1) : 0;
+      if (b1 !== b0) add('Накопитель', fmtNum(b0), fmtNum(b1));
+    }
+
+    if (type === 'storage' || type === 'estorage') {
+      const key = type === 'storage' ? 'gold' : 'elixir';
+      const base = (CC.ECONOMY.storageCap || {})[key] || 0;
+      const c0 = type === 'storage' ? s.capGold : s.capElixir;
+      const c1 = Math.round(base * Math.pow(2, s.level));
+      if (c1 !== c0) add('Ёмкость склада', fmtNum(c0), fmtNum(c1));
+    }
+
+    if (type === 'barracks') {
+      const c0 = s.capacity || 0;
+      const c1 = (CC.ARMY.capacityPerBarracks || 20) * (s.level + 1);
+      if (c1 !== c0) add('Мест в армии', '+' + fmtNum(c0), '+' + fmtNum(c1));
+    }
+
+    return rows;
+  }
+
+  // Состояние кнопки «Улучшить» без записи в DOM: одна точка правды для
+  // окна и причины блокировки.
+  function infoUpgradeState(id) {
+    const build = CC.Game.buildInfo(id);
+    if (build) {
+      return {
+        block: 'build', disabled: true, label: 'Строится',
+        reason: 'Модуль начнёт работать после завершения стройки',
+        price: '', timer: 'Строится · осталось ' + formatTime(build.left)
+      };
+    }
+
+    const up = CC.Game.upgradeInfo(id);
+    if (up) {
+      return {
+        block: 'up', disabled: true, label: 'Улучшается до ур. ' + up.to,
+        reason: '', price: '',
+        timer: 'Улучшение · осталось ' + formatTime(up.left)
+      };
+    }
+
+    const check = CC.Game.canUpgrade(id);
+    const cost = check.cost || CC.Game.upgradeCost(id);
+
+    if (check.ok) {
+      return {
+        block: 'ok', disabled: false, label: 'Улучшить',
+        reason: '', price: priceText(cost)
+      };
+    }
+
+    if (check.reason === 'Максимальный уровень') {
+      return {
+        block: 'max', disabled: true, label: 'Максимальный уровень',
+        reason: '', price: ''
+      };
+    }
+
+    let reason = check.reason || 'Улучшение недоступно';
+    if (check.needTh) reason = 'Нужен командный центр ур. ' + check.needTh;
+    if (check.reason === 'Все строители заняты') {
+      reason = 'Все строители заняты' +
+        (check.wait !== null && check.wait !== undefined
+          ? ' · свободен через ' + formatTime(check.wait)
+          : '');
+    }
+
+    return {
+      block: 'blocked', disabled: true, label: 'Улучшить',
+      reason: reason, price: priceText(cost)
+    };
+  }
+
+  function infoRowsHtml(rows) {
+    return rows.map(function (r) {
+      return '<div class="info-stat"><dt>' + escHtml(r.label) + '</dt>' +
+        '<dd>' + escHtml(r.value) + '</dd></div>';
+    }).join('');
+  }
+
+  function infoBodyHtml(it, s, up, maxLvl) {
+    const type = it.type;
+    const d = CC.BUILDINGS[type] || { name: type, desc: '' };
+    const art = cardArt('building', type, 260, s.level, 'info-card__art-img');
+    const fallback = '<span class="info-card__emoji" aria-hidden="true">' +
+      escHtml(CC.ICONS[type] || '🏠') + '</span>';
+
+    const stats = infoStatRows(type, s);
+    const gives = infoGives(type, s);
+
+    let nextHtml = '';
+    if (s.level >= maxLvl) {
+      nextHtml = '<div class="info-max"><b>Максимальный уровень</b>' +
+        '<span>Дальше улучшать нечего — модуль выжат до предела.</span></div>';
+    } else {
+      const next = CC.BuildingStats
+        ? CC.BuildingStats.at(type, s.level + 1)
+        : { hp: s.hp };
+      const rows = infoNextRows(type, s, next);
+      const price = up.price
+        ? '<p class="info-next__price">' + escHtml(up.price) + '</p>'
+        : '';
+      nextHtml = '<div class="info-next">' +
+        '<span class="info-next__tag">Ур. ' + s.level + ' → ' + (s.level + 1) + '</span>' +
+        (rows.length
+          ? '<div class="info-next__rows">' + rows.map(function (r) {
+            return '<div class="info-next__row"><span>' + escHtml(r.label) +
+              '</span><b>' + escHtml(r.from) + '</b><i>→</i>' +
+              '<b class="info-next__up">' + escHtml(r.to) + '</b></div>';
+          }).join('') + '</div>'
+          : '<p class="info-hint">Растёт только прочность.</p>') +
+        price + '</div>';
+    }
+    if (up.timer) {
+      nextHtml += '<p class="info-timer">' + escHtml(up.timer) + '</p>';
+    }
+
+    const desc = (capText(d.desc) || 'Постройка базы') + '. ' +
+      'Уровень ' + s.level + ' из ' + maxLvl + '.';
+
+    return '<div class="info-card__grid">' +
+        '<aside class="info-card__hero">' +
+          '<div class="info-card__art">' + (art || fallback) + '</div>' +
+          '<b class="info-card__name">' + escHtml(d.name || type) + '</b>' +
+          '<span class="info-card__level">Ур. ' + s.level + '</span>' +
+          '<span class="info-card__role">' + escHtml(d.desc || '') + '</span>' +
+        '</aside>' +
+        '<section class="info-card__main">' +
+          '<p class="info-card__desc">' + escHtml(desc) + '</p>' +
+          '<div class="info-block">' +
+            '<h3 class="info-block__title">Сейчас</h3>' +
+            '<dl class="info-stats">' + infoRowsHtml(stats) + '</dl>' +
+          '</div>' +
+          '<div class="info-block">' +
+            '<h3 class="info-block__title">Что даёт</h3>' +
+            '<ul class="info-gives">' + gives.map(function (g) {
+              return '<li>' + escHtml(g) + '</li>';
+            }).join('') + '</ul>' +
+          '</div>' +
+          '<div class="info-block info-block_next">' +
+            '<h3 class="info-block__title">Следующий уровень</h3>' +
+            nextHtml +
+          '</div>' +
+        '</section>' +
+      '</div>';
+  }
+
+  function syncInfo() {
+    if (!infoOpen) return;
+
+    const id = state.selected;
+    const it = id ? findItem(id) : null;
+    const s = id ? CC.Game.stats(id) : null;
+    if (!it || !s) {
+      closeInfo();
+      return;
+    }
+
+    const up = infoUpgradeState(id);
+    const maxLvl = CC.Game.maxLevel ? CC.Game.maxLevel(it.type) : (s.max || 10);
+    const sig = [
+      id, it.type, s.level, maxLvl, up.block, up.label, up.reason, up.price,
+      up.timer || '', CC.Game.gold(), CC.Game.elixir(), CC.Game.gems(),
+      Math.round(CC.Game.cap('gold')), Math.round(CC.Game.cap('elixir'))
+    ].join('|');
+    if (cache.infoSig === sig) return;
+    cache.infoSig = sig;
+
+    if (infoBody) infoBody.innerHTML = infoBodyHtml(it, s, up, maxLvl);
+
+    if (infoUpgradeBtn) {
+      infoUpgradeBtn.disabled = !!up.disabled;
+      if (infoUpgradeBtn.textContent !== up.label) {
+        infoUpgradeBtn.textContent = up.label;
+      }
+      infoUpgradeBtn.title = up.reason || up.price || '';
+      infoUpgradeBtn.classList.toggle('is-max', up.block === 'max');
+    }
+
+    if (infoReason) {
+      const reason = up.reason || '';
+      infoReason.textContent = reason;
+      infoReason.title = reason;
+      infoReason.classList.toggle('hidden', !reason);
+    }
+  }
+
+  function bindInfo() {
+    if (infoBound) return;
+    infoBound = true;
+
+    if (infoX) {
+      infoX.addEventListener('click', function () { closeInfo(); sync(); });
+    }
+    if (infoClose) {
+      infoClose.addEventListener('click', function () { closeInfo(); sync(); });
+    }
+    if (infoUpgradeBtn) {
+      infoUpgradeBtn.addEventListener('click', function () { upgradeFromInfo(); });
+    }
+    if (infoEl) {
+      infoEl.addEventListener('click', function (e) {
+        if (e.target === infoEl) { closeInfo(); sync(); }
+      });
+    }
+  }
+
+  function openInfo() {
+    const id = state.selected;
+    if (!id || !findItem(id)) {
+      return { ok: false, error: 'Постройка не выбрана' };
+    }
+
+    bindInfo();
+    infoOpen = true;
+    cache.infoSig = null;
+    if (infoEl) infoEl.classList.remove('hidden');
+    if (sergeantEl) sergeantEl.classList.add('hidden');
+    hideTip();
+    syncInfo();
+    return { ok: true, id: id };
+  }
+
+  function closeInfo() {
+    const was = infoOpen;
+    infoOpen = false;
+    cache.infoSig = null;
+    if (infoEl) infoEl.classList.add('hidden');
+    return { ok: true, was: was };
+  }
+
+  // «Улучшить» из окна запускает ту же операцию, что и панель постройки.
+  function upgradeFromInfo() {
+    const id = state.selected;
+    if (!id) return { error: 'Постройка не выбрана' };
+
+    const res = CC.Game.startUpgrade(id);
+    if (res.error) {
+      toast(res.error);
+      return res;
+    }
+
+    if (CC.Sound) CC.Sound.play('upgrade');
+    const it = findItem(id);
+    const name = it ? (CC.BUILDINGS[it.type] || {}).name : 'Постройка';
+    toast(res.instant ? name + ': улучшено' : name + ': улучшение началось');
+    invalidate();
+    sync();
+    return res;
+  }
+
 
   // Шаг прокрутки — ровно одна карточка плюс зазор, чтобы снап не «прыгал».
   function carouselStep(el) {
@@ -4744,12 +5164,7 @@ CC.UI = (function () {
   function onSelbarClick(e) {
     const infoBtn = e.target.closest('[data-act="info"]');
     if (infoBtn) {
-      selbar.classList.toggle('is-info-open');
-      if (selInfo) {
-        const open = selbar.classList.contains('is-info-open');
-        selInfo.textContent = open ? 'Скрыть' : 'Инфо';
-        selInfo.classList.toggle('is-active', open);
-      }
+      openInfo();
       return;
     }
 
@@ -7204,6 +7619,7 @@ CC.UI = (function () {
       syncBuyPlatinum();
       syncShopButton();
       syncSelbar();
+      syncInfo();
       syncBaseTip();
       syncSergeant();
       updateGhost();
@@ -7757,6 +8173,11 @@ CC.UI = (function () {
     closeBuilders: closeBuilders,
     openArena: openArena,
     closeArena: closeArena,
+    openInfo: openInfo,
+    closeInfo: closeInfo,
+    syncInfo: syncInfo,
+    upgradeFromInfo: upgradeFromInfo,
+    isInfoOpen: function () { return infoOpen; },
     findOtherArena: findOtherArena,
     startPvpBattle: startPvpBattle,
     arenaAgain: arenaAgain,

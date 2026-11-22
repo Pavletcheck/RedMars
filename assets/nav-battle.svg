@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <circle cx="32" cy="32" r="27" fill="#ff6b5a" opacity=".08"/>
+
+  <!-- следы разгона -->
+  <path d="M13 55 L22 46" stroke="#ffcf4a" stroke-width="3.2"
+        stroke-linecap="round" opacity=".85"/>
+  <path d="M8.5 49 L14.5 43" stroke="#ff6b5a" stroke-width="2.4"
+        stroke-linecap="round" opacity=".75"/>
+
+  <!-- ракета -->
+  <g transform="translate(33 31) rotate(45)">
+    <path d="M-5 11 C-5 18 0 26 0 26 C0 26 5 18 5 11 Z"
+          fill="#ff6b5a" stroke="#7a1f17" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M-2.6 11 C-2.6 16 0 21 0 21 C0 21 2.6 16 2.6 11 Z"
+          fill="#ffcf4a"/>
+    <path d="M-5 4 L-12 14 L-5 12 Z"
+          fill="#ff6b5a" stroke="#7a1f17" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M5 4 L12 14 L5 12 Z"
+          fill="#ff6b5a" stroke="#7a1f17" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M0 -20 C5 -13 6 -4 5 11 L-5 11 C-6 -4 -5 -13 0 -20 Z"
+          fill="#3a4a53" stroke="#0a1014" stroke-width="2"/>
+    <path d="M0 -20 C4 -14 5 -9 5 -7 L-5 -7 C-5 -9 -4 -14 0 -20 Z"
+          fill="#ffcf4a" stroke="#8a5a00" stroke-width="1"/>
+    <rect x="-5" y="1" width="10" height="3.2" fill="#c46a3a"/>
+    <circle cx="0" cy="-3" r="2.4" fill="#46e0c8" stroke="#0b2b2c" stroke-width="1"/>
+    <path d="M0 -7 V1" stroke="#ffcf4a" stroke-width="1" opacity=".55"/>
+  </g>
+</svg>

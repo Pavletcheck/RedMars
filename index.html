@@ -289,14 +289,53 @@
   <div class="collect-layer" id="collect-layer"></div>
   <div class="collect-fx" id="collect-fx" aria-hidden="true"></div>
 
-  <div class="bottom-bar" id="bottom-bar">
-    <button class="shop-btn shop-btn_mode" id="build-btn" type="button"
-            title="Режим построек: сетка и перестановка" aria-pressed="false">Постройки</button>
-    <button class="shop-btn shop-btn_cancel hidden" id="cancel-btn" title="Отменить установку (Esc)">✗ Отмена</button>
-    <button class="shop-btn" id="shop-btn" title="Терминал построек"><span class="shop-btn__ico ico ico-shop" aria-hidden="true"></span> Терминал</button>
-    <button class="shop-btn shop-btn_arena" id="arena-btn" title="Арена: атакуй базу соперника">Арена</button>
-    <button class="mode battle-btn" id="battle-btn" data-mode="battle">В БОЙ</button>
-  </div>
+  <!-- Нижняя панель: один рейл, четыре равных сегмента. Иконки — SVG
+       художника, при их отсутствии onerror включает emoji-фолбэк. -->
+  <footer class="bottom-bar" id="bottom-bar" role="navigation" aria-label="Основное меню">
+    <button class="nav-seg shop-btn shop-btn_mode" id="build-btn" type="button"
+            title="Режим построек: сетка и перестановка" aria-pressed="false">
+      <span class="nav-seg__art" aria-hidden="true">
+        <img class="nav-seg__icon" src="assets/nav-build.svg" alt="" width="30" height="30"
+             draggable="false" decoding="async"
+             onerror="this.parentNode.classList.add('is-missing')">
+        <span class="nav-seg__emoji">🏗️</span>
+      </span>
+      <span class="nav-seg__label" id="build-btn-label">Постройки</span>
+    </button>
+    <button class="nav-seg shop-btn" id="shop-btn" type="button" title="Терминал построек">
+      <span class="nav-seg__art" aria-hidden="true">
+        <img class="nav-seg__icon" src="assets/nav-terminal.svg" alt="" width="30" height="30"
+             draggable="false" decoding="async"
+             onerror="this.parentNode.classList.add('is-missing')">
+        <span class="nav-seg__emoji">🛠️</span>
+      </span>
+      <span class="nav-seg__label" id="shop-btn-label">Терминал</span>
+    </button>
+    <button class="nav-seg shop-btn shop-btn_arena" id="arena-btn" type="button"
+            title="Арена: атакуй базу соперника">
+      <span class="nav-seg__art" aria-hidden="true">
+        <img class="nav-seg__icon" src="assets/nav-arena.svg" alt="" width="30" height="30"
+             draggable="false" decoding="async"
+             onerror="this.parentNode.classList.add('is-missing')">
+        <span class="nav-seg__emoji">🏟️</span>
+      </span>
+      <span class="nav-seg__label" id="arena-btn-label">Арена</span>
+    </button>
+    <button class="nav-seg mode battle-btn nav-seg_battle" id="battle-btn" type="button"
+            data-mode="battle">
+      <span class="nav-seg__art" aria-hidden="true">
+        <img class="nav-seg__icon" src="assets/nav-battle.svg" alt="" width="30" height="30"
+             draggable="false" decoding="async"
+             onerror="this.parentNode.classList.add('is-missing')">
+        <span class="nav-seg__emoji">🔥</span>
+      </span>
+      <span class="nav-seg__label" id="battle-btn-label">В БОЙ</span>
+    </button>
+  </footer>
+
+  <!-- Отмена установки — отдельный маленький оверлей над рейлом. -->
+  <button class="shop-btn shop-btn_cancel nav-cancel hidden" id="cancel-btn" type="button"
+          title="Отменить установку (Esc)">✗ Отмена</button>
 
   <div class="build-hint hidden" id="build-hint">Перетаскивай постройки · выбери модуль в терминале</div>
 
@@ -328,6 +367,27 @@
           <p class="shop__note hidden terminal__note" id="shop-note"></p>
         </section>
       </div>
+    </div>
+  </div>
+
+  <!-- Подробная информация о выбранной постройке: отдельное окно вместо
+       старого поповера в панели. Слева арт, справа характеристики и апгрейд. -->
+  <div class="overlay hidden" id="info">
+    <div class="overlay__card info-card" role="dialog" aria-modal="true"
+         aria-labelledby="info-title">
+      <header class="info-card__head">
+        <h2 class="overlay__title info-card__title" id="info-title">Информация</h2>
+        <button class="shop__x info-card__x" id="info-x" type="button" title="Закрыть">✕</button>
+      </header>
+      <div class="info-card__scroll" id="info-body"></div>
+      <footer class="info-card__foot">
+        <p class="info-card__reason hidden" id="info-reason"></p>
+        <div class="info-card__actions">
+          <button class="overlay__btn info-card__up" id="info-upgrade" type="button">Улучшить</button>
+          <button class="overlay__btn overlay__btn_ghost info-card__close" id="info-close"
+                  type="button">Закрыть</button>
+        </div>
+      </footer>
     </div>
   </div>
 
