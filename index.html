@@ -94,6 +94,19 @@
         </div>
       </div>
     </button>
+    <!-- Плазма: третий ресурс. Панель скрыта, пока нет плазменного бура
+         или хранилища плазмы; класс hidden снимает syncRes. -->
+    <button class="res-panel res-panel_dark hidden" id="res-dark-panel" type="button"
+            title="Купить плазму за платину">
+      <div class="res-panel__in">
+        <span class="res-panel__icon">🛢️</span>
+        <div class="res-panel__body">
+          <b class="res-panel__value" id="res-dark">0</b>
+          <span class="res-panel__cap" id="res-dark-cap">нет склада</span>
+          <span class="res-panel__track"><i id="res-dark-bar"></i></span>
+        </div>
+      </div>
+    </button>
     <button class="res-panel res-panel_gems" id="res-gems-panel" type="button"
             title="Платина за рубли">
       <div class="res-panel__in">
@@ -222,6 +235,14 @@
   <button class="hero-shield hidden" id="hero-shield" type="button"
           title="Щит 3 с на союзников · 1 раз за бой (Q)" aria-label="Щит героя: 3 секунды неуязвимости союзникам в радиусе 2.5, один раз за бой">🛡 Щит 3 с</button>
 
+  <!-- Боевой набор: заклинания с остатком, питомец и осада. Панель
+       показывает только то, что реально доступно в этом бою. -->
+  <div class="battle-kit hidden" id="battle-kit">
+    <div class="battle-kit__spells" id="battle-spells" role="toolbar"
+         aria-label="Заклинания боя"></div>
+    <div class="battle-kit__support hidden" id="battle-support"></div>
+  </div>
+
   <div class="selbar hidden" id="selbar">
     <div class="selbar__head">
       <span class="selbar__icon cc-icon" id="sel-icon" aria-hidden="true">💣</span>
@@ -276,6 +297,10 @@
       </div>
       <div class="hero-list" id="hero-list"></div>
     </div>
+
+    <!-- Питомник, фабрики, мастерская, кузница: компактные списки
+         в панели постройки. Полные списки — в окне «Инфо». -->
+    <div class="selextra hidden" id="sel-extra"></div>
 
     <div class="selbar__row">
       <button class="selbar__btn selbar__btn_info" data-act="info" id="sel-info" type="button">Инфо</button>
@@ -355,6 +380,7 @@
         <div class="terminal__res">
           <span class="terminal__res-chip"><i>🔩</i><b id="shop-res-gold">0</b><em id="shop-res-gold-cap">/0</em></span>
           <span class="terminal__res-chip"><i>⚡</i><b id="shop-res-elixir">0</b><em id="shop-res-elixir-cap">/0</em></span>
+          <span class="terminal__res-chip terminal__res-chip_dark hidden" id="shop-res-dark-chip"><i>🛢️</i><b id="shop-res-dark">0</b><em id="shop-res-dark-cap">/0</em></span>
           <span class="terminal__res-chip terminal__res-chip_gem"><i class="ico ico-platinum" aria-hidden="true"></i><b id="shop-res-gems">0</b></span>
         </div>
         <button class="shop__x terminal__x" id="shop-x" title="Закрыть">✕</button>
@@ -455,7 +481,7 @@
         <button class="chapter-btn" id="chapter-btn" type="button">Глава</button>
         <button class="levels__x" id="levels-x" title="Закрыть">✕</button>
       </div>
-      <p class="levels__hint">5 эпох, 50 узлов. Звёзды — лучший результат. Для прохода хватит одной: 50% построек, снос центра или 100%.</p>
+      <p class="levels__hint">10 эпох, 100 секторов. Звёзды — лучший результат. Для прохода хватит одной: 50% построек, снос центра или 100%.</p>
       <div class="map-scroll" id="map-scroll">
         <div class="levels__grid map" id="levels-grid"></div>
       </div>
@@ -500,6 +526,17 @@
           <span class="recruit__sub" id="recruit-sub"></span>
         </div>
         <button class="levels__x recruit__x" id="recruit-x" title="Закрыть">✕</button>
+      </div>
+      <!-- Вкладки окна армии: войска, заклинания, питомцы, осадные машины. -->
+      <div class="recruit__tabs" id="recruit-tabs" role="tablist" aria-label="Армия">
+        <button class="recruit-tab is-active" type="button" data-recruit-tab="troops"
+                role="tab" aria-selected="true">Войска</button>
+        <button class="recruit-tab" type="button" data-recruit-tab="spells"
+                role="tab" aria-selected="false">Заклинания</button>
+        <button class="recruit-tab" type="button" data-recruit-tab="pets"
+                role="tab" aria-selected="false">Питомцы</button>
+        <button class="recruit-tab" type="button" data-recruit-tab="siege"
+                role="tab" aria-selected="false">Осада</button>
       </div>
       <div class="recruit__body">
         <div class="recruit__left">
@@ -715,6 +752,7 @@
   </div>
 </div>
 
+<script src="js/cocdata.js"></script>
 <script src="js/config.js"></script>
 <script src="js/iso.js"></script>
 <script src="js/path.js"></script>

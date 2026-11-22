@@ -1,7 +1,8 @@
 /* Поиск пути по сетке. Стены проходимы, но дорого — поэтому юниты
    срезают через них и натыкаются на стену, которую приходится ломать.
-   Поле выросло до 1296 клеток, поэтому минимум открытого списка ищется
-   двоичной кучей, а направление подсказывает октильная эвристика A*. */
+   Поле 44×44 — 1936 клеток, поэтому минимум открытого списка ищется
+   двоичной кучей, а направление подсказывает октильная эвристика A*.
+   Опционально opts.wallCost делает стены проходимыми (подкоп/прыжок). */
 window.CC = window.CC || {};
 
 CC.Path = (function () {
@@ -27,8 +28,9 @@ CC.Path = (function () {
 
   return {
     // costs: Float32Array, Infinity = непроходимо
+    // opts.wallCost — переопределить стоимость стен (прыжок/подкоп).
     // возвращает массив {x,y} без стартовой клетки, [] если уже на месте, null если пути нет
-    find: function (costs, W, H, sx, sy, tx, ty) {
+    find: function (costs, W, H, sx, sy, tx, ty, opts) {
       if (sx === tx && sy === ty) return [];
       if (sx < 0 || sy < 0 || sx >= W || sy >= H) return null;
       if (tx < 0 || ty < 0 || tx >= W || ty >= H) return null;
@@ -37,6 +39,7 @@ CC.Path = (function () {
       const total = W * H;
       const start = sy * W + sx;
       const goal = ty * W + tx;
+      const wallCost = opts && isFinite(opts.wallCost) ? Number(opts.wallCost) : 0;
 
       const g = new Float32Array(total).fill(Infinity);
       const h = new Float32Array(total);
@@ -95,7 +98,10 @@ CC.Path = (function () {
       g[start] = 0;
       push(start);
 
-      while (size > 0) {
+      // Защита от зависания на 44×44: каждая клетка закрывается один раз,
+      // но старые записи в куче могут дублироваться. Лимит — 4×клеток.
+      let guard = total * 4;
+      while (size > 0 && guard-- > 0) {
         const cur = pop();
         if (cur === goal) break;
         if (closed[cur]) continue;
@@ -112,13 +118,19 @@ CC.Path = (function () {
           const n = ny * W + nx;
           if (closed[n]) continue;
 
-          const c = costs[n];
+          let c = costs[n];
           if (!isFinite(c)) continue;
+          // Стены становятся проходимыми для подкопа/прыжка.
+          if (wallCost > 0 && c === 8) c = wallCost;
 
           const diag = DIAG[k];
           if (diag) {
             // не режем угол между двумя занятыми клетками
-            if (!isFinite(costs[cy * W + nx]) || !isFinite(costs[ny * W + cx])) continue;
+            let sideA = costs[cy * W + nx];
+            let sideB = costs[ny * W + cx];
+            if (wallCost > 0 && sideA === 8) sideA = wallCost;
+            if (wallCost > 0 && sideB === 8) sideB = wallCost;
+            if (!isFinite(sideA) || !isFinite(sideB)) continue;
           }
 
           const ng = g[cur] + c * (diag ? SQRT2 : 1);

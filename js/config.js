@@ -1,10 +1,11 @@
 /* Настройки и баланс. */
 window.CC = window.CC || {};
 
-CC.GRID = 36;          // поле 36x36
+CC.GRID = 44;          // поле 44x44: футпринты CoC не влезают в 36x36
 CC.TW = 54;            // ширина тайла (ромб)
 CC.TH = 40;            // высота тайла (54:40 ≈ 48°, −7° от 55°)
 CC.TIME_LIMIT = 180;   // секунд на бой
+CC.MAX_TH = 17;        // потолок справочника CoC на этот этап
 
 /* Стартовая заставка «Колония»: посадочный модуль падает, врезается
    в грунт, раскрывается в командный центр, вспыхивают огни, поднимается
@@ -50,255 +51,922 @@ CC.SERGEANT = {
   ]
 };
 
-/* Постройки. w/h — размер в тайлах, height — высота коробки в пикселях.
-   hp — база 1 уровня, округлённая до сотен: каждый следующий уровень
-   удваивает прочность (см. CC.BuildingStats в base.js). Урон башен тоже
-   удваивается, но к деньгам не относится и кратным 100 не обязан. */
-CC.BUILDINGS = {
+/* ---------- данные CoC ----------
+   Единственное место, где CoC-id превращаются в наши id, имена, роли,
+   размеры и боевое поведение. Числа HP/DPS/цены/времени берутся из
+   CC.COC (js/cocdata.js), здесь — только мета и маппинг. */
+const CC_COC = CC.COC || { details: {}, counts: {}, maxlv: {}, walls: [], th: [] };
+
+// CoC-id зданий. Ключи CC.COC.details смешаны с войсками/героями, поэтому
+// список зданий собираем явно из CC.COC.counts (минус стены и оружие центра).
+CC.BUILDING_COC = {
+  townhall: 'townhall',
+  wall: 'wall',
+  cannon: 'cannon',
+  archer: 'archer_tower',
+  mortar: 'mortar',
+  airdef: 'air_defense',
+  mage: 'wizard_tower',
+  sweeper: 'air_sweeper',
+  ambush: 'hidden_tesla',
+  bombtower: 'bomb_tower',
+  xbow: 'xbow',
+  beam: 'inferno',
+  eagle: 'eagle',
+  scattershot: 'scattershot',
+  monolith: 'monolith',
+  spelltower: 'spell_tower',
+  multiarcher: 'multi_archer',
+  ricochet: 'ricochet',
+  multigear: 'multi_gear',
+  firespitter: 'firespitter',
+  goldmine: 'gold_mine',
+  elixir: 'elixir_collector',
+  darkdrill: 'dark_drill',
+  storage: 'gold_storage',
+  estorage: 'elixir_storage',
+  darkstorage: 'dark_storage',
+  barracks: 'army_camp',
+  train: 'barracks',
+  darktrain: 'dark_barracks',
+  spellfactory: 'spell_factory',
+  darkspellfactory: 'dark_spell_factory',
+  lab: 'laboratory',
+  herohall: 'hero_hall',
+  pethouse: 'pet_house',
+  blacksmith: 'blacksmith',
+  workshop: 'workshop',
+  clancastle: 'clan_castle',
+  squadbarracks: 'squad_barracks',
+  mine: 'bomb',
+  spring: 'spring_trap',
+  airmine: 'air_bomb',
+  giantbomb: 'giant_bomb',
+  seekingair: 'seeking_air_mine',
+  skeletontrap: 'skeleton_trap',
+  tornado: 'tornado_trap',
+  gigabomb: 'giga_bomb'
+};
+
+/* Мета построек: имя, роль, футпринт, цвета и боевые поля.
+   w/h — размер в тайлах; height — высота коробки в пикселях.
+   range/rate/splash — наши тайловые значения; HP/DPS — строго из таблицы. */
+CC.BUILDING_META = {
   townhall: {
     name: 'Командный центр', desc: 'сердце базы, открывает всё',
-    w: 2, h: 2, hp: 1800, height: 54,
-    color: '#b8793c', top: '#e0a869'
+    role: 'центр', w: 2, h: 2, height: 70,
+    color: '#b8793c', top: '#e0a869', thweapon: true
   },
   cannon: {
     name: 'Турель', desc: 'стреляет по земле',
-    w: 1, h: 1, hp: 1200, height: 30,
+    role: 'наземная', w: 1, h: 1, height: 34,
     color: '#6d7278', top: '#9aa1a8',
-    range: 5.8, dmg: 42, rate: 1.3, onlyGround: true
+    range: 9, rate: 1, onlyGround: true
   },
   archer: {
     name: 'Лазерная вышка', desc: 'бьёт по земле и воздуху',
-    w: 1, h: 1, hp: 1000, height: 56,
+    role: 'универсальная', w: 1, h: 1, height: 58,
     color: '#8a6b48', top: '#c2a077',
-    range: 6.6, dmg: 25, rate: 1.7, targetsAir: true
+    range: 10, rate: 1, targetsAir: true
   },
   mortar: {
     name: 'Гаубица', desc: 'навесной огонь по площади',
-    w: 1, h: 1, hp: 500, height: 30,
+    role: 'площадная', w: 1, h: 1, height: 32,
     color: '#5b4a3a', top: '#9d7c55',
-    range: 9, minRange: 2.5, dmg: 45, rate: 0.5, splash: 1.2,
-    onlyGround: true
+    range: 11, minRange: 4, rate: 1, splash: 1.5, onlyGround: true
   },
   airdef: {
     name: 'Зенитный комплекс', desc: 'только по воздуху',
-    w: 1, h: 1, hp: 900, height: 42,
+    role: 'воздушная', w: 1, h: 1, height: 44,
     color: '#586b74', top: '#9fb8c4',
-    range: 7.5, dmg: 55, rate: 0.8, targetsAir: true
+    range: 10, rate: 1, targetsAir: true, airOnly: true
   },
   mage: {
     name: 'Плазменная башня', desc: 'плазма по площади',
-    w: 1, h: 1, hp: 800, height: 52,
+    role: 'площадная', w: 1, h: 1, height: 54,
     color: '#684a72', top: '#c08ad0',
-    range: 6, dmg: 32, rate: 0.7, splash: 1.1, targetsAir: true
+    range: 7, rate: 1, splash: 1.2, targetsAir: true
   },
-  // Поздние обороны: 1x1, обычные постройки (входят в процент и блокируют
-  // высадку). ambush скрыта до подхода, beam — непрерывный луч с разгоном.
+  sweeper: {
+    name: 'Вихревой генератор', desc: 'отталкивает воздух',
+    role: 'поддержка', w: 2, h: 2, height: 44,
+    color: '#4c6b72', top: '#a7dbe0',
+    range: 7, rate: 1, targetsAir: true, airOnly: true, special: 'sweeper'
+  },
   ambush: {
     name: 'Засадная турель', desc: 'скрыта до подхода врага',
-    w: 1, h: 1, hp: 900, height: 40,
+    role: 'засадная', w: 1, h: 1, height: 40,
     color: '#4f6252', top: '#9fb8a2',
-    range: 6, dmg: 55, rate: 1.2, onlyGround: true,
+    range: 7, rate: 1, targetsAir: true,
     hidden: true, revealRange: 2.5
+  },
+  bombtower: {
+    name: 'Детонатор', desc: 'площадной наземный огонь',
+    role: 'площадная', w: 3, h: 3, height: 42,
+    color: '#62564a', top: '#d18a4a',
+    range: 7, rate: 1, splash: 1.4, onlyGround: true, special: 'bombtower'
+  },
+  xbow: {
+    name: 'Рельсотрон', desc: 'дальний огонь по земле и воздуху',
+    role: 'дальняя', w: 3, h: 3, height: 38,
+    color: '#555d66', top: '#b8c2cc',
+    range: 11, rate: 1, targetsAir: true, special: 'xbow'
   },
   beam: {
     name: 'Орбитальный луч', desc: 'луч усиливается со временем',
-    w: 1, h: 1, hp: 700, height: 54,
+    role: 'непрерывная', w: 1, h: 1, height: 58,
     color: '#3f5a78', top: '#8fd4ff',
-    range: 7, dmg: 30, rate: 1, targetsAir: true,
-    beam: true, ramp: 0.25, rampMax: 3
+    range: 10, rate: 1, targetsAir: true,
+    beam: true, ramp: 0.25, rampMax: 3, special: 'beam'
   },
-  // Ловушки: 1x1, в процент не входят, высадку и путь не блокируют,
-  // добычи не дают, срабатывают один раз. hp не используется — ловушка
-  // не цель, поэтому 1.
-  mine: {
-    name: 'Мина', desc: 'взрыв под ногами',
-    w: 1, h: 1, hp: 1, height: 10,
-    color: '#5f4a32', top: '#d76a3c',
-    trap: true, trapKind: 'ground', radius: 0.9,
-    splash: 1.2, dmg: 120
+  eagle: {
+    name: 'Артиллерия «Молот»', desc: 'дальний площадной залп',
+    role: 'дальняя', w: 4, h: 4, height: 58,
+    color: '#5d4b3a', top: '#d7a85a',
+    range: 11, minRange: 4, rate: 1, splash: 1.8,
+    targetsAir: true, special: 'eagle'
   },
-  spring: {
-    name: 'Пружина', desc: 'подбрасывает лёгких бойцов',
-    w: 1, h: 1, hp: 1, height: 10,
-    color: '#5b6066', top: '#c9d3dc',
-    trap: true, trapKind: 'spring', radius: 1.0,
-    capacity: 4, maxUnitSpace: 2
+  scattershot: {
+    name: 'Картечная башня', desc: 'площадной огонь по земле и воздуху',
+    role: 'площадная', w: 4, h: 4, height: 52,
+    color: '#5a5148', top: '#c7a272',
+    range: 11, rate: 1, splash: 1.8, targetsAir: true, special: 'scattershot'
   },
-  airmine: {
-    name: 'Воздушная мина', desc: 'взрыв против дронов',
-    w: 1, h: 1, hp: 1, height: 10,
-    color: '#3f4a60', top: '#7fc4ff',
-    trap: true, trapKind: 'air', radius: 0.9,
-    splash: 1.5, dmg: 200
+  monolith: {
+    name: 'Обелиск', desc: 'мощный одиночный удар',
+    role: 'тяжёлая', w: 4, h: 4, height: 64,
+    color: '#3f4550', top: '#9fa9c0',
+    range: 11, rate: 1, targetsAir: true, special: 'monolith'
   },
-  wall: {
-    name: 'Энергобарьер', desc: 'держит врага, не пропускает',
-    w: 1, h: 1, hp: 200, height: 18,
-    color: '#8d877d', top: '#b3ada2'
+  spelltower: {
+    name: 'Генератор поля', desc: 'накладывает эффект на площадь',
+    role: 'поле', w: 3, h: 3, height: 48,
+    color: '#4a3f6b', top: '#b49cff',
+    range: 7, rate: 1, splash: 1.5, targetsAir: true, special: 'spelltower'
+  },
+  multiarcher: {
+    name: 'Спаренная лазерная вышка', desc: 'две цели одновременно',
+    role: 'двойная', w: 3, h: 3, height: 58,
+    color: '#7a5a44', top: '#e0b78a',
+    range: 10, rate: 1, targetsAir: true, special: 'multiarcher'
+  },
+  ricochet: {
+    name: 'Рикошетная турель', desc: 'прыгающий снаряд',
+    role: 'рикошет', w: 3, h: 3, height: 40,
+    color: '#4e6266', top: '#a9d0d4',
+    range: 9, rate: 1, targetsAir: true, special: 'ricochet'
+  },
+  multigear: {
+    name: 'Многоствольная башня', desc: 'несколько стволов',
+    role: 'многоствол', w: 3, h: 3, height: 50,
+    color: '#58605a', top: '#bfc9b8',
+    range: 10, rate: 1, targetsAir: true, special: 'multigear'
+  },
+  firespitter: {
+    name: 'Плазмомёт', desc: 'площадной наземный огонь',
+    role: 'площадная', w: 3, h: 3, height: 46,
+    color: '#6b4432', top: '#ff9a5a',
+    range: 9, rate: 1, splash: 1.6, onlyGround: true, special: 'firespitter'
   },
   goldmine: {
-    name: 'Бур', desc: 'копит ресурс — руду',
-    w: 1, h: 1, hp: 500, height: 26, resource: true,
+    name: 'Бур', desc: 'копит руду',
+    role: 'добыча', w: 1, h: 1, height: 28, resource: true, produce: 'gold',
     color: '#7d6a4f', top: '#d9b24a'
   },
   elixir: {
-    name: 'Реактор', desc: 'копит ресурс — энергию',
-    w: 1, h: 1, hp: 500, height: 26, resource: true,
+    name: 'Реактор', desc: 'копит энергию',
+    role: 'добыча', w: 1, h: 1, height: 28, resource: true, produce: 'elixir',
     color: '#5d4b6b', top: '#b06fd0'
   },
-  // Два разных склада: старый storage теперь хранит только руду,
-  // estorage — только энергию. Командный центр ёмкости не даёт.
+  darkdrill: {
+    name: 'Плазменный бур', desc: 'копит плазму',
+    role: 'добыча', w: 3, h: 3, height: 30, resource: true, produce: 'dark',
+    color: '#3f3548', top: '#c77dff'
+  },
   storage: {
-    name: 'Склад руды', desc: 'хранит только руду',
-    w: 1, h: 1, hp: 600, height: 28, resource: true, store: 'gold',
+    name: 'Хранилище руды', desc: 'хранит только руду',
+    role: 'склад', w: 1, h: 1, height: 30, resource: true, store: 'gold',
     color: '#77644a', top: '#d0ad6a'
   },
   estorage: {
-    name: 'Склад энергии', desc: 'хранит только энергию',
-    w: 1, h: 1, hp: 600, height: 28, resource: true, store: 'elixir',
+    name: 'Хранилище энергии', desc: 'хранит только энергию',
+    role: 'склад', w: 1, h: 1, height: 30, resource: true, store: 'elixir',
     color: '#4a5a74', top: '#7fc4ff'
   },
+  darkstorage: {
+    name: 'Хранилище плазмы', desc: 'хранит только плазму',
+    role: 'склад', w: 3, h: 3, height: 30, resource: true, store: 'dark',
+    color: '#3a3142', top: '#b06adf'
+  },
   barracks: {
-    name: 'Ангар', desc: 'даёт места и тренирует',
-    w: 2, h: 2, hp: 700, height: 34,
-    color: '#7b5a3a', top: '#c9a06a'
+    name: 'Ангар', desc: 'даёт места в армии',
+    role: 'армия', w: 2, h: 2, height: 38,
+    color: '#7b5a3a', top: '#c9a06a', housing: true
+  },
+  train: {
+    name: 'Казарма', desc: 'тренирует войска',
+    role: 'армия', w: 3, h: 3, height: 34,
+    color: '#6f5a42', top: '#d1b07a', training: true
+  },
+  darktrain: {
+    name: 'Казарма плазмы', desc: 'тренирует тёмные войска',
+    role: 'армия', w: 3, h: 3, height: 34,
+    color: '#45394f', top: '#b984d8', training: true, darkTraining: true
+  },
+  spellfactory: {
+    name: 'Генератор аномалий', desc: 'готовит заклинания',
+    role: 'армия', w: 3, h: 3, height: 40,
+    color: '#3d5a7a', top: '#8fd0ff', spells: true
+  },
+  darkspellfactory: {
+    name: 'Резонатор плазмы', desc: 'готовит тёмные заклинания',
+    role: 'армия', w: 3, h: 3, height: 40,
+    color: '#443553', top: '#c28fe8', spells: true, darkSpells: true
   },
   lab: {
-    name: 'Исследовательский центр', desc: 'изучает войска и ускоряет исследования',
-    w: 2, h: 2, hp: 600, height: 32,
-    color: '#2f6b6b', top: '#63c9c1',
-    research: true
+    name: 'Исследовательский центр', desc: 'изучает войска и заклинания',
+    role: 'развитие', w: 2, h: 2, height: 36,
+    color: '#2f6b6b', top: '#63c9c1', research: true
   },
   herohall: {
-    name: 'Академия героя', desc: 'готовит Сержанта и ускоряет прокачку',
-    w: 2, h: 2, hp: 800, height: 40,
-    color: '#8a3a32', top: '#d9a441',
-    heroHall: true
+    name: 'Академия героя', desc: 'готовит и качает героев',
+    role: 'развитие', w: 2, h: 2, height: 48,
+    color: '#8a3a32', top: '#d9a441', heroHall: true
+  },
+  pethouse: {
+    name: 'Питомник', desc: 'дом питомцев героев',
+    role: 'развитие', w: 3, h: 3, height: 38,
+    color: '#5a3a4a', top: '#d77fa0', petHouse: true
+  },
+  blacksmith: {
+    name: 'Оружейная', desc: 'снаряжение героев',
+    role: 'развитие', w: 3, h: 3, height: 36,
+    color: '#554a3e', top: '#c8a15c', equipment: true
+  },
+  workshop: {
+    name: 'Сборочный цех', desc: 'собирает осадные машины',
+    role: 'развитие', w: 3, h: 3, height: 38,
+    color: '#4d5a4a', top: '#b9c99a', siege: true
+  },
+  clancastle: {
+    name: 'Орбитальная станция', desc: 'резерв и подкрепление',
+    role: 'армия', w: 4, h: 4, height: 46,
+    color: '#4a5468', top: '#a9b8d8'
+  },
+  squadbarracks: {
+    name: 'Казарма эскадрильи', desc: 'режим отрядов',
+    role: 'армия', w: 3, h: 3, height: 34,
+    color: '#5a4e3a', top: '#c8b07a', squad: true
+  },
+  mine: {
+    name: 'Мина', desc: 'взрыв под ногами',
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 10,
+    color: '#5f4a32', top: '#d76a3c',
+    trap: true, trapKind: 'ground', radius: 1.2, splash: 1.4
+  },
+  spring: {
+    name: 'Пружина', desc: 'подбрасывает лёгких бойцов',
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 10,
+    color: '#5b6066', top: '#c9d3dc',
+    trap: true, trapKind: 'spring', radius: 1.4, capacity: 4, maxUnitSpace: 2
+  },
+  airmine: {
+    name: 'Воздушная мина', desc: 'взрыв против дронов',
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 10,
+    color: '#3f4a60', top: '#7fc4ff',
+    trap: true, trapKind: 'air', radius: 1.2, splash: 1.6
+  },
+  giantbomb: {
+    name: 'Тяжёлая мина', desc: 'площадной взрыв по земле',
+    role: 'ловушка', w: 2, h: 2, hp: 1, height: 22,
+    color: '#5a3e2e', top: '#ff8a4a',
+    trap: true, trapKind: 'ground', radius: 2, splash: 2
+  },
+  seekingair: {
+    name: 'Ракетная мина', desc: 'сильный удар по воздуху',
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 12,
+    color: '#38465c', top: '#8fc4ff',
+    trap: true, trapKind: 'air', radius: 1.2, splash: 1.4
+  },
+  skeletontrap: {
+    name: 'Ловушка-дрон', desc: 'выпускает дронов',
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 14,
+    color: '#4b4a3a', top: '#e3d6a2',
+    trap: true, trapKind: 'skeleton', radius: 1.2, capacity: 2
+  },
+  tornado: {
+    name: 'Гравитационная ловушка', desc: 'затягивает отряд',
+    role: 'ловушка', w: 2, h: 2, hp: 1, height: 22,
+    color: '#3d5060', top: '#a9d8e8',
+    trap: true, trapKind: 'tornado', radius: 2, capacity: 1
+  },
+  gigabomb: {
+    name: 'Гига-мина', desc: 'огромный урон по земле',
+    role: 'ловушка', w: 2, h: 2, hp: 1, height: 24,
+    color: '#4a2e2e', top: '#ff6a4a',
+    trap: true, trapKind: 'ground', radius: 2.2, splash: 2.4
+  },
+  wall: {
+    name: 'Энергобарьер', desc: 'держит врага, не пропускает',
+    role: 'стена', w: 1, h: 1, height: 18,
+    color: '#8d877d', top: '#b3ada2'
   }
 };
 
-/* Ловушка ли это. Один предикат для базы, боя, генератора и интерфейса:
-   типы не должны расходиться между файлами. */
-CC.TRAP_TYPES = ['mine', 'spring', 'airmine'];
+// Список зданий: только ключи CC.COC.counts (кроме стены и оружия центра)
+// плюс сам центр и стена. Никаких войск/героев/питомцев из details.
+CC.BUILDING_ORDER = Object.keys(CC.BUILDING_META);
+
+// Уровни CoC не выше потолка 17. Строки TH18–19 в справочнике есть,
+// но в игру не попадают.
+CC._cocLevels = function (coc) {
+  let rows = [];
+  if (coc === 'townhall') {
+    rows = (CC_COC.th || []).filter(function (r) {
+      return !r.th || r.th <= CC.MAX_TH;
+    }).map(function (r) {
+      // У строк центра уровень называется th, а не lv.
+      const row = {};
+      for (const k in r) row[k] = r[k];
+      row.lv = r.th;
+      return row;
+    });
+  } else if (coc === 'wall') {
+    rows = (CC_COC.walls || []).filter(function (r) { return !r.th || r.th <= CC.MAX_TH; });
+  } else {
+    const e = (CC_COC.details || {})[coc];
+    rows = (e && e.levels) || [];
+    rows = rows.filter(function (r) { return !r.th || r.th <= CC.MAX_TH; });
+  }
+  return rows.slice().sort(function (a, b) { return (a.lv || 0) - (b.lv || 0); });
+};
+
+CC._cocEntity = function (coc) {
+  if (coc === 'townhall') return { coc: 'townhall', name: 'Ратуша', currency: 'gold' };
+  if (coc === 'wall') return { coc: 'wall', name: 'Стена', currency: 'gold' };
+  return (CC_COC.details || {})[coc] || null;
+};
+
+// Строка таблицы построек по нашему id и уровню. У стен и центра — свои
+// таблицы, поэтому хелпер один для всех.
+CC.buildingLevel = function (id, lv) {
+  const coc = CC.BUILDING_COC[id] || id;
+  const rows = CC._cocLevels(coc);
+  if (!rows.length) return {};
+  let n = Math.floor(Number(lv) || 1);
+  if (n < 1) n = 1;
+  let row = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].lv === n) { row = rows[i]; break; }
+    if (rows[i].lv <= n) row = rows[i];
+  }
+  return row || rows[0];
+};
+
+CC.buildingMaxLevel = function (id) {
+  const rows = CC._cocLevels(CC.BUILDING_COC[id] || id);
+  return rows.length ? (rows[rows.length - 1].lv || 1) : 0;
+};
+
+/* Наши точечные исключения из counts. Лазерная вышка нужна обучению
+   Сержанта на TH1, поэтому у неё лимит 1 и maxlv 1 уже на первом центре. */
+CC.LIMIT_OVERRIDES = { archer: { 1: 1 } };
+CC.MAXLV_OVERRIDES = { archer: { 1: 1 } };
+
+// Лимит количества по уровню центра. Значения уже массивы 1..17.
+CC.limitAt = function (type, th) {
+  if (type === 'townhall') return 1;
+  const n = Math.round(Number(th) || 1);
+  const ov = (CC.LIMIT_OVERRIDES[type] || {})[n];
+  if (ov !== undefined) return ov;
+  const coc = CC.BUILDING_COC[type] || type;
+  const row = (CC_COC.counts || {})[coc];
+  if (!row) return 0;
+  const i = n < 1 ? 0 : (n > CC.MAX_TH ? CC.MAX_TH - 1 : n - 1);
+  const v = Array.isArray(row) ? row[i] : Number(row[String(i + 1)]);
+  return Math.max(0, Math.floor(Number(v) || 0));
+};
+
+// Потолок уровня постройки на уровне центра. Значение maxlv может быть
+// массивом или объектом с ключами TH; "6 + 2" генератор уже свёл к 6.
+CC.maxLevelAt = function (id, th) {
+  if (id === 'townhall') return CC.MAX_TH;
+  const coc = CC.BUILDING_COC[id] || id;
+  const max = CC.buildingMaxLevel(id);
+  if (!max) return 0;
+  const n = Math.round(Number(th) || 1);
+  const ov = (CC.MAXLV_OVERRIDES[id] || {})[n];
+  if (ov !== undefined) return Math.min(max, ov);
+  const row = (CC_COC.maxlv || {})[coc];
+  if (!row) return max;
+  const i = n < 1 ? 0 : (n > CC.MAX_TH ? CC.MAX_TH - 1 : n - 1);
+  const v = Array.isArray(row) ? row[i] : Number(row[String(i + 1)]);
+  const lvl = Math.floor(Number(v) || 0);
+  return Math.max(0, Math.min(max, lvl));
+};
+
+CC.buildingRow = function (id, lv) { return CC.buildingLevel(id, lv); };
+
+// Цена перехода НА уровень to. Валюта — из сущности CoC.
+CC.upgradeCost = function (id, to) {
+  const coc = CC.BUILDING_COC[id] || id;
+  const row = CC.buildingLevel(id, to);
+  const ent = CC._cocEntity(coc) || {};
+  const currency = ent.currency || 'gold';
+  const out = {
+    gold: 0, elixir: 0, dark: 0,
+    time: Math.max(0, Number(row.time) || 0),
+    level: Math.max(0, (Math.floor(Number(to) || 1)) - 1),
+    to: Math.floor(Number(to) || 1),
+    coc: coc,
+    currency: currency
+  };
+  if (coc === 'wall') {
+    // У стены цена лежит в отдельных колонках руды/энергии.
+    const g = Number(row.gold) || 0;
+    const e = Number(row.elixir) || 0;
+    if (g > 0) out.gold = g;
+    else if (e > 0) out.elixir = e;
+    out.time = 0;
+    return out;
+  }
+  const cost = Math.max(0, Number(row.cost) || 0);
+  if (currency === 'elixir') out.elixir = cost;
+  else if (currency === 'dark') out.dark = cost;
+  else out.gold = cost;
+  return out;
+};
+
+// Цена и время сегмента стены до уровня lv (для UI и смоука).
+CC.wallUpgrade = function (lv) {
+  return CC.upgradeCost('wall', Math.max(2, Math.floor(Number(lv) || 2)));
+};
+
+// Цена постановки: строка 1 уровня из таблицы. Центр не ставится.
+CC.placeCost = function (type) {
+  if (type === 'townhall') return { gold: 0, elixir: 0, dark: 0 };
+  const c = CC.upgradeCost(type, 1);
+  return { gold: c.gold || 0, elixir: c.elixir || 0, dark: c.dark || 0 };
+};
+
+// Время постановки (1 уровень) и апгрейда до уровня.
+CC.buildTime = function (type, toLevel) {
+  if (type === 'wall') return 0;
+  return CC.upgradeCost(type, toLevel).time;
+};
+CC.placeTime = function (type) { return CC.buildTime(type, 1); };
+
+// Сборка CC.BUILDINGS из меты и таблиц. hp/dmg на 1 уровне остаются в
+// объекте для старых читателей; боевые расчёты идут через BuildingStats.
+CC.BUILDINGS = {};
+CC.BUILDING_ORDER.forEach(function (id) {
+  const meta = CC.BUILDING_META[id];
+  const coc = CC.BUILDING_COC[id];
+  if (!coc) return;
+  if (id !== 'townhall' && id !== 'wall' && !(CC_COC.counts || {})[coc]) return;
+  const rows = CC._cocLevels(coc);
+  if (!rows.length) return;
+  const row = rows[0];
+  // Строим объект из меты без мутации исходника.
+  const def = {};
+  for (const k in meta) def[k] = meta[k];
+  def.coc = coc;
+  def.hp = Number(row.hp) || Number(meta.hp) || 1;
+  const dps = row.dps != null ? row.dps : row.dmg;
+  if (dps != null) def.dmg = dps;
+  if (row.cap != null) def.cap = row.cap;
+  if (row.prod != null) def.prod = row.prod;
+  if (row.radius != null) def.radius = row.radius;
+  CC.BUILDINGS[id] = def;
+});
+
+// Список ловушек — из данных, а не отдельного ручного массива.
+// Ресурсы в порядке интерфейса. gold — руда, elixir — энергия,
+// dark — плазма; платина (gems) — отдельная премиум-валюта.
+CC.RESOURCES = ['gold', 'elixir', 'dark'];
+CC.RESOURCE_NAMES = {
+  gold: 'руда',
+  elixir: 'энергия',
+  dark: 'плазма',
+  gems: 'платина'
+};
+
+CC.TRAP_TYPES = CC.BUILDING_ORDER.filter(function (t) {
+  return CC.BUILDINGS[t] && CC.BUILDINGS[t].trap;
+});
 CC.isTrap = function (type) {
   const d = CC.BUILDINGS[type];
   return !!(d && d.trap);
 };
 
-/* Войска. target: any | defense | resource.
-   space — сколько места занимает в армии, cost — энергия, time — секунды тренировки.
-   desc — короткая роль для карточки в ангаре (3–7 слов). */
-CC.TROOPS = {
-  barb: {
-    name: 'Штурмовик', desc: 'танк, идёт первым',
-    icon: '🪖', hp: 110, dmg: 22, speed: 2.4,
-    range: 0.9, color: '#e0663c', target: 'any',
-    space: 1, cost: 20, time: 5
-  },
-  archer: {
-    name: 'Лазерщик', desc: 'бьёт издалека по всем',
-    icon: '🔫', hp: 60, dmg: 14, speed: 2.8,
-    range: 3.6, color: '#63b352', target: 'any',
-    space: 1, cost: 35, time: 7
-  },
-  giant: {
-    name: 'Мех', desc: 'танк, ломает турели',
-    icon: '🤖', hp: 600, dmg: 55, speed: 1.5,
-    range: 1.0, color: '#a8703f', target: 'defense',
-    space: 4, cost: 120, time: 25
-  },
-  goblin: {
-    name: 'Мародёр', desc: 'грабит буры и реакторы',
-    icon: '🦾', hp: 70, dmg: 22, speed: 3.2,
-    range: 0.9, color: '#8fce3f', target: 'resource',
-    space: 1, cost: 25, time: 6
-  },
-  airship: {
-    name: 'Дрон-бомбардировщик', desc: 'летит и бомбит по площади',
-    icon: '🛸', hp: 900, dmg: 120, speed: 0.85,
-    range: 1.2, color: '#c46a3f', target: 'any', fly: true,
-    splash: 1.2, space: 6, cost: 220, time: 45
-  },
-  gnome: {
-    name: 'Подрывник', desc: 'рвёт энергобарьеры в клочья',
-    icon: '🧨', hp: 70, dmg: 16, speed: 3.4,
-    range: 0.8, color: '#d9a05b', target: 'wall',
-    wallBonus: 4, space: 1, cost: 60, time: 8
-  },
-  // Герой не тренируется и не занимает места в армии: он всегда доступен
-  // после открытия и восстанавливается между боями. Характеристики по
-  // уровню считает CC.Game.heroStats(), а здесь — базовые значения.
-  hero: {
-    name: 'Сержант', desc: 'щит на 3 с для союзников, один раз за бой',
-    icon: '🎖️', hp: 1000, dmg: 80, speed: 2.0,
-    range: 1.2, color: '#c9a227', target: 'any',
-    space: 0, cost: 0, time: 0, hero: true
+// Цена постановки для старого интерфейса/тестов: объект по всем типам.
+CC.PLACE_COST = {};
+CC.UPGRADES = {};
+CC.BUILDING_ORDER.forEach(function (type) {
+  const c = CC.placeCost(type);
+  CC.PLACE_COST[type] = { gold: c.gold, elixir: c.elixir, dark: c.dark };
+  const to2 = CC.upgradeCost(type, 2);
+  CC.UPGRADES[type] = {
+    max: CC.buildingMaxLevel(type),
+    cost: { gold: to2.gold, elixir: to2.elixir, dark: to2.dark },
+    time: to2.time,
+    fromTable: true
+  };
+});
+// Совместимые старые массивы: реальные значения берутся из CC.upgradeCost.
+CC.BUILD_TIME = [];
+CC.TOWNHALL_TIME = {};
+
+// Валюта сущности: building/troop/hero/pet/spell.
+CC.entityCurrency = function (kind, id) {
+  if (kind === 'building') return (CC._cocEntity(CC.BUILDING_COC[id] || id) || {}).currency || 'gold';
+  let coc = id;
+  if (kind === 'troop') coc = CC.TROOP_COC[id] || id;
+  else if (kind === 'hero') coc = CC.HERO_COC[id] || id;
+  const group = kind === 'troop' ? CC_COC.troops :
+    (kind === 'hero' ? CC_COC.heroes : (kind === 'pet' ? CC_COC.pets : CC_COC.spells));
+  const ent = (group || {})[coc];
+  return (ent && ent.currency) || 'gold';
+};
+
+// Данные героев, питомцев и заклинаний для хелперов ниже.
+CC._heroRows = function (coc) {
+  const ent = (CC_COC.heroes || {})[coc];
+  if (!ent) return [];
+  return (ent.levels || []).filter(function (r) {
+    return (r._th == null || r._th <= CC.MAX_TH) && (r.th == null || r.th <= CC.MAX_TH);
+  });
+};
+
+/* ---------- войска ----------
+   32 типа из CC.COC.troops. space/speed/range/target/fly/role — ручная
+   мета; HP/DPS — строго таблица. Цена и время тренировки остаются нашими:
+   в CoC 2026 время тренировки убрано, а research cost — это лаборатория. */
+CC.TROOP_COC = {
+  barb: 'barbarian',
+  archer: 'archer',
+  giant: 'giant',
+  goblin: 'goblin',
+  gnome: 'wall_breaker',
+  airship: 'balloon',
+  wizard: 'wizard',
+  healer: 'healer',
+  dragon: 'dragon',
+  pekka: 'pekka',
+  babydragon: 'baby_dragon',
+  miner: 'miner',
+  electrodragon: 'electro_dragon',
+  yeti: 'yeti',
+  dragonrider: 'dragon_rider',
+  electrotitan: 'electro_titan',
+  rootrider: 'root_rider',
+  thrower: 'thrower',
+  meteorgolem: 'meteor_golem',
+  minion: 'minion',
+  hogrider: 'hog_rider',
+  valkyrie: 'valkyrie',
+  golem: 'golem',
+  witch: 'witch',
+  lavahound: 'lava_hound',
+  bowler: 'bowler',
+  icegolem: 'ice_golem',
+  headhunter: 'headhunter',
+  apprentice: 'apprentice_warden',
+  druid: 'druid',
+  furnace: 'furnace',
+  ruinwitch: 'ruin_witch'
+};
+
+CC.TROOP_META = {
+  barb: { name: 'Штурмовик', desc: 'танк, идёт первым', icon: '🪖',
+    color: '#e0663c', space: 1, speed: 2.4, range: 0.9, target: 'any',
+    cost: 20, time: 5, role: 'ближний' },
+  archer: { name: 'Лазерщик', desc: 'бьёт издалека по всем', icon: '🔫',
+    color: '#63b352', space: 1, speed: 2.8, range: 3.6, target: 'any',
+    cost: 35, time: 7, role: 'дальний' },
+  giant: { name: 'Мех', desc: 'танк, ломает турели', icon: '🤖',
+    color: '#a8703f', space: 5, speed: 1.5, range: 1, target: 'defense',
+    cost: 120, time: 25, role: 'танк' },
+  goblin: { name: 'Мародёр', desc: 'грабит буры и реакторы', icon: '🦾',
+    color: '#8fce3f', space: 1, speed: 3.2, range: 0.9, target: 'resource',
+    cost: 25, time: 6, role: 'добытчик' },
+  gnome: { name: 'Подрывник', desc: 'рвёт энергобарьеры в клочья', icon: '🧨',
+    color: '#d9a05b', space: 2, speed: 3.4, range: 0.8, target: 'wall',
+    wallBonus: 4, cost: 60, time: 8, role: 'стенобой' },
+  airship: { name: 'Дрон-бомбардировщик', desc: 'летит и бомбит по площади',
+    icon: '🛸', color: '#c46a3f', space: 5, speed: 0.85, range: 1.2,
+    target: 'any', fly: true, splash: 1.5, cost: 220, time: 45, role: 'воздух' },
+  wizard: { name: 'Плазмщик', desc: 'дальний площадной огонь', icon: '⚛️',
+    color: '#8f6ad6', space: 4, speed: 2.2, range: 3.2, target: 'any',
+    splash: 1.3, cost: 120, time: 20, role: 'площадной' },
+  healer: { name: 'Ремонтник', desc: 'лечит союзников', icon: '🩹',
+    color: '#e8e3d0', space: 14, speed: 2, range: 0, target: 'heal',
+    heal: true, cost: 300, time: 40, role: 'поддержка' },
+  dragon: { name: 'Краер', desc: 'воздух, мощный', icon: '🐉',
+    color: '#b04a3a', space: 20, speed: 1.8, range: 1.6, target: 'any',
+    fly: true, splash: 1.2, cost: 420, time: 55, role: 'воздух' },
+  pekka: { name: 'Экзоскелет', desc: 'тяжёлый ближний', icon: '🗡️',
+    color: '#6a6f8a', space: 25, speed: 1.5, range: 1, target: 'defense',
+    cost: 520, time: 60, role: 'танк' },
+  babydragon: { name: 'Дракончик', desc: 'воздух, площадной', icon: '🐲',
+    color: '#c77a4a', space: 10, speed: 2.4, range: 2, target: 'any',
+    fly: true, splash: 1.2, cost: 280, time: 40, role: 'воздух' },
+  miner: { name: 'Крот', desc: 'подземный', icon: '⛏️',
+    color: '#9a7a4a', space: 5, speed: 2.2, range: 1, target: 'defense',
+    cost: 180, time: 24, role: 'подземный' },
+  electrodragon: { name: 'Дуговой дракон', desc: 'воздух, цепь', icon: '⚡',
+    color: '#5a8ad6', space: 30, speed: 1.6, range: 2.5, target: 'any',
+    fly: true, chain: 3, cost: 620, time: 65, role: 'воздух' },
+  yeti: { name: 'Ледяной гигант', desc: 'танк, детёныши', icon: '❄️',
+    color: '#a8c8d8', space: 18, speed: 1.6, range: 1, target: 'defense',
+    spawn: 4, cost: 380, time: 50, role: 'танк' },
+  dragonrider: { name: 'Наездник', desc: 'воздух, быстрый', icon: '🪽',
+    color: '#8a5a4a', space: 25, speed: 2.4, range: 1, target: 'any',
+    fly: true, cost: 520, time: 60, role: 'воздух' },
+  electrotitan: { name: 'Титан', desc: 'тяжёлый, цепь', icon: '🔱',
+    color: '#6a7ad6', space: 32, speed: 1.5, range: 1, target: 'defense',
+    chain: 4, cost: 680, time: 70, role: 'танк' },
+  rootrider: { name: 'Корневой таран', desc: 'стены, танк', icon: '🌿',
+    color: '#7a8a4a', space: 20, speed: 1.8, range: 1, target: 'any',
+    wallBonus: 3, cost: 460, time: 55, role: 'танк' },
+  thrower: { name: 'Метатель дисков', desc: 'дальний', icon: '💿',
+    color: '#c8a05a', space: 16, speed: 2, range: 6, target: 'defense',
+    cost: 400, time: 50, role: 'дальний' },
+  meteorgolem: { name: 'Метеорит', desc: 'тяжёлый, площадной', icon: '☄️',
+    color: '#8a5a3a', space: 30, speed: 1.2, range: 1, target: 'any',
+    splash: 2, cost: 660, time: 70, role: 'танк' },
+  minion: { name: 'Скат', desc: 'воздух', icon: '🦇',
+    color: '#7a6aa8', space: 2, speed: 3.2, range: 2.5, target: 'any',
+    fly: true, cost: 40, time: 8, role: 'воздух' },
+  hogrider: { name: 'Рейдер', desc: 'прыгает через стены', icon: '🐗',
+    color: '#a8744a', space: 5, speed: 3.4, range: 1, target: 'defense',
+    jumpsWalls: true, cost: 160, time: 22, role: 'быстрый' },
+  valkyrie: { name: 'Валькирия', desc: 'площадной ближний', icon: '🪓',
+    color: '#d08a4a', space: 8, speed: 2.8, range: 1, target: 'any',
+    splash: 1.5, cost: 220, time: 30, role: 'площадной' },
+  golem: { name: 'Голем', desc: 'танк, распадается', icon: '🗿',
+    color: '#8a8a7a', space: 30, speed: 1.2, range: 1, target: 'defense',
+    spawn: 2, cost: 560, time: 65, role: 'танк' },
+  witch: { name: 'Некрос', desc: 'призывает скелетов', icon: '💀',
+    color: '#6a5a7a', space: 12, speed: 1.8, range: 4, target: 'any',
+    spawn: 4, cost: 320, time: 45, role: 'призыв' },
+  lavahound: { name: 'Лавовый пёс', desc: 'воздушный танк', icon: '🌋',
+    color: '#d05a3a', space: 30, speed: 1, range: 1, target: 'defense',
+    fly: true, spawn: 8, cost: 580, time: 65, role: 'воздух' },
+  bowler: { name: 'Крушитель', desc: 'дальний, рикошет', icon: '🎳',
+    color: '#8a7a6a', space: 6, speed: 2.2, range: 3, target: 'any',
+    splash: 1.5, cost: 200, time: 28, role: 'площадной' },
+  icegolem: { name: 'Криоголем', desc: 'танк, заморозка', icon: '🧊',
+    color: '#8ac8e0', space: 15, speed: 2, range: 1, target: 'defense',
+    freeze: true, cost: 320, time: 45, role: 'танк' },
+  headhunter: { name: 'Охотник', desc: 'ищет героев', icon: '🎯',
+    color: '#b85a8a', space: 6, speed: 3, range: 1, target: 'hero',
+    cost: 200, time: 28, role: 'антигерой' },
+  apprentice: { name: 'Ученик', desc: 'поддержка', icon: '📘',
+    color: '#6ab8c8', space: 20, speed: 2, range: 3, target: 'support',
+    support: true, cost: 420, time: 55, role: 'поддержка' },
+  druid: { name: 'Друид', desc: 'поддержка', icon: '🌱',
+    color: '#7ab86a', space: 16, speed: 2, range: 3, target: 'support',
+    support: true, cost: 380, time: 50, role: 'поддержка' },
+  furnace: { name: 'Печь', desc: 'призывает огонь', icon: '🔥',
+    color: '#d0783a', space: 15, speed: 1.8, range: 3, target: 'any',
+    spawn: 6, cost: 360, time: 48, role: 'призыв' },
+  ruinwitch: { name: 'Руинная ведьма', desc: 'призывает руины', icon: '🕯️',
+    color: '#7a5a8a', space: 20, speed: 1.8, range: 4, target: 'any',
+    spawn: 6, cost: 440, time: 58, role: 'призыв' }
+};
+
+// Порядок карточек — по открытию, затем по таблице.
+CC.ARMY_ORDER = [
+  'barb', 'archer', 'giant', 'goblin', 'gnome', 'airship', 'wizard', 'healer',
+  'dragon', 'pekka', 'babydragon', 'miner', 'electrodragon', 'yeti',
+  'dragonrider', 'electrotitan', 'rootrider', 'thrower', 'meteorgolem',
+  'minion', 'hogrider', 'valkyrie', 'golem', 'witch', 'lavahound', 'bowler',
+  'icegolem', 'headhunter', 'apprentice', 'druid', 'furnace', 'ruinwitch'
+];
+
+// Строка уровня войска: hp/dps/цена research/время research/требование лабы.
+CC.troopLevelRow = function (id, lv) {
+  const coc = CC.TROOP_COC[id] || id;
+  const ent = (CC_COC.troops || {})[coc];
+  const rows = (ent && ent.levels) || [];
+  if (!rows.length) return {};
+  let n = Math.floor(Number(lv) || 1);
+  if (n < 1) n = 1;
+  let row = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].lv === n) { row = rows[i]; break; }
+    if (rows[i].lv <= n) row = rows[i];
   }
+  return row || rows[0];
 };
 
-CC.ARMY_ORDER = ['barb', 'archer', 'giant', 'goblin', 'gnome', 'airship'];
-
-/* Постепенное открытие войск по уровню командного центра:
-   раз в два уровня — новый вид. На TH1 доступен только штурмовик. */
-CC.TROOP_UNLOCK = {
-  barb: 1,
-  archer: 2,
-  giant: 4,
-  goblin: 6,
-  gnome: 8,
-  airship: 10,
-  // Герой открывается отдельно от линейки войск — на TH2.
-  hero: 2
+// Потолок войск на TH: максимум лаборатории, доступный на этом центре.
+CC.troopMaxLevel = function (id, th) {
+  const coc = CC.TROOP_COC[id] || id;
+  const ent = (CC_COC.troops || {})[coc];
+  if (!ent) return 0;
+  const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
+  const labRow = (CC_COC.maxlv || {}).laboratory;
+  let lab = 0;
+  if (labRow) {
+    const v = Array.isArray(labRow) ? labRow[thN - 1] : Number(labRow[String(thN)]);
+    lab = Math.max(0, Math.floor(Number(v) || 0));
+  }
+  let best = 0;
+  (ent.levels || []).forEach(function (r) {
+    if (r.th != null && r.th > CC.MAX_TH) return;
+    if ((Number(r.lab) || 0) <= lab) best = Math.max(best, r.lv || 0);
+  });
+  return best;
 };
+
+CC.troopStats = function (id, lv) {
+  const meta = CC.TROOP_META[id] || {};
+  const row = CC.troopLevelRow(id, lv);
+  if (!meta.name && !row.lv) return null;
+  const hp = Number(row.hp) || 0;
+  const dmg = Number(row.dps != null ? row.dps : row.dmg) || 0;
+  return {
+    id: id, type: id, level: row.lv || Math.max(1, Math.floor(Number(lv) || 1)),
+    name: meta.name || id, role: meta.role || '',
+    hp: hp, dmg: dmg, dps: Number(row.dps) || dmg,
+    cost: meta.cost || 0, time: meta.time || 0,
+    space: meta.space || 1, speed: meta.speed || 2,
+    range: meta.range || 1, target: meta.target || 'any',
+    fly: !!meta.fly, splash: meta.splash || 0,
+    color: meta.color || '#c0c0c0', icon: meta.icon || '👾',
+    desc: meta.desc || '', row: row
+  };
+};
+
+// CC.TROOPS: мета + статы 1 уровня (для старых читателей).
+CC.TROOPS = {};
+CC.ARMY_ORDER.forEach(function (id) {
+  const s = CC.troopStats(id, 1);
+  if (!s) return;
+  const meta = CC.TROOP_META[id] || {};
+  CC.TROOPS[id] = {
+    name: s.name, desc: s.desc, icon: s.icon, color: s.color,
+    hp: s.hp, dmg: s.dmg, speed: s.speed, range: s.range,
+    target: s.target, fly: !!s.fly, splash: s.splash,
+    space: s.space, cost: s.cost, time: s.time, role: s.role,
+    coc: CC.TROOP_COC[id], wallBonus: meta.wallBonus || 0
+  };
+});
+
+/* Открытие войск — из unlocks.troop. Английские имена CoC переводим в наши
+   id; всё, что не нашли, не теряем, а просто не показываем. */
+CC.TROOP_UNLOCK = {};
+(function () {
+  const byName = {};
+  Object.keys(CC.TROOP_COC).forEach(function (id) {
+    const ent = (CC_COC.troops || {})[CC.TROOP_COC[id]];
+    if (ent) byName[ent.name] = id;
+  });
+  // Резерв для точных английских имён из unlocks.
+  const aliases = {
+    'Barbarian': 'barb', 'Archer': 'archer', 'Giant': 'giant',
+    'Goblin': 'goblin', 'Wall Breaker': 'gnome', 'Balloon': 'airship',
+    'Wizard': 'wizard', 'Healer': 'healer', 'Dragon': 'dragon',
+    'P.E.K.K.A': 'pekka', 'Baby Dragon': 'babydragon', 'Miner': 'miner',
+    'Electro Dragon': 'electrodragon', 'Yeti': 'yeti',
+    'Dragon Rider': 'dragonrider', 'Electro Titan': 'electrotitan',
+    'Root Rider': 'rootrider', 'Thrower': 'thrower',
+    'Meteor Golem': 'meteorgolem', 'Minion': 'minion',
+    'Hog Rider': 'hogrider', 'Valkyrie': 'valkyrie', 'Golem': 'golem',
+    'Witch': 'witch', 'Lava Hound': 'lavahound', 'Bowler': 'bowler',
+    'Ice Golem': 'icegolem', 'Headhunter': 'headhunter',
+    'Apprentice Warden': 'apprentice', 'Druid': 'druid',
+    'Furnace': 'furnace', 'Ruin Witch': 'ruinwitch'
+  };
+  const src = (CC_COC.unlocks || {}).troop || {};
+  for (let t = 1; t <= CC.MAX_TH; t++) {
+    const list = src[String(t)] || [];
+    list.forEach(function (name) {
+      const id = aliases[name] || byName[name];
+      if (id && CC.TROOP_UNLOCK[id] === undefined) CC.TROOP_UNLOCK[id] = t;
+    });
+  }
+  CC.ARMY_ORDER.forEach(function (id) {
+    if (CC.TROOP_UNLOCK[id] === undefined) CC.TROOP_UNLOCK[id] = 1;
+  });
+})();
 
 // Уровень центра, с которого открыт тип войск (0 — неизвестный тип).
 CC.troopUnlock = function (type) {
   return CC.TROOP_UNLOCK[type] || 0;
 };
 
-/* ---------- прокачка войск ----------
-   У каждого войска свой уровень 1..10, потолок — уровень командного центра
-   (TH1 — 1, TH10 — 10). Качается в ангаре, без отдельной постройки.
-   Цена и время считаются для ЦЕЛЕВОГО уровня to (2..10):
-     цена  = cost × 12 × 2^(to − 2)  энергии, округление до 100
-     время = time × 6  × 1.5^(to − 2) секунд
-   Время округляется до 5 секунд, как у построек.
-   Эффект: HP и урон × 2 за уровень (уровень 1 — ровно базовые значения).
-   Один слот исследования на всю деревню; строителей не занимает. */
-CC.TROOP_LEVEL = {
-  max: 10,
-  costFactor: 12,
-  timeFactor: 6,
-  timeGrowth: 1.5,
-  hpPerLevel: 2,
-  dmgPerLevel: 2
+/* Устаревшая константа: формулы ×2 больше нет. Оставлена только как
+   совместимый маркер для внешних читателей. */
+CC.TROOP_LEVEL = { max: CC.MAX_TH, deprecated: true };
+
+/* ---------- шесть героев ----------
+   Уровни, HP/DPS, цена и время — из CC.COC.heroes по уровням. Потолок
+   героя — Hero Hall + TH (см. heroMaxLevel). Общий в сейве уровень
+   heroLevel остаётся нашим: старый API heroStatsFor(kind, level) жив.
+   Способность «Щит» — 3 секунды неуязвимости, один раз за бой. */
+CC.HERO_COC = {
+  barb: 'bk',
+  archer: 'aq',
+  giant: 'gw',
+  goblin: 'rc',
+  airship: 'mp',
+  dragon: 'dd'
 };
 
-/* ---------- герой «Сержант» ----------
-   Открывается с командного центра 2 уровня. Уровень героя 1..10, потолок
-   равен уровню центра (TH2 — 1..2, TH10 — 10). Прокачка идёт в отдельном
-   слоте ангара, строителей не занимает и не пересекается с исследованием
-   войск. Цена считается до целевого уровня to (2..10):
-     руда = 1600 × 2^(to − 2), округление до 100
-   Время задано таблицей: 2 — 30 мин, 3 — 1 ч, 4 — 2 ч, 5 — 4 ч,
-   6 — 6 ч, 7 — 8 ч, 8 — 12 ч, 9 — 16 ч, 10 — 24 ч.
-   Уровень общий для пяти героев: статы считает CC.Game.heroStatsFor()
-   от базового войска (HP = base.hp × 9 × 2^(L−1),
-   урон = base.dmg × 3.5 × 2^(L−1)).
-   Способность «Щит» — 3 секунды неуязвимости всем героям и союзникам
-   в радиусе 2.5 тайла, один раз за бой. Щит от множителей не зависит. */
+CC.HERO_META = {
+  barb: { name: 'Сержант', base: 'barb', role: 'Штурмовик',
+    portrait: 'assets/portraits/barb.png', speed: 2.0, range: 1.2, target: 'any' },
+  archer: { name: 'Снайпер', base: 'archer', role: 'Лазерщик',
+    portrait: 'assets/portraits/archer.png', speed: 2.6, range: 5, target: 'any' },
+  giant: { name: 'Мех-командир', base: 'giant', role: 'Мех',
+    portrait: 'assets/portraits/giant.png', speed: 1.8, range: 4, target: 'any' },
+  goblin: { name: 'Главарь', base: 'goblin', role: 'Мародёр',
+    portrait: 'assets/portraits/goblin.png', speed: 2.8, range: 1.2, target: 'any' },
+  airship: { name: 'Пилот', base: 'airship', role: 'Дрон',
+    portrait: 'assets/portraits/airship.png', speed: 3, range: 3, target: 'any', fly: true },
+  dragon: { name: 'Герцог', base: 'dragon', role: 'Краер',
+    portrait: 'assets/portraits/dragon.png', speed: 2.2, range: 4, target: 'any', fly: true }
+};
+
+CC._heroEnt = function (id) {
+  return (CC_COC.heroes || {})[CC.HERO_COC[id] || id] || null;
+};
+
+CC.heroLevelRow = function (id, lv) {
+  const ent = CC._heroEnt(id);
+  if (!ent) return {};
+  const rows = (ent.levels || []).filter(function (r) {
+    return (r.th == null || r.th <= CC.MAX_TH);
+  });
+  if (!rows.length) return {};
+  let n = Math.floor(Number(lv) || 1);
+  if (n < 1) n = 1;
+  let row = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].lv === n) { row = rows[i]; break; }
+    if (rows[i].lv <= n) row = rows[i];
+  }
+  return row || rows[0];
+};
+
+// Потолок героя: максимум с учётом TH и уровня Hero Hall, доступного на TH.
+CC.heroMaxLevel = function (id, th) {
+  const ent = CC._heroEnt(id);
+  if (!ent) return 0;
+  const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
+  const hallRow = (CC_COC.maxlv || {}).hero_hall;
+  let hall = 0;
+  if (hallRow) {
+    const v = Array.isArray(hallRow) ? hallRow[thN - 1] : Number(hallRow[String(thN)]);
+    hall = Math.max(0, Math.floor(Number(v) || 0));
+  }
+  let best = 0;
+  (ent.levels || []).forEach(function (r) {
+    if (r.th != null && r.th > CC.MAX_TH) return;
+    if (r.th != null && r.th > thN) return;
+    if ((Number(r.hall) || 0) > hall) return;
+    best = Math.max(best, r.lv || 0);
+  });
+  return best;
+};
+
+CC.heroStatsFor = function (id, lv) {
+  const meta = CC.HERO_META[id] || CC.HERO_META.barb;
+  const row = CC.heroLevelRow(id, lv);
+  const level = row.lv || Math.max(1, Math.floor(Number(lv) || 1));
+  return {
+    id: id,
+    coc: CC.HERO_COC[id] || id,
+    level: level,
+    name: meta.name,
+    role: meta.role,
+    portrait: meta.portrait,
+    hp: Number(row.hp) || 0,
+    dmg: Number(row.dps != null ? row.dps : row.row_dmg) || 0,
+    dps: Number(row.dps) || 0,
+    cost: Number(row.cost) || 0,
+    time: Math.max(0, Number(row.time) || 0),
+    currency: (CC._heroEnt(id) || {}).currency || 'dark',
+    speed: meta.speed,
+    range: meta.range,
+    target: meta.target || 'any',
+    fly: !!meta.fly,
+    space: 0,
+    row: row
+  };
+};
+
+// CC.HERO — совместимый алиас на Сержанта (barb).
 CC.HERO = {
-  id: 'hero',
-  minTh: 2,
-  maxLevel: 10,
-  costBase: 1600,
-  costGrowth: 2,
-  hpBase: 1000,
-  dmgBase: 80,
-  hpPerLevel: 2,
-  dmgPerLevel: 2,
-  speed: 2.0,
-  range: 1.2,
+  id: 'barb',
+  base: 'barb',
+  minTh: 4,
+  maxLevel: CC.heroMaxLevel('barb', CC.MAX_TH) || 1,
+  speed: CC.HERO_META.barb.speed,
+  range: CC.HERO_META.barb.range,
   ability: {
     name: 'Щит',
     duration: 3,
@@ -308,59 +976,48 @@ CC.HERO = {
     hint: 'Щит 3 с на союзников · 1 раз за бой'
   },
   costs: {},
-  times: {
-    2: 30 * 60,
-    3: 60 * 60,
-    4: 2 * 60 * 60,
-    5: 4 * 60 * 60,
-    6: 6 * 60 * 60,
-    7: 8 * 60 * 60,
-    8: 12 * 60 * 60,
-    9: 16 * 60 * 60,
-    10: 24 * 60 * 60
-  }
+  times: {}
 };
 
+CC.HEROES = Object.keys(CC.HERO_COC).map(function (id) {
+  const meta = CC.HERO_META[id];
+  const ent = CC._heroEnt(id) || {};
+  return {
+    id: id,
+    coc: CC.HERO_COC[id],
+    base: meta.base,
+    name: meta.name,
+    role: meta.role,
+    portrait: meta.portrait,
+    minTh: CC.heroUnlockAt ? CC.heroUnlockAt(id) : 1,
+    ability: CC.HERO.ability
+  };
+});
+
+// Открытие героев — из unlocks.hero. Английские имена CoC → наши id.
+CC.HERO_UNLOCK = {};
 (function () {
-  for (let l = 2; l <= CC.HERO.maxLevel; l++) {
-    CC.HERO.costs[l] = Math.round(
-      CC.HERO.costBase * Math.pow(CC.HERO.costGrowth, l - 2) / 100
-    ) * 100;
+  const aliases = {
+    'Barbarian King': 'barb', 'Archer Queen': 'archer',
+    'Grand Warden': 'giant', 'Royal Champion': 'goblin',
+    'Minion Prince': 'airship', 'Dragon Duke': 'dragon'
+  };
+  const src = (CC_COC.unlocks || {}).hero || {};
+  for (let t = 1; t <= CC.MAX_TH; t++) {
+    (src[String(t)] || []).forEach(function (name) {
+      const id = aliases[name];
+      if (id && CC.HERO_UNLOCK[id] === undefined) CC.HERO_UNLOCK[id] = t;
+    });
   }
+  CC.HEROES.forEach(function (h) {
+    if (CC.HERO_UNLOCK[h.id] === undefined) CC.HERO_UNLOCK[h.id] = h.minTh || 1;
+    h.minTh = CC.HERO_UNLOCK[h.id];
+  });
 })();
 
-/* ---------- пять героев ----------
-   Каждый герой — отдельная карточка, но уровень у всех общий (heroLevel,
-   Академия). Герой открыт, когда уровень центра дошёл до minTh и общий
-   уровень героев уже получен. base — базовое войско: от него берутся
-   скорость, дальность, тип цели и полёт, а HP/урон считает
-   CC.Game.heroStatsFor(kind, level). Портрет — из найма. */
-CC.HEROES = [
-  {
-    id: 'barb', base: 'barb', name: 'Сержант', role: 'Штурмовик',
-    minTh: 2, portrait: 'assets/portraits/barb.png'
-  },
-  {
-    id: 'archer', base: 'archer', name: 'Снайпер', role: 'Лазерщик',
-    minTh: 4, portrait: 'assets/portraits/archer.png'
-  },
-  {
-    id: 'giant', base: 'giant', name: 'Мех-командир', role: 'Мех',
-    minTh: 6, portrait: 'assets/portraits/giant.png'
-  },
-  {
-    id: 'goblin', base: 'goblin', name: 'Главарь', role: 'Мародёр',
-    minTh: 8, portrait: 'assets/portraits/goblin.png'
-  },
-  {
-    id: 'airship', base: 'airship', name: 'Пилот', role: 'Дрон',
-    minTh: 10, portrait: 'assets/portraits/airship.png'
-  }
-];
-
-CC.HEROES.forEach(function (h) {
-  h.ability = CC.HERO.ability;
-});
+CC.heroUnlockAt = function (id) {
+  return CC.HERO_UNLOCK[id] || 0;
+};
 
 // Герой по идентификатору. Неизвестный id (старый сейв) — это «Сержант».
 CC.heroDef = function (kind) {
@@ -376,18 +1033,249 @@ CC.heroesAt = function (th) {
   return CC.HEROES.filter(function (h) { return t >= h.minTh; });
 };
 
+// Совместимость боя P2: старый код читает CC.TROOPS.hero. Держим его
+// не enumerable, чтобы в CC.TROOPS осталось ровно 32 типа CoC.
+Object.defineProperty(CC.TROOPS, 'hero', {
+  enumerable: false,
+  configurable: true,
+  writable: true,
+  value: {
+    name: 'Сержант', desc: 'герой, щит на союзников',
+    icon: '🎖️', color: '#c9a227', hero: true,
+    hp: Number(CC.heroLevelRow('barb', 1).hp) || 0,
+    dmg: Number(CC.heroLevelRow('barb', 1).dps) || 0,
+    speed: CC.HERO_META.barb.speed, range: CC.HERO_META.barb.range,
+    target: 'any', space: 0, cost: 0, time: 0
+  }
+});
+
 /* Стартовая армия: новый игрок начинает без войск, ангар выдаётся
    обучением Сержанта. Ноль во всех полях — база совместимости для
    старых сейвов и тестов. */
-CC.START_ARMY = { barb: 0, archer: 0, giant: 0, goblin: 0, gnome: 0, airship: 0 };
+CC.START_ARMY = {};
+CC.ARMY_ORDER.forEach(function (t) { CC.START_ARMY[t] = 0; });
+
+/* ---------- питомцы ----------
+   12 питомцев CoC. Уровни/HP/DPS — из CC.COC.pets, дом — Pet House. */
+CC.PET_META = {
+  lassi: { name: 'Гончая', role: 'наземный', speed: 3, range: 1 },
+  yak: { name: 'Буйвол', role: 'танк', speed: 1.6, range: 1 },
+  owl: { name: 'Филин', role: 'воздух', speed: 3.2, range: 3, fly: true },
+  unicorn: { name: 'Единорог', role: 'лекарь', speed: 2.5, range: 2, heal: true },
+  frosty: { name: 'Морозко', role: 'заморозка', speed: 2.2, range: 1 },
+  diggy: { name: 'Крот', role: 'подземный', speed: 2.4, range: 1 },
+  lizard: { name: 'Ящер', role: 'токсин', speed: 2.6, range: 2 },
+  phoenix: { name: 'Феникс', role: 'воздух', speed: 3, range: 1, fly: true },
+  fox: { name: 'Дух-лис', role: 'воздух', speed: 3.2, range: 2, fly: true },
+  jelly: { name: 'Медуза', role: 'замедление', speed: 2, range: 2 },
+  sneezy: { name: 'Чихун', role: 'площадной', speed: 2, range: 2 },
+  raven: { name: 'Ворон', role: 'воздух', speed: 3.4, range: 2, fly: true }
+};
+
+CC.PETS = {};
+Object.keys(CC.PET_META).forEach(function (id) {
+  const ent = (CC_COC.pets || {})[id];
+  if (!ent) return;
+  const meta = CC.PET_META[id];
+  CC.PETS[id] = {
+    id: id, coc: id, name: meta.name, role: meta.role,
+    speed: meta.speed, range: meta.range, fly: !!meta.fly,
+    heal: !!meta.heal, currency: ent.currency || 'dark',
+    levels: (ent.levels || []).slice()
+  };
+});
+
+CC.petLevelRow = function (id, lv) {
+  const p = CC.PETS[id];
+  const rows = (p && p.levels) || [];
+  if (!rows.length) return {};
+  let n = Math.floor(Number(lv) || 1);
+  if (n < 1) n = 1;
+  let row = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].lv === n) { row = rows[i]; break; }
+    if (rows[i].lv <= n) row = rows[i];
+  }
+  return row || rows[0];
+};
+
+// Потолок питомца — уровень Pet House, доступный на этом TH.
+CC.petMaxLevel = function (id, th) {
+  const p = CC.PETS[id];
+  if (!p) return 0;
+  const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
+  const houseRow = (CC_COC.maxlv || {}).pet_house;
+  let house = 0;
+  if (houseRow) {
+    const v = Array.isArray(houseRow) ? houseRow[thN - 1] : Number(houseRow[String(thN)]);
+    house = Math.max(0, Math.floor(Number(v) || 0));
+  }
+  let best = 0;
+  (p.levels || []).forEach(function (r) {
+    if ((Number(r.shop) || 0) <= house) best = Math.max(best, r.lv || 0);
+  });
+  return best;
+};
+
+CC.petStats = function (id, lv) {
+  const p = CC.PETS[id];
+  if (!p) return null;
+  const row = CC.petLevelRow(id, lv);
+  return {
+    id: id, name: p.name, role: p.role, level: row.lv || 1,
+    hp: Number(row.hp) || 0, dmg: Number(row.dps) || 0,
+    dps: Number(row.dps) || 0, cost: Number(row.cost) || 0,
+    time: Math.max(0, Number(row.time) || 0),
+    currency: p.currency, speed: p.speed, range: p.range,
+    fly: p.fly, heal: p.heal, row: row
+  };
+};
+
+/* ---------- заклинания ----------
+   19 типов CoC. Эффекты — мета, уровни/урон/радиус — таблица. */
+CC.SPELL_META = {
+  lightning: { name: 'Разряд', role: 'урон по площади' },
+  healing: { name: 'Ремонтное поле', role: 'лечит' },
+  rage: { name: 'Стимулятор', role: 'урон и скорость' },
+  jump: { name: 'Прыжковое поле', role: 'через барьеры' },
+  freeze: { name: 'Криополе', role: 'заморозка' },
+  clone: { name: 'Дубликатор', role: 'копии войск' },
+  invisibility: { name: 'Маскировка', role: 'невидимость' },
+  recall: { name: 'Эвакуация', role: 'возврат войск' },
+  revive: { name: 'Реанимация', role: 'поднимает героя' },
+  totem: { name: 'Тотем', role: 'аура' },
+  heroic: { name: 'Героический импульс', role: 'усиление героев' },
+  angry: { name: 'Берсерк', role: 'ярость' },
+  poison: { name: 'Токсин', role: 'урон и замедление' },
+  earthquake: { name: 'Резонанс', role: 'урон стенам' },
+  haste: { name: 'Оверклок', role: 'скорость' },
+  skeleton: { name: 'Дроны', role: 'призыв' },
+  bat: { name: 'Нетопыри', role: 'призыв воздуха' },
+  overgrowth: { name: 'Обрастание', role: 'ловушки/стены' },
+  iceblock: { name: 'Ледяная глыба', role: 'блок' }
+};
+
+CC.SPELLS = {};
+Object.keys(CC.SPELL_META).forEach(function (id) {
+  const ent = (CC_COC.spells || {})[id];
+  if (!ent) return;
+  const meta = CC.SPELL_META[id];
+  CC.SPELLS[id] = {
+    id: id, coc: id, name: meta.name, role: meta.role,
+    currency: ent.currency || 'elixir',
+    levels: (ent.levels || []).slice()
+  };
+});
+
+CC.spellLevelRow = function (id, lv) {
+  const s = CC.SPELLS[id];
+  const rows = (s && s.levels) || [];
+  if (!rows.length) return {};
+  let n = Math.floor(Number(lv) || 1);
+  if (n < 1) n = 1;
+  let row = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].lv === n) { row = rows[i]; break; }
+    if (rows[i].lv <= n) row = rows[i];
+  }
+  return row || rows[0];
+};
+
+// Потолок заклинания — уровень лаборатории, доступный на этом TH.
+CC.spellMaxLevel = function (id, th) {
+  const s = CC.SPELLS[id];
+  if (!s) return 0;
+  const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
+  const labRow = (CC_COC.maxlv || {}).laboratory;
+  let lab = 0;
+  if (labRow) {
+    const v = Array.isArray(labRow) ? labRow[thN - 1] : Number(labRow[String(thN)]);
+    lab = Math.max(0, Math.floor(Number(v) || 0));
+  }
+  let best = 0;
+  (s.levels || []).forEach(function (r) {
+    if ((Number(r.lab) || 0) <= lab) best = Math.max(best, r.lv || 0);
+  });
+  return best;
+};
+
+CC.spellStats = function (id, lv) {
+  const s = CC.SPELLS[id];
+  if (!s) return null;
+  const row = CC.spellLevelRow(id, lv);
+  return {
+    id: id, name: s.name, role: s.role, level: row.lv || 1,
+    dmg: Number(row.dmg) || 0, radius: Number(row.radius) || 0,
+    dur: Number(row.dur) || 0, cost: Number(row.cost) || 0,
+    time: Math.max(0, Number(row.time) || 0),
+    currency: s.currency, row: row
+  };
+};
+
+/* ---------- осадные машины ----------
+   Уровней осады в срезе справочника нет: есть только открытие по TH.
+   Поэтому мета и пустые таблицы уровней; числа появятся со следующим
+   срезом data.json. */
+CC.SIEGE = {
+  wallwrecker: { name: 'Стенолом', role: 'стены', coc: 'wall_wrecker', levels: [] },
+  battleblimp: { name: 'Боевой дирижабль', role: 'воздух', coc: 'battle_blimp', levels: [] },
+  stoneslammer: { name: 'Каменный таран', role: 'площадной', coc: 'stone_slammer', levels: [] },
+  siegebarracks: { name: 'Осадная казарма', role: 'десант', coc: 'siege_barracks', levels: [] },
+  loglauncher: { name: 'Бревномёт', role: 'стены', coc: 'log_launcher', levels: [] },
+  flameflinger: { name: 'Плазмомёт (осадный)', role: 'дальний', coc: 'flame_flinger', levels: [] },
+  battledrill: { name: 'Боевой бур', role: 'подземный', coc: 'battle_drill', levels: [] },
+  trooplauncher: { name: 'Пусковая установка', role: 'десант', coc: 'troop_launcher', levels: [] },
+  skywagon: { name: 'Небесный фургон', role: 'воздух', coc: 'sky_wagon', levels: [] }
+};
+
+CC.SIEGE_UNLOCK = {};
+(function () {
+  const byCoc = {};
+  Object.keys(CC.SIEGE).forEach(function (id) { byCoc[CC.SIEGE[id].coc] = id; });
+  const aliases = {
+    'Wall Wrecker': 'wallwrecker', 'Battle Blimp': 'battleblimp',
+    'Stone Slammer': 'stoneslammer', 'Siege Barracks': 'siegebarracks',
+    'Log Launcher': 'loglauncher', 'Flame Flinger': 'flameflinger',
+    'Battle Drill': 'battledrill', 'Troop Launcher': 'trooplauncher',
+    'Sky Wagon': 'skywagon'
+  };
+  const src = (CC_COC.unlocks || {}).siege || {};
+  for (let t = 1; t <= CC.MAX_TH; t++) {
+    (src[String(t)] || []).forEach(function (name) {
+      const id = aliases[name] || byCoc[name];
+      if (id && CC.SIEGE_UNLOCK[id] === undefined) CC.SIEGE_UNLOCK[id] = t;
+    });
+  }
+  Object.keys(CC.SIEGE).forEach(function (id) {
+    CC.SIEGE[id].minTh = CC.SIEGE_UNLOCK[id] || 0;
+  });
+})();
+
+CC.siegeStats = function (id, lv) {
+  const s = CC.SIEGE[id];
+  if (!s) return null;
+  const row = s.levels && s.levels.length
+    ? s.levels[Math.max(0, Math.min(s.levels.length - 1, (Math.floor(Number(lv) || 1)) - 1))]
+    : null;
+  return {
+    id: id, name: s.name, role: s.role, level: row ? (row.lv || lv) : 1,
+    hp: row ? (Number(row.hp) || 0) : 0,
+    dmg: row ? (Number(row.dps != null ? row.dps : row.dmg) || 0) : 0,
+    cost: row ? (Number(row.cost) || 0) : 0,
+    time: row ? Math.max(0, Number(row.time) || 0) : 0,
+    currency: row ? (row.currency || 'elixir') : 'elixir',
+    row: row
+  };
+};
 
 /* ---------- экономика ---------- */
 
 CC.ECONOMY = {
-  // Новый игрок начинает с нулём ресурсов и без складов: лимиты 0.
-  // Стартовый запас выдаёт Сержант после постановки двух складов.
-  startGold: 0,
-  startElixir: 0,
+  // Стартовый запас — наше решение (не CoC): 1000 руды и 1000 энергии,
+  // чтобы пройти обучение без ожидания. Платина — 50, как раньше.
+  startGold: 1000,
+  startElixir: 1000,
+  startDark: 0,
   // Первый груз обучения после двух складов (и запас при пропуске).
   tutorialGold: 800,
   tutorialElixir: 800,
@@ -398,15 +1286,16 @@ CC.ECONOMY = {
   // Ёмкость даёт только склад: командный центр не хранит ресурсы.
   // baseCap оставлен нулём для старых сейвов и внешних читателей.
   baseCap: 0,
-  // База ёмкости склада 1 уровня. Каждый уровень удваивает её:
-  // 1000 → 2000 → 4000 … → 512 000 на 10 уровне. Руда — по складам руды,
-  // энергия — по складам энергии, центр не хранит.
-  storageCap: { gold: 1000, elixir: 1000 },
-  // Апгрейд до L стоит база × 2^(L−2), округление до 100. Поле growth.cost
-  // оставлено для совместимости: множитель теперь ровно 2. Время по-прежнему
-  // берётся из таблицы CC.BUILD_TIME, growth.time не используется.
-  growth: { cost: 2, time: 1.45 },
-  maxLevel: 10
+  // Только для старых читателей интерфейса: ёмкость склада 1 уровня.
+  // Реальные лимиты считаются по таблице в storageCapOf() (base.js).
+  storageCap: {
+    gold: Number(CC.buildingLevel('storage', 1).cap) || 0,
+    elixir: Number(CC.buildingLevel('estorage', 1).cap) || 0,
+    dark: Number(CC.buildingLevel('darkstorage', 1).cap) || 0
+  },
+  // Формул ×2 больше нет: цена и время — строка таблицы.
+  growth: { cost: 1, time: 1 },
+  maxLevel: CC.MAX_TH
 };
 
 /* Устаревшая доля повтора. Раньше она множила пул уровня; теперь добыча
@@ -450,11 +1339,13 @@ CC.GEMS = {
   /* Обмен: 1 платина даёт всё больше ресурсов с ростом центра.
      руда    = 250 + 100 × (TH − 1)
      энергия = 200 +  80 × (TH − 1)
+     плазма  =  20 +   5 × (TH − 1)
      Курс округляется до 10. */
   exchange: {
     gold: 250,
     elixir: 200,
-    perTh: { gold: 100, elixir: 80 }
+    dark: 20,
+    perTh: { gold: 100, elixir: 80, dark: 5 }
   }
 };
 
@@ -540,8 +1431,8 @@ CC.DAILY = {
   stars: 5,
   resetMs: 24 * 60 * 60 * 1000,
   maxStack: 2,
-  reward: { gold: 200, elixir: 200, gems: 1 },
-  perTh: { gold: 50, elixir: 50 },
+  reward: { gold: 200, elixir: 200, dark: 5, gems: 1 },
+  perTh: { gold: 50, elixir: 50, dark: 2 },
   replayMax: 1
 };
 
@@ -580,142 +1471,53 @@ CC.RAIDS = {
   }
 };
 
-/* Что производят постройки: resource — куда капает, rate — в секунду на 1 уровне.
-   Каждый уровень удваивает производство: 0.375 → 0.75 → 1.5 … (см. base.js). */
+// TH11–17: состав набега не сложнее TH10, но волны чаще и злее.
+for (let raTh = 11; raTh <= CC.MAX_TH; raTh++) {
+  const base = CC.RAIDS.armies[10];
+  CC.RAIDS.armies[raTh] = {
+    barb: base.barb, archer: base.archer, giant: base.giant, goblin: base.goblin
+  };
+}
+
+/* Что производят постройки. prod в справочнике — в час, здесь rate —
+   в секунду на 1 уровне; дальше доход берётся из строки уровня. */
 CC.PRODUCTION = {
-  goldmine: { res: 'gold', rate: 0.375 },
-  elixir: { res: 'elixir', rate: 0.325 }
+  goldmine: { res: 'gold', coc: 'gold_mine' },
+  elixir: { res: 'elixir', coc: 'elixir_collector' },
+  darkdrill: { res: 'dark', coc: 'dark_drill' }
+};
+Object.keys(CC.PRODUCTION).forEach(function (type) {
+  const p = CC.PRODUCTION[type];
+  const row = CC.buildingLevel(type, 1);
+  p.rate = +((Number(row.prod) || 0) / 3600).toFixed(6);
+});
+
+// Доход в секунду на уровне — строка prod / 3600.
+CC.productionAt = function (type, level) {
+  const p = CC.PRODUCTION[type];
+  if (!p) return 0;
+  const row = CC.buildingLevel(type, level);
+  return +((Number(row.prod) || 0) / 3600).toFixed(6);
 };
 
-/* Собственный накопитель бура/реактора. Ёмкость = round(400 × 2^(уровень−1)):
-   400, 800, 1600 … 204 800 на 10 уровне. Пока накопитель не забрали,
-   производство копится в нём, а не уходит на склад. Первый уровень
-   заполняется за ~17.8 минуты при 0.375/с (руда) и ~20.5 минуты при
-   0.325/с (энергия). */
-CC.EXTRACT = { base: 400, perLevel: 2 };
+/* Накопитель бура/реактора: ёмкость — cap строки уровня. */
+CC.EXTRACT = { fromTable: true };
 
 // Ёмкость накопителя для типа постройки и уровня. Не производящая — 0.
 CC.extractCap = function (type, level) {
   if (!CC.PRODUCTION[type]) return 0;
-  let lvl = Math.floor(Number(level) || 1);
-  if (lvl < 1) lvl = 1;
-  if (lvl > CC.ECONOMY.maxLevel) lvl = CC.ECONOMY.maxLevel;
-  return Math.round(CC.EXTRACT.base * Math.pow(CC.EXTRACT.perLevel, lvl - 1));
+  const row = CC.buildingLevel(type, level);
+  return Math.max(0, Math.round(Number(row.cap) || 0));
 };
 
-/* Разовая цена постановки новой постройки (не апгрейда). Списывается один
-   раз при установке; снос её не возвращает. townhall не ставится — только
-   улучшается, поэтому цена пустая. Все суммы кратны 100. */
-CC.PLACE_COST = {
-  cannon: { gold: 800 },
-  archer: { gold: 1200 },
-  mortar: { gold: 1800 },
-  airdef: { gold: 2400 },
-  mage: { gold: 3200 },
-  ambush: { gold: 3000 },
-  beam: { gold: 5000 },
-  mine: { gold: 600 },
-  spring: { gold: 600 },
-  airmine: { gold: 800 },
-  wall: { gold: 200 },
-  goldmine: { elixir: 600 },
-  elixir: { gold: 600 },
-  storage: { gold: 800 },
-  estorage: { gold: 800 },
-  barracks: { elixir: 1000 },
-  lab: { elixir: 1200 },
-  herohall: { gold: 2500 },
-  townhall: {}
-};
-
-// Цена постановки в виде {gold, elixir}; неизвестный тип бесплатный.
-CC.placeCost = function (type) {
-  const c = CC.PLACE_COST[type] || {};
-  return { gold: Math.max(0, Math.round(Number(c.gold) || 0)),
-    elixir: Math.max(0, Math.round(Number(c.elixir) || 0)) };
-};
-
-/* Время стройки по уровню (секунды), одинаковое для всех построек, кроме
-   центра и стен. Индекс = уровень−1: 1 мин, 5 мин, 30 мин … 32 часа.
-   Это время и для постановки (уровень 1), и для апгрейда ДО этого уровня. */
-CC.BUILD_TIME = [
-  60, 300, 1800, 2700, 3600,
-  7200, 14400, 28800, 57600, 115200
-];
-
-/* Центр качается по своей, более длинной кривой (апгрейд ДО уровня).
-   Первого уровня как стройки нет: он существует сразу. */
-CC.TOWNHALL_TIME = {
-  2: 1800,
-  3: 3600,
-  4: 7200,
-  5: 14400,
-  6: 28800,
-  7: 43200,
-  8: 57600,
-  9: 86400,
-  10: 115200
-};
-
-// Время стройки/апгрейда до уровня. Стены — всегда 0 (мгновенно).
-CC.buildTime = function (type, toLevel) {
-  if (type === 'wall') return 0;
-
-  const max = CC.BUILD_TIME.length;
-  let lvl = Math.floor(Number(toLevel) || 1);
-  if (lvl < 1) lvl = 1;
-  if (lvl > max) lvl = max;
-
-  if (type === 'townhall') return lvl < 2 ? 0 : (CC.TOWNHALL_TIME[lvl] || 0);
-  return CC.BUILD_TIME[lvl - 1];
-};
-
-// Время постановки: новая постройка всегда 1 уровня. Без множителей по TH.
-CC.placeTime = function (type) {
-  return CC.buildTime(type, 1);
-};
-
-/* Апгрейды. cost — база цены перехода НА 2 уровень. Дальше цена считается
-   как база × 2^(L−2) для целевого уровня L и округляется до 100 (base.js).
-   time оставлен для совместимости старого сейва/таблиц, но фактическое
-   время теперь берётся из CC.BUILD_TIME/CC.TOWNHALL_TIME через
-   Base.upgradeTime(type, toLevel).
-   HP и урон построек удваиваются за уровень (CC.BuildingStats), дальность
-   растёт на 0.04 тайла за уровень, скорость стрельбы — на rate за уровень.
-   Все постройки качаются до 10 уровня. */
-CC.UPGRADES = {
-  townhall: { max: 10, cost: { gold: 1000 }, time: 90 },
-  cannon: { max: 10, cost: { gold: 400 }, time: 45, range: 0.04, rate: 0.12 },
-  archer: { max: 10, cost: { gold: 500 }, time: 50, range: 0.04, rate: 0.12 },
-  mortar: { max: 10, cost: { gold: 600 }, time: 60, range: 0.04, rate: 0.1 },
-  airdef: { max: 10, cost: { gold: 700 }, time: 60, range: 0.04, rate: 0.12 },
-  mage: { max: 10, cost: { gold: 800 }, time: 60, range: 0.04, rate: 0.1 },
-  ambush: { max: 10, cost: { gold: 1200 }, time: 60, range: 0.04, rate: 0.1 },
-  beam: { max: 10, cost: { gold: 2000 }, time: 60, range: 0.04 },
-  mine: { max: 10, cost: { gold: 300 }, time: 40 },
-  spring: { max: 10, cost: { gold: 300 }, time: 40 },
-  airmine: { max: 10, cost: { gold: 400 }, time: 40 },
-  wall: { max: 10, cost: { gold: 100 }, time: 30 },
-  goldmine: { max: 10, cost: { elixir: 200 }, time: 40 },
-  elixir: { max: 10, cost: { gold: 200 }, time: 40 },
-  storage: { max: 10, cost: { gold: 400 }, time: 45 },
-  estorage: { max: 10, cost: { gold: 400 }, time: 45 },
-  barracks: { max: 10, cost: { elixir: 500 }, time: 60 },
-  lab: { max: 10, cost: { elixir: 500 }, time: 60 },
-  herohall: { max: 10, cost: { gold: 800 }, time: 60 }
-};
-
-/* Армия: каждое место даёт ангар — 20 за каждый свой уровень
-   (L1 — 20, L2 — 40 … L10 — 200). Общая вместимость — сумма по всем
-   готовым ангарам, поэтому два L2 дают 80. Ангары тренируют параллельно:
-   один ангар — один одновременный юнит, очередь общая на всю армию. */
+/* Армия: вместимость даёт Ангар (army_camp) — cap строки уровня.
+   Легаси-поля оставлены для balance.js и старых читателей. */
 CC.ARMY = {
   capacityPerBarracks: 20,
-  // Оставлено для balance.js и старых сейвов: прежняя кривая «20 за TH»
-  // совпадает с одним ангаром, прокачанным до уровня центра.
   capacityPerTh: 20,
   queuePerBarracks: 4,
-  queueMax: 16
+  queueMax: 16,
+  capacityFromTable: true
 };
 
 /* Бригады строителей: лимит одновременных строек и апгрейдов.
@@ -731,23 +1533,18 @@ CC.BUILDERS = {
   ]
 };
 
-/* Открытие построек по уровню командного центра. */
-CC.REQUIREMENTS = {
-  // Лазерная вышка открыта с самого начала: на TH1 её лимит — 1.
-  archer: { minTh: 1 },
-  mortar: { minTh: 3 },
-  airdef: { minTh: 4 },
-  mage: { minTh: 5 },
-  mine: { minTh: 2 },
-  spring: { minTh: 4 },
-  airmine: { minTh: 5 },
-  ambush: { minTh: 7 },
-  beam: { minTh: 9 },
-  lab: { minTh: 2 },
-  herohall: { minTh: 2 }
-};
-
-CC.MAX_TH = 10;
+/* Открытие построек по уровню центра — первый TH, где counts > 0.
+   Лазерная вышка оставлена с TH1: она нужна обучению Сержанта. */
+CC.REQUIREMENTS = {};
+CC.BUILDING_ORDER.forEach(function (type) {
+  let min = 0;
+  for (let t = 1; t <= CC.MAX_TH; t++) {
+    if (CC.limitAt(type, t) > 0) { min = t; break; }
+  }
+  if (type === 'townhall') min = 1;
+  if (type === 'archer') min = 1;
+  CC.REQUIREMENTS[type] = { minTh: min || 1 };
+});
 
 /* Достижения: постоянные цели, платина выдаётся вручную за ступень.
    Платина — донат, поэтому за каждую ступень ровно 1 штука: всего 13×3 = 39. */
@@ -811,19 +1608,17 @@ function ccWallRing(x0, y0, x1, y1, gaps) {
   return out;
 }
 
-/* ---------- генератор 100 уровней ----------
-   Уровень задаётся номером и seed; раскладка строится детерминированно,
-   поэтому в сейве достаточно индекса, а не 100 готовых массивов.
-   Первые 50 уровней (эпохи 1–5) остаются прежними 1:1; новые эпохи 6–10
-   строятся тем же генератором с более плотной обороной и уровнями 6–10.
+/* ---------- кампания: 10 эпох × 10 секторов, CoC TH1–17 ----------
+   TH по эпохам: 1, 2, 3, 4, 5, 7, 9, 11, 14, 17. Внутри эпохи база
+   постепенно набирает плотность и уровни, финальный сектор 100 — TH17
+   со всеми доступными типами, максимальными уровнями и полным лимитом стен.
 
-   База каждого уровня — не одно кольцо, а 2–3 компартмента: внешний
-   энергобарьерный контур с широкими проходами на каждой стороне и
-   внутренние стены, которые делят двор на отсеки. Командный центр стоит
-   в одном из отсеков (не всегда в геометрическом центре), оборона
-   разнесена по отсекам, ПВО — по разным секторам, а буры/реакторы/
-   хранилища убраны в глубину, ближе к центру. Ангар выносится наружу
-   как приманка. */
+   Раскладка строится детерминированно по seed: в сейве достаточно индекса.
+   Формат layout — [type, x, y, level]. Застройка идёт от центра наружу:
+   командный центр 2×2, вокруг все доступные обороны, затем ресурсы, армия,
+   ловушки. Стены — внешний контур с проходами и внутренние перегородки
+   с разрывами; лимит берётся из CC.limitAt('wall', th), на TH17 — до 325. */
+
 CC.LEVEL_SEED_BASE = 20261118;
 CC.LEVEL_ERAS = 10;
 
@@ -846,16 +1641,16 @@ const CC_ERA_TITLES = [
 ];
 
 const CC_ERA_HINTS = [
-  'Центр почти без прикрытия: высади отряд на любую свободную клетку рядом с базой',
+  'Центр почти без прикрытия: высади отряд на свободную клетку рядом с базой',
   'Держи мехов впереди, а лазерщиков — за ними',
   'Гаубица бьёт по площади: не собирай отряд в кучу',
-  'Появился зенитный комплекс: дрон летит через барьеры, но боится его',
+  'Появился зенитный комплекс: воздух летит через барьеры, но боится его',
   'Плотная крепость: вскрой энергобарьер, потом добивай центр',
   'Пепел скрывает вторую линию обороны: сначала снеси ПВО и плазму',
-  'Глубины давят уровнями: без прокачки войск и героев здесь не пройти',
+  'Глубины давят уровнями: прокачай войска и открой героев',
   'Орбитальный пояс простреливает подходы: раздели отряд и не лезь в центр',
   'Стеклянная пустошь плавит броню: береги героев и вскрывай стены по очереди',
-  'Ядро — финал кампании: все башни L10, все ловушки и лучшая армия нужны целиком'
+  'Ядро — финал кампании: все башни на максимуме, все ловушки и лучшая армия'
 ];
 
 // Цвета новых глав для карты: старые эпохи 1–5 заданы в style.css,
@@ -871,40 +1666,33 @@ CC.LEVEL_ERA_COLORS = [
 
 CC.LEVEL_ERA_TITLES = CC_ERA_TITLES;
 
-/* Планы обороны по эпохам: [турель, лазерная вышка, гаубица, ПВО, плазма].
-   Это верхняя граница; ниже counts дополнительно зажимаются CC.limitAt()
-   по уровню центра эпохи. */
-const CC_DEF_TYPES = ['cannon', 'archer', 'mortar', 'airdef', 'mage'];
-const CC_DEF_PLANS = [
-  [2, 1, 0, 0, 0],
-  [3, 2, 1, 1, 0],
-  [3, 2, 1, 1, 0],
-  [3, 2, 2, 1, 1],
-  [5, 4, 2, 2, 1],
-  [6, 4, 3, 3, 2],
-  [7, 5, 4, 3, 2],
-  [8, 6, 4, 3, 2],
-  [8, 6, 5, 3, 2],
-  [8, 6, 5, 3, 2]
+// TH эпох: первые пять — 1..5, дальше 7, 9, 11, 14 и финал 17.
+CC.ERA_TH = [1, 2, 3, 4, 5, 7, 9, 11, 14, 17];
+
+// Все доступные обороны из CC.BUILDING_ORDER. Порядок — от простых к поздним.
+const CC_DEF_TYPES = [
+  'cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper', 'ambush',
+  'bombtower', 'xbow', 'beam', 'eagle', 'scattershot', 'monolith',
+  'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter'
 ];
-
-/* Уровни обороны, стен и «отстающих» башен по эпохам. После перехода на
-   удвоение HP/урона за уровень разница даже в одну ступень — это ×2,
-   поэтому первые пять эпох остаются на кривой 1,1,2,2,2. Новые эпохи
-   6–10 сразу идут на 6–10: это и есть их сложность. */
-const CC_DEF_LVLS = [1, 1, 2, 2, 2, 6, 7, 8, 9, 10];
-const CC_WALL_LVLS = [1, 1, 1, 1, 1, 6, 7, 8, 9, 10];
-const CC_TOWER_LVLS = [1, 1, 1, 1, 2, 6, 7, 8, 9, 10];
-
+const CC_RES_TYPES = ['goldmine', 'elixir', 'darkdrill', 'storage', 'estorage', 'darkstorage'];
+const CC_ARMY_TYPES = [
+  'barracks', 'train', 'darktrain', 'spellfactory', 'darkspellfactory',
+  'lab', 'herohall', 'pethouse', 'blacksmith', 'workshop', 'clancastle',
+  'squadbarracks'
+];
+const CC_TRAP_TYPES = [
+  'mine', 'spring', 'airmine', 'giantbomb', 'seekingair', 'skeletontrap',
+  'tornado', 'gigabomb'
+];
 
 function ccClamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
 
-// Потолок уровня для построек кампании. Башня и ангар, как и в деревне,
-// отстают от командного центра на один уровень.
+// Потолок уровня для построек кампании — ровно таблица maxlv.
 function ccLevelMax(type, th) {
-  const t = ccClamp(Math.round(Number(th) || 1), 1, CC.MAX_TH || 10);
-  if (type === 'archer' || type === 'barracks') return Math.max(1, t - 1);
-  return t;
+  const t = ccClamp(Math.round(Number(th) || 1), 1, CC.MAX_TH);
+  const lvl = CC.maxLevelAt(type, t);
+  return lvl > 0 ? lvl : 1;
 }
 
 function ccShuffle(list, rnd) {
@@ -918,577 +1706,394 @@ function ccShuffle(list, rnd) {
   return out;
 }
 
+// Ёмкость складов игрока на TH: количество по counts × cap максимального
+// уровня. Лут сектора не должен превышать эту величину, иначе «не влезет».
+function ccStorageCapAt(type, th) {
+  const n = CC.limitAt(type, th);
+  if (!n) return 0;
+  const lv = Math.max(1, CC.maxLevelAt(type, th));
+  const row = CC.buildingLevel(type, lv);
+  return n * Math.max(0, Number(row.cap) || 0);
+}
+
 CC.LevelGen = {
   level: function (index) {
     const i = Math.max(0, Math.floor(Number(index) || 0));
     const era = Math.min(CC.LEVEL_ERAS - 1, Math.floor(i / 10));
     const within = i % 10;
     const finalLevel = i === CC.LEVEL_ERAS * 10 - 1;
-    // Первые пять эпох: TH1–5, лимит эпохи 2/4/6/8/10. Новые эпохи
-    // идут по TH6–10, но состав уже разрешён на полный TH10.
-    const th = era < 5 ? era + 1 : Math.min(CC.MAX_TH || 10, era + 1);
-    const capTh = era < 5
-      ? Math.min(CC.MAX_TH || 10, (era + 1) * 2)
-      : (CC.MAX_TH || 10);
+    const th = CC.ERA_TH[era] || CC.MAX_TH;
+    const capTh = th;
+    // Плотность и уровни растут от первого сектора эпохи к десятому.
+    const progress = finalLevel ? 1 : (0.45 + 0.55 * within / 9);
     const seed = (CC.LEVEL_SEED_BASE + i * 7919) >>> 0;
     const rnd = ccLevelRng(seed);
-    const occ = new Uint8Array(CC.GRID * CC.GRID);
-    // Занятость только не-стенами: между зданиями держим зазор в клетку,
-    // чтобы A* всегда находил подход к цели, а не упирался в сплошной блок.
-    const solid = new Uint8Array(CC.GRID * CC.GRID);
     const layout = [];
     const zones = [];
 
+    function countAt(type) {
+      const lim = CC.limitAt(type, capTh);
+      if (!lim) return 0;
+      if (finalLevel) return lim;
+      return Math.max(1, Math.min(lim, Math.round(lim * progress)));
+    }
+
+    // Оборона финала: все типы, но не полный предел counts — на TH17
+    // максимальные уровни сами по себе дают огромный DPS. 75% количества
+    // оставляет финал тяжёлым, но проходимым с максимальной армией.
+    function defCountAt(type) {
+      const lim = CC.limitAt(type, capTh);
+      if (!lim) return finalLevel ? 1 : 0;
+      if (finalLevel) return Math.max(1, Math.round(lim * 0.7));
+      return Math.max(1, Math.min(lim,
+        Math.round(lim * (era >= 5 ? (0.28 + 0.37 * within / 9) : (0.35 + 0.55 * within / 9)))));
+    }
+
+    // Ловушки финала — 75% количества: они не входят в процент, но
+    // выкашивают десант.
+    function trapCountAt(type) {
+      const lim = CC.limitAt(type, capTh);
+      if (!lim) return 0;
+      if (finalLevel) return Math.max(1, Math.round(lim * 0.7));
+      return Math.max(1, Math.min(lim,
+        Math.round(lim * (era >= 5 ? (0.28 + 0.37 * within / 9) : (0.35 + 0.55 * within / 9)))));
+    }
+
+    function levelAt(type) {
+      const max = Math.max(1, ccLevelMax(type, capTh));
+      if (finalLevel) return max;
+      const f = era >= 5 ? (0.2 + 0.52 * within / 9) : (0.3 + 0.7 * within / 9);
+      return Math.max(1, Math.min(max, 1 + Math.round((max - 1) * f)));
+    }
+
+    function wallLevelAt() {
+      const max = Math.max(1, ccLevelMax('wall', capTh));
+      if (finalLevel) return max;
+      const f = 0.25 + 0.75 * within / 9;
+      return Math.max(1, Math.min(max, 1 + Math.round((max - 1) * f)));
+    }
+
+    // Оценка площади застройки: от неё зависит сторона внешнего контура.
+    let solidArea = 0;
+    for (let k = 0; k < CC_DEF_TYPES.length; k++) {
+      const t = CC_DEF_TYPES[k];
+      const d = CC.BUILDINGS[t] || { w: 1, h: 1 };
+      solidArea += defCountAt(t) * (d.w || 1) * (d.h || 1);
+    }
+    for (let k = 0; k < CC_RES_TYPES.length; k++) {
+      const t = CC_RES_TYPES[k];
+      const d = CC.BUILDINGS[t] || { w: 1, h: 1 };
+      solidArea += countAt(t) * (d.w || 1) * (d.h || 1);
+    }
+    for (let k = 0; k < CC_ARMY_TYPES.length; k++) {
+      const t = CC_ARMY_TYPES[k];
+      const d = CC.BUILDINGS[t] || { w: 1, h: 1 };
+      solidArea += countAt(t) * (d.w || 1) * (d.h || 1);
+    }
+    solidArea += 4; // командный центр 2×2
+
+    let side = Math.ceil(Math.sqrt(solidArea * 1.8 + 32)) + 2;
+    // Новые (старые) футпринты меньше, поэтому площадь застройки падает;
+    // без минимальной стороны башни сбиваются в кучу и перекрывают огонь.
+    // Нижняя граница держит прежний простор базы по эпохам.
+    const MIN_SIDE = [17, 19, 23, 25, 28, 33, 38, 40, 40, 40];
+    side = Math.max(side, MIN_SIDE[era] || 12);
+    side = ccClamp(side, 12, CC.GRID - 4);
+    let x0 = Math.floor((CC.GRID - side) / 2);
+    let y0 = Math.floor((CC.GRID - side) / 2);
+    x0 = ccClamp(x0, 1, CC.GRID - 1 - side);
+    y0 = ccClamp(y0, 1, CC.GRID - 1 - side);
+    const x1 = x0 + side - 1;
+    const y1 = y0 + side - 1;
+    const ix0 = x0 + 1;
+    const iy0 = y0 + 1;
+    const ix1 = x1 - 1;
+    const iy1 = y1 - 1;
+
+    const occ = new Uint8Array(CC.GRID * CC.GRID);
+    function inField(x, y) {
+      return x >= 0 && y >= 0 && x < CC.GRID && y < CC.GRID;
+    }
+    function isFree(x, y) {
+      return inField(x, y) && !occ[y * CC.GRID + x];
+    }
     function mark(x, y, w, h) {
       for (let yy = y; yy < y + h; yy++) {
         for (let xx = x; xx < x + w; xx++) occ[yy * CC.GRID + xx] = 1;
       }
     }
-
-    function hasSolidNeighbor(x, y, w, h) {
+    function hasFreeNeighbor(x, y, w, h) {
       for (let yy = y - 1; yy <= y + h; yy++) {
         for (let xx = x - 1; xx <= x + w; xx++) {
           if (xx >= x && xx < x + w && yy >= y && yy < y + h) continue;
-          if (xx < 0 || yy < 0 || xx >= CC.GRID || yy >= CC.GRID) continue;
-          if (solid[yy * CC.GRID + xx]) return true;
+          if (isFree(xx, yy)) return true;
         }
       }
       return false;
     }
-
-    function canPlace(type, x, y) {
+    function place(type, x, y, level, opts) {
       const d = CC.BUILDINGS[type];
       if (!d) return false;
       const w = d.w || 1;
       const h = d.h || 1;
-      if (x < 0 || y < 0 || x + w > CC.GRID || y + h > CC.GRID) return false;
-      // Ловушка не является препятствием: к ней можно ставить вплотную,
-      // а в бою она вообще не занимает клетку.
-      if (type !== 'wall' && !d.trap && hasSolidNeighbor(x, y, w, h)) return false;
+      if (!inField(x, y) || x + w > CC.GRID || y + h > CC.GRID) return false;
+      const interior = !opts || opts.interior !== false;
+      if (interior) {
+        if (type !== 'wall' && (x < ix0 || y < iy0 || x + w - 1 > ix1 || y + h - 1 > iy1)) return false;
+      }
       for (let yy = y; yy < y + h; yy++) {
-        for (let xx = x; xx < x + w; xx++) {
-          if (occ[yy * CC.GRID + xx]) return false;
-        }
+        for (let xx = x; xx < x + w; xx++) if (occ[yy * CC.GRID + xx]) return false;
       }
-      return true;
-    }
-
-    function place(type, x, y, level) {
-      if (!canPlace(type, x, y)) return false;
-      const d = CC.BUILDINGS[type];
-      let maxLvl = ccLevelMax(type, capTh);
-      // Финал: все доступные обороны — строго L10, включая лазерные
-      // вышки, которым обычная кампания разрешает отставать на уровень.
-      if (finalLevel && CC_DEF_TYPES.indexOf(type) !== -1) {
-        maxLvl = Math.min(CC.MAX_TH || 10, 10);
-      }
-      const lvl = ccClamp(Math.round(Number(level) || 1), 1, maxLvl);
-      mark(x, y, d.w || 1, d.h || 1);
-      if (type !== 'wall' && !d.trap) {
-        for (let yy = y; yy < y + (d.h || 1); yy++) {
-          for (let xx = x; xx < x + (d.w || 1); xx++) {
-            solid[yy * CC.GRID + xx] = 1;
-          }
-        }
-      }
+      const lvl = ccClamp(Math.round(Number(level) || 1), 1,
+        Math.max(1, ccLevelMax(type, capTh)));
+      // Твёрдой постройке нужен хотя бы один свободный сосед — иначе к ней
+      // не подойти и она навсегда останется недосягаемой для боя.
+      if (!d.trap && type !== 'wall' && !(opts && opts.relax) &&
+          !hasFreeNeighbor(x, y, w, h)) return false;
+      mark(x, y, w, h);
       layout.push([type, x, y, lvl]);
       return true;
     }
 
-    /* ---------- внешнее кольцо и проходы ---------- */
-
-    // Сторона растёт от эпохи к эпохе; на 36x36 с запасом для приманки.
-    // Эпохи 1–5 — прежние диапазоны; 6–10 — новые, не больше 32.
-    const SIDE_RANGES = [
-      [16, 17], [18, 19], [20, 21], [21, 22], [23, 24],
-      [24, 25], [25, 26], [26, 27], [28, 29], [30, 31]
-    ];
-    const range = SIDE_RANGES[era];
-    let side = range[0] + Math.floor(rnd() * (range[1] - range[0] + 1));
-    if (era >= 5 && within >= 8) side = Math.max(side, 31);
-    if (finalLevel) side = Math.min(32, CC.GRID - 4);
-    if (side > CC.GRID - 4) side = CC.GRID - 4;
-
-    let x0 = Math.round((CC.GRID - side) / 2) + (rnd() < 0.5 ? 0 : (rnd() < 0.5 ? -1 : 1));
-    let y0 = Math.round((CC.GRID - side) / 2) + (rnd() < 0.5 ? 0 : (rnd() < 0.5 ? -1 : 1));
-    x0 = ccClamp(x0, 1, CC.GRID - 1 - side);
-    y0 = ccClamp(y0, 1, CC.GRID - 1 - side);
-    const x1 = x0 + side - 1;
-    const y1 = y0 + side - 1;
-
-    // На каждой стороне кольца — широкий проход (2–4 клетки), чтобы отряд
-    // не искал единственную щель. Углы не трогаем: они держат каркас.
+    /* ---------- внешний контур и проходы ---------- */
     const gaps = [];
-    function gapH(y) {
-      const gw = 2 + Math.floor(rnd() * 3);
-      const start = x0 + 2 + Math.floor(rnd() * (side - 4 - gw));
+    function addGapH(y) {
+      const gw = 2 + Math.floor(rnd() * 2);
+      const span = Math.max(1, side - 4 - gw);
+      const start = x0 + 2 + Math.floor(rnd() * span);
       for (let k = 0; k < gw; k++) gaps.push([start + k, y]);
     }
-    function gapV(x) {
-      const gw = 2 + Math.floor(rnd() * 3);
-      const start = y0 + 2 + Math.floor(rnd() * (side - 4 - gw));
+    function addGapV(x) {
+      const gw = 2 + Math.floor(rnd() * 2);
+      const span = Math.max(1, side - 4 - gw);
+      const start = y0 + 2 + Math.floor(rnd() * span);
       for (let k = 0; k < gw; k++) gaps.push([x, start + k]);
     }
-    gapH(y0);
-    gapH(y1);
-    gapV(x0);
-    gapV(x1);
+    addGapH(y0);
+    addGapH(y1);
+    addGapV(x0);
+    addGapV(x1);
 
-    const wallLvl = CC_WALL_LVLS[era];
-    let defLvl = CC_DEF_LVLS[era];
-    const towerLvl = CC_TOWER_LVLS[era];
-    const advancedEra = era >= 5;
+    const gapKey = {};
+    gaps.forEach(function (g) { gapKey[g[0] + ',' + g[1]] = 1; });
 
-    // Точечное облегчение финала «Разлома»: после удвоения HP/урона
-    // последние два сектора эпохи не добирали 50% разрушений. Снимаем
-    // одну ступень только с обороны, раскладка и состав не меняются.
-    if (era === 3 && within >= 8) defLvl = Math.max(1, defLvl - 1);
-    // «Купол» 7–8: плотная застройка и удвоенный урон выкашивали отряд
-    // до 50%. Тем же способом снимаем ступень с обороны, не с состава.
-    if (era === 4 && (within === 6 || within === 7)) {
-      defLvl = Math.max(1, defLvl - 1);
+    const ring = [];
+    for (let x = x0; x <= x1; x++) {
+      if (!gapKey[x + ',' + y0]) ring.push([x, y0]);
+      if (!gapKey[x + ',' + y1]) ring.push([x, y1]);
+    }
+    for (let y = y0 + 1; y < y1; y++) {
+      if (!gapKey[x0 + ',' + y]) ring.push([x0, y]);
+      if (!gapKey[x1 + ',' + y]) ring.push([x1, y]);
     }
 
-    // Уровни обороны кампании растут медленно: каждый уровень удваивает
-    // HP и урон, поэтому прежняя кривая «уровень = TH» делала поздние
-    // секторы непроходимыми. Ниже — таблица по эпохам, а не по TH.
+    const wallLimit = CC.limitAt('wall', capTh);
+    const wallTarget = finalLevel ? Math.min(wallLimit, 270)
+      : Math.max(0, Math.min(wallLimit, Math.round(wallLimit * (era >= 5 ? Math.min(0.9, progress) : progress))));
+    const wallLvl = wallLevelAt();
+    let wallLeft = wallTarget;
 
-    // Энергобарьеры кампании — отдельный бюджет: обороняемая база должна
-    // иметь замкнутый контур, даже если игроку на низком TH доступно меньше.
-    // Первые пять эпох держат стены в бюджете CC.LIMITS.wall (150),
-    // новые эпохи могут доходить до 175: это кампания, не база игрока.
-    ccWallRing(x0, y0, x1, y1, gaps).forEach(function (c) {
-      place('wall', c[1], c[2], wallLvl);
-    });
-
-    /* ---------- внутренние стены и отсеки ---------- */
-
-    // Два-три отсека. Внутренняя стена идёт от кольца до кольца, но всегда
-    // с проходом в 2–3 клетки: отряд может перейти из отсека в отсек,
-    // не ломая всю стену.
-    let zoneN = 2;
-    if (era >= 2 && (within + era) % 3 !== 0) zoneN = 3;
-    if (era >= 3 && within >= 7) zoneN = 3;
-    if (side - 2 < 14) zoneN = 2;
-
-    const vertical = rnd() < 0.5;
-
-    function addDivider(cut) {
-      const gw = 2 + Math.floor(rnd() * 2);
-      const a = vertical ? y0 + 1 : x0 + 1;
-      const b = vertical ? y1 - 1 : x1 - 1;
-      const len = b - a + 1;
-      const gs = a + 1 + Math.floor(rnd() * Math.max(1, len - gw - 1));
-      for (let p = a; p <= b; p++) {
-        if (p >= gs && p < gs + gw) continue;
-        if (vertical) place('wall', cut, p, wallLvl);
-        else place('wall', p, cut, wallLvl);
+    if (wallLeft >= ring.length) {
+      for (let k = 0; k < ring.length; k++) {
+        place('wall', ring[k][0], ring[k][1], wallLvl, { interior: false });
       }
-      return { from: a, to: b, gapFrom: gs, gapTo: gs + gw - 1 };
-    }
-
-    function pushZone(ax, ay, bx, by) {
-      // Резерв: отсек должен вмещать центр 2x2 и хотя бы пару построек.
-      if (bx - ax + 1 < 4 || by - ay + 1 < 4) return false;
-      zones.push({ x0: ax, y0: ay, x1: bx, y1: by });
-      return true;
-    }
-
-    if (vertical) {
-      const start = x0 + 1;
-      const end = x1 - 1;
-      const n = end - start + 1;
-
-      if (zoneN >= 3 && n >= 14) {
-        const free = n - 2;
-        const w1 = 4 + Math.floor(rnd() * Math.max(1, free - 11));
-        const w2 = 4 + Math.floor(rnd() * Math.max(1, free - w1 - 7));
-        const cut1 = start + w1;
-        const cut2 = cut1 + 1 + w2;
-        addDivider(cut1);
-        addDivider(cut2);
-        pushZone(start, y0 + 1, cut1 - 1, y1 - 1);
-        pushZone(cut1 + 1, y0 + 1, cut2 - 1, y1 - 1);
-        pushZone(cut2 + 1, y0 + 1, end, y1 - 1);
-      } else {
-        const cut = start + 4 + Math.floor(rnd() * Math.max(1, n - 9));
-        addDivider(cut);
-        pushZone(start, y0 + 1, cut - 1, y1 - 1);
-        pushZone(cut + 1, y0 + 1, end, y1 - 1);
-      }
+      wallLeft -= ring.length;
     } else {
-      const start = y0 + 1;
-      const end = y1 - 1;
-      const n = end - start + 1;
-
-      if (zoneN >= 3 && n >= 14) {
-        const free = n - 2;
-        const w1 = 4 + Math.floor(rnd() * Math.max(1, free - 11));
-        const w2 = 4 + Math.floor(rnd() * Math.max(1, free - w1 - 7));
-        const cut1 = start + w1;
-        const cut2 = cut1 + 1 + w2;
-        addDivider(cut1);
-        addDivider(cut2);
-        pushZone(x0 + 1, start, x1 - 1, cut1 - 1);
-        pushZone(x0 + 1, cut1 + 1, x1 - 1, cut2 - 1);
-        pushZone(x0 + 1, cut2 + 1, x1 - 1, end);
-      } else {
-        const cut = start + 4 + Math.floor(rnd() * Math.max(1, n - 9));
-        addDivider(cut);
-        pushZone(x0 + 1, start, x1 - 1, cut - 1);
-        pushZone(x0 + 1, cut + 1, x1 - 1, end);
+      const pick = ccShuffle(ring, rnd);
+      for (let k = 0; k < pick.length && wallLeft > 0; k++) {
+        if (place('wall', pick[k][0], pick[k][1], wallLvl, { interior: false })) wallLeft--;
       }
     }
 
-    // Страховка: если геометрия почему-то не дала отсеков, оставляем двор
-    // одним прямоугольником — уровень не должен остаться без застройки.
-    if (!zones.length) {
-      pushZone(x0 + 1, y0 + 1, x1 - 1, y1 - 1);
-    }
+    /* ---------- застройка от центра наружу ---------- */
+    const cx = (ix0 + ix1) / 2;
+    const cy = (iy0 + iy1) / 2;
+    const radius = Math.max(1, Math.min(ix1 - ix0, iy1 - iy0) / 2);
 
-    /* ---------- постановка построек ---------- */
-
-    function cellsOf(zone) {
+    function cellsFor(mode) {
       const out = [];
-      for (let yy = zone.y0; yy <= zone.y1; yy++) {
-        for (let xx = zone.x0; xx <= zone.x1; xx++) {
-          if (!occ[yy * CC.GRID + xx]) out.push([xx, yy]);
+      for (let y = iy0; y <= iy1; y++) {
+        for (let x = ix0; x <= ix1; x++) {
+          if (occ[y * CC.GRID + x]) continue;
+          const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+          let score = d;
+          if (mode === 'outer') score = -d;
+          else if (mode === 'mid') score = Math.abs(d - radius * 0.48);
+          out.push({ x: x, y: y, d: score });
         }
       }
+      out.sort(function (a, b) {
+        if (a.d !== b.d) return a.d - b.d;
+        if (a.y !== b.y) return a.y - b.y;
+        return a.x - b.x;
+      });
       return out;
     }
 
-    function hallCenter() {
-      const hall = layout.find(function (r) { return r[0] === 'townhall'; });
-      if (!hall) return { x: CC.GRID / 2, y: CC.GRID / 2 };
-      return { x: hall[1] + 1, y: hall[2] + 1 };
-    }
-
-    function distToHall(x, y) {
-      const h = hallCenter();
-      return Math.hypot(x + 0.5 - h.x, y + 0.5 - h.y);
-    }
-
-    function distToField(x, y) {
-      return Math.hypot(x + 0.5 - CC.GRID / 2, y + 0.5 - CC.GRID / 2);
-    }
-
-    function putInZone(type, level, zi, prefer) {
-      const order = [zi];
-      for (let k = 0; k < zones.length; k++) {
-        if (k !== zi) order.push(k);
+    function putSolid(type, level, mode) {
+      const d = CC.BUILDINGS[type];
+      if (!d) return false;
+      const w = d.w || 1;
+      const h = d.h || 1;
+      const cells = cellsFor(mode || 'center');
+      for (let c = 0; c < cells.length; c++) {
+        if (place(type, cells[c].x, cells[c].y, level)) return true;
       }
-
-      for (let oi = 0; oi < order.length; oi++) {
-        const cells = cellsOf(zones[order[oi]]);
-        if (!cells.length) continue;
-
-        cells.sort(function (a, b) {
-          const da = prefer === 'far' ? -distToHall(a[0], a[1]) : distToHall(a[0], a[1]);
-          const db = prefer === 'far' ? -distToHall(b[0], b[1]) : distToHall(b[0], b[1]);
-          if (da !== db) return da - db;
-          if (a[1] !== b[1]) return a[1] - b[1];
-          return a[0] - b[0];
-        });
-
-        for (let c = 0; c < cells.length; c++) {
-          if (place(type, cells[c][0], cells[c][1], level)) return true;
-        }
+      // Резерв: без требования свободного соседа — лучше поставить, чем нет.
+      for (let c = 0; c < cells.length; c++) {
+        if (place(type, cells[c].x, cells[c].y, level, { interior: true, relax: true })) return true;
       }
       return false;
     }
 
-    // «В глубине»: ближайшие к геометрическому центру поля свободные клетки.
-    // Так луч не выносится к внешнему кольцу, даже если стоит в боковом отсеке.
-    function putInDepth(type, level) {
-      const all = [];
-      for (let k = 0; k < zones.length; k++) {
-        cellsOf(zones[k]).forEach(function (c) { all.push(c); });
-      }
-      all.sort(function (a, b) {
-        const da = distToField(a[0], a[1]);
-        const db = distToField(b[0], b[1]);
-        if (da !== db) return da - db;
-        if (a[1] !== b[1]) return a[1] - b[1];
-        return a[0] - b[0];
-      });
-      for (let c = 0; c < all.length; c++) {
-        if (place(type, all[c][0], all[c][1], level)) return true;
-      }
-      return false;
-    }
+    // Центр — 2×2, ближе к середине поля.
+    putSolid('townhall', th, 'center');
 
-    // Командный центр — в случайном отсеке и не обязательно по центру.
-    const thZone = Math.floor(rnd() * zones.length) % zones.length;
-    const tz = zones[thZone];
-    const tw = tz.x1 - tz.x0 + 1;
-    const thh = tz.y1 - tz.y0 + 1;
-    let tx = tz.x0 + Math.max(0, Math.floor((tw - 2) / 2)) + Math.floor(rnd() * 3) - 1;
-    let ty = tz.y0 + Math.max(0, Math.floor((thh - 2) / 2)) + Math.floor(rnd() * 3) - 1;
-    tx = ccClamp(tx, tz.x0, tz.x1 - 1);
-    ty = ccClamp(ty, tz.y0, tz.y1 - 1);
-
-    let hallPlaced = place('townhall', tx, ty, th);
-    for (let k = 0; !hallPlaced && k < zones.length; k++) {
-      hallPlaced = putInZone('townhall', th, k, 'near');
-    }
-
-    // Оборона. Сначала ПВО — по разным отсекам, затем остальные башни
-    // по кругу, чтобы ни один отсек не остался без прикрытия.
-    const plan = (CC_DEF_PLANS[era] || []).slice();
-    const defCounts = {};
+    // Оборона: крупные 4×4 первыми, чтобы им хватило места; все типы,
+    // доступные на этом TH, получают хотя бы одну постройку.
+    const defList = [];
     for (let k = 0; k < CC_DEF_TYPES.length; k++) {
       const type = CC_DEF_TYPES[k];
-      defCounts[type] = Math.min(plan[k] || 0, CC.limitAt(type, capTh));
+      // Финал: все типы обороны, включая слитые на TH17 в более поздние
+      // башни (cannon, eagle). Кампания — не база игрока, ей можно
+      // показать весь арсенал.
+      const n = defCountAt(type);
+      for (let j = 0; j < n; j++) defList.push(type);
     }
-    // Ранние секторы эпохи мягче: не весь гарнизон выставляется сразу.
-    // У «Ледяных жил» (эпоха 3) держим полный состав: свободная высадка
-    // иначе слишком легко снимает первые отсеки.
-    if (within < 3 && era !== 2) {
-      defCounts.cannon = Math.max(1, defCounts.cannon - 1);
-      defCounts.archer = Math.max(1, defCounts.archer - 1);
-      defCounts.mortar = Math.max(0, defCounts.mortar - 1);
-      defCounts.airdef = Math.max(0, defCounts.airdef - 1);
-      defCounts.mage = Math.max(0, defCounts.mage - 1);
-    }
-
-    // Оборона живёт в соседних отсеках, а не в одном дворе с центром:
-    // высадка «в центр» попадает под перекрёстный огонь из-за внутренней
-    // стены, а не убивает башни в упор. Один отсек с центром остаётся
-    // жилым (ресурсы), но не превращается в казарму обороны.
-    const defZones = [];
-    for (let k = 0; k < zones.length; k++) {
-      if (k !== thZone) defZones.push(k);
-    }
-    if (!defZones.length) defZones.push(thZone);
-
-    const zoneOrder = ccShuffle(defZones, rnd);
-    let zc = 0;
-    function nextZone() { return zoneOrder[(zc++) % zoneOrder.length]; }
-
-    // ПВО разносим по отсекам. Если отсеков с обороной два и больше,
-    // комплексы стоят в них; на двухсекционных базах один уходит во двор
-    // центра, чтобы секторы всё равно различались.
-    const airPool = defZones.length >= 2 ? defZones : zones.map(function (_, k) { return k; });
-    const airOrder = ccShuffle(airPool, rnd);
-    let ac = 0;
-    function nextAirZone() { return airOrder[(ac++) % airOrder.length]; }
-
-    // ПВО — в разные секторы, первым делом.
-    for (let k = 0; k < defCounts.airdef; k++) {
-      putInZone('airdef', defLvl, nextAirZone(), 'near');
-    }
-    for (let k = 0; k < defCounts.mage; k++) {
-      putInZone('mage', defLvl, nextZone(), 'near');
-    }
-    for (let k = 0; k < defCounts.mortar; k++) {
-      putInZone('mortar', defLvl, nextZone(), 'near');
-    }
-    for (let k = 0; k < defCounts.archer; k++) {
-      putInZone('archer', towerLvl, nextZone(), 'near');
-    }
-    // Часть турелей держим у внешней стены (смотрит наружу), часть — ближе
-    // к центру (смотрит внутрь отсека).
-    for (let k = 0; k < defCounts.cannon; k++) {
-      putInZone('cannon', defLvl, nextZone(), k % 2 ? 'far' : 'near');
-    }
-
-    // Поздние типы обороны появляются вместе с TH эпохи, а не с первого
-    // сектора: ambush — с TH7 (эпоха 4), beam — с TH9 (эпоха 5).
-    // Уровень держим ниже общего потолка, чтобы новые башни не ломали
-    // кривую сложности, пока игрок только знакомится с типом.
-    if (capTh >= 7) {
-      const ambushN = advancedEra
-        ? CC.limitAt('ambush', capTh)
-        : Math.min(CC.limitAt('ambush', capTh), capTh >= 10 ? 2 : 1);
-      const ambushLvl = advancedEra
-        ? Math.max(1, Math.min(ccLevelMax('ambush', capTh), defLvl))
-        : Math.max(1, Math.min(ccLevelMax('ambush', capTh),
-          capTh >= 10 ? 2 : 1));
-      for (let k = 0; k < ambushN; k++) {
-        // Засада — ближе к центру: её вскрывают уже внутри компартментов.
-        if (!putInZone('ambush', ambushLvl, nextZone(), 'near')) {
-          putInDepth('ambush', ambushLvl);
-        }
-      }
-    }
-    if (capTh >= 9) {
-      const beamN = advancedEra
-        ? CC.limitAt('beam', capTh)
-        : Math.min(CC.limitAt('beam', capTh), 1);
-      const beamLvl = advancedEra
-        ? Math.max(1, Math.min(ccLevelMax('beam', capTh), defLvl))
-        : Math.max(1, Math.min(ccLevelMax('beam', capTh), 1));
-      for (let k = 0; k < beamN; k++) {
-        if (!putInDepth('beam', beamLvl)) {
-          putInZone('beam', beamLvl, nextZone(), 'far');
-        }
-      }
-    }
-
-    // Ресурсы — в глубину, ближе к центру поля.
-    const resCounts = {
-      goldmine: CC.campaignResLimitAt('goldmine', capTh),
-      elixir: CC.campaignResLimitAt('elixir', capTh),
-      storage: CC.campaignResLimitAt('storage', capTh),
-      estorage: CC.campaignResLimitAt('estorage', capTh)
-    };
-    if (within < 4) {
-      resCounts.goldmine = Math.max(2, resCounts.goldmine - 1);
-      resCounts.elixir = Math.max(2, resCounts.elixir - 1);
-    }
-
-    const resCells = [];
-    for (let k = 0; k < zones.length; k++) {
-      cellsOf(zones[k]).forEach(function (c) { resCells.push(c); });
-    }
-    resCells.sort(function (a, b) {
-      const da = distToField(a[0], a[1]);
-      const db = distToField(b[0], b[1]);
-      if (da !== db) return da - db;
-      if (a[1] !== b[1]) return a[1] - b[1];
-      return a[0] - b[0];
+    defList.sort(function (a, b) {
+      const da = CC.BUILDINGS[a] || { w: 1, h: 1 };
+      const db = CC.BUILDINGS[b] || { w: 1, h: 1 };
+      return (db.w * db.h) - (da.w * da.h);
     });
+    for (let k = 0; k < defList.length; k++) {
+      putSolid(defList[k], levelAt(defList[k]), k % 3 === 0 ? 'center' : (k % 3 === 1 ? 'mid' : 'outer'));
+    }
 
-    const resList = [];
-    // Порядок как раньше: буры, реакторы, склад руды, затем новый склад
-    // энергии. Так старые раскладки не съезжают, а estorage встаёт в
-    // оставшееся место (или уходит в резервный проход ниже).
-    for (let k = 0; k < resCounts.goldmine; k++) resList.push('goldmine');
-    for (let k = 0; k < resCounts.elixir; k++) resList.push('elixir');
-    for (let k = 0; k < resCounts.storage; k++) resList.push('storage');
-    for (let k = 0; k < resCounts.estorage; k++) resList.push('estorage');
+    // Ресурсы: добыча и склады, включая тёмные с TH7+.
+    for (let k = 0; k < CC_RES_TYPES.length; k++) {
+      const type = CC_RES_TYPES[k];
+      const n = countAt(type);
+      for (let j = 0; j < n; j++) putSolid(type, levelAt(type), j % 2 ? 'outer' : 'mid');
+    }
 
-    let ri = 0;
-    const resPlaced = [];
-    const resLvl = advancedEra ? defLvl : 1;
-    for (let c = 0; c < resCells.length && ri < resList.length; c++) {
-      if (place(resList[ri], resCells[c][0], resCells[c][1], resLvl)) {
-        resPlaced.push([resCells[c][0], resCells[c][1]]);
-        ri++;
+    // Армия и развитие: казармы, фабрики, лаборатория, академия, питомник,
+    // мастерская. Держим их по периметру, чтобы центр не был перегружен.
+    for (let k = 0; k < CC_ARMY_TYPES.length; k++) {
+      const type = CC_ARMY_TYPES[k];
+      const n = countAt(type);
+      for (let j = 0; j < n; j++) putSolid(type, levelAt(type), 'outer');
+    }
+
+    /* ---------- внутренние стены с разрывами ---------- */
+    const wallCands = [];
+    for (let gy = iy0 + 5; gy <= iy1 - 2; gy += 6) {
+      const gapA = ix0 + 2 + Math.floor(rnd() * Math.max(1, ix1 - ix0 - 4));
+      for (let x = ix0; x <= ix1; x++) {
+        if (Math.abs(x - gapA) <= 1) continue;
+        wallCands.push([x, gy]);
       }
     }
-    // Если в отсеках не хватило места, остаток кладём в любой свободный двор.
-    for (; ri < resList.length; ri++) {
-      const z = zones[ri % zones.length];
-      putInZone(resList[ri], resLvl, zones.indexOf(z), 'near');
+    for (let gx = ix0 + 5; gx <= ix1 - 2; gx += 7) {
+      const gapA = iy0 + 2 + Math.floor(rnd() * Math.max(1, iy1 - iy0 - 4));
+      for (let y = iy0; y <= iy1; y++) {
+        if (Math.abs(y - gapA) <= 1) continue;
+        wallCands.push([gx, y]);
+      }
     }
-
-    // Ангар: одна постройка снаружи как приманка, остальные — в отсеках.
-    const barCount = Math.max(1, Math.min(
-      CC.limitAt('barracks', capTh),
-      1 + Math.floor(within / 3)
-    ));
-    const barLvl = Math.max(1, Math.min(ccLevelMax('barracks', capTh), th - 1 || 1));
-
-    function putOutside(type, level) {
-      const cands = [];
-      for (let yy = 1; yy < CC.GRID - 1; yy++) {
-        for (let xx = 1; xx < CC.GRID - 1; xx++) {
-          if (xx >= x0 - 1 && xx <= x1 + 1 && yy >= y0 - 1 && yy <= y1 + 1) continue;
-          const dx = xx < x0 ? x0 - xx : (xx > x1 ? xx - x1 : 0);
-          const dy = yy < y0 ? y0 - yy : (yy > y1 ? yy - y1 : 0);
-          const d = Math.max(dx, dy);
-          if (d > 6) continue;
-          if (!canPlace(type, xx, yy)) continue;
-          cands.push([xx, yy, d]);
+    for (let k = 0; k < wallCands.length && wallLeft > 0; k++) {
+      if (place('wall', wallCands[k][0], wallCands[k][1], wallLvl)) wallLeft--;
+    }
+    // Остаток бюджета стен — в свободные клетки рядом с уже стоящими
+    // стенами: так контур становится плотнее, но проходы сохраняются.
+    if (wallLeft > 0) {
+      const near = [];
+      for (let k = 0; k < layout.length; k++) {
+        if (layout[k][0] !== 'wall') continue;
+        const wx = layout[k][1];
+        const wy = layout[k][2];
+        const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        for (let q = 0; q < nb.length; q++) {
+          const nx = wx + nb[q][0];
+          const ny = wy + nb[q][1];
+          if (nx < ix0 || ny < iy0 || nx > ix1 || ny > iy1) continue;
+          if (isFree(nx, ny)) near.push([nx, ny]);
         }
       }
-      cands.sort(function (a, b) {
-        if (a[2] !== b[2]) return a[2] - b[2];
-        if (a[1] !== b[1]) return a[1] - b[1];
-        return a[0] - b[0];
-      });
-      for (let c = 0; c < cands.length; c++) {
-        if (place(type, cands[c][0], cands[c][1], level)) return true;
+      const shuffled = ccShuffle(near, rnd);
+      for (let k = 0; k < shuffled.length && wallLeft > 0; k++) {
+        if (place('wall', shuffled[k][0], shuffled[k][1], wallLvl)) wallLeft--;
+      }
+    }
+
+    /* ---------- ловушки: все 8 типов, доступные на TH ---------- */
+    const trapLvl = levelAt('mine');
+    const gapPool = ccShuffle(gaps.map(function (g) { return [g[0], g[1]]; }), rnd);
+    function putTrap(type) {
+      const d = CC.BUILDINGS[type] || { w: 1, h: 1 };
+      const w = d.w || 1;
+      const h = d.h || 1;
+      const tryAt = function (x, y) {
+        return place(type, x, y, trapLvl, { interior: false });
+      };
+      while (gapPool.length) {
+        const g = gapPool.shift();
+        if (tryAt(g[0], g[1])) return true;
+      }
+      const cells = [];
+      for (let y = 1; y < CC.GRID - 1; y++) {
+        for (let x = 1; x < CC.GRID - 1; x++) {
+          if (occ[y * CC.GRID + x]) continue;
+          cells.push({ x: x, y: y, d: Math.hypot(x + 0.5 - cx, y + 0.5 - cy) });
+        }
+      }
+      cells.sort(function (a, b) { return a.d - b.d; });
+      for (let c = 0; c < cells.length; c++) {
+        if (place(type, cells[c].x, cells[c].y, trapLvl, { interior: false })) return true;
       }
       return false;
     }
-
-    if (!putOutside('barracks', barLvl)) {
-      putInZone('barracks', barLvl, nextZone(), 'far');
-    }
-    for (let k = 1; k < barCount; k++) {
-      putInZone('barracks', barLvl, nextZone(), 'near');
+    for (let k = 0; k < CC_TRAP_TYPES.length; k++) {
+      const type = CC_TRAP_TYPES[k];
+      const n = trapCountAt(type);
+      for (let j = 0; j < n; j++) putTrap(type);
     }
 
-    /* ---------- ловушки ---------- */
-
-    // Ловушки ставим последними: они не препятствие, поэтому могут лечь
-    // в проход внешнего кольца или вплотную к буру/реактору, не мешая
-    // остальной застройке. Количество растёт по TH эпохи и не выходит
-    // за CC.limitAt(); уровень ниже потолка, чтобы не ломать баланс.
-    const trapPlan = {
-      mine: capTh >= 2
-        ? (advancedEra
-          ? CC.limitAt('mine', capTh)
-          : Math.min(CC.limitAt('mine', capTh),
-            capTh >= 8 ? 4 : (capTh >= 6 ? 2 : (capTh >= 4 ? 2 : (within >= 8 ? 1 : 0)))))
-        : 0,
-      spring: capTh >= 4
-        ? (advancedEra
-          ? CC.limitAt('spring', capTh)
-          : Math.min(CC.limitAt('spring', capTh), capTh >= 8 ? 2 : 1))
-        : 0,
-      airmine: capTh >= 5
-        ? (advancedEra
-          ? CC.limitAt('airmine', capTh)
-          : Math.min(CC.limitAt('airmine', capTh), capTh >= 9 ? 2 : 1))
-        : 0
-    };
-    const trapLvl = advancedEra
-      ? Math.max(1, Math.min(ccLevelMax('mine', capTh), defLvl))
-      : Math.max(1, Math.min(ccLevelMax('mine', capTh),
-        capTh >= 8 ? 2 : 1));
-
-    // Проходы внешнего кольца — первые кандидаты: атакующий лезет именно туда.
-    // В начале первой эпохи мины нет вовсе (знакомство), на последних двух
-    // секторах она встаёт уже в проход; если проход занят — у добычи.
-    const gapPool = (era > 0 || (within >= 8 && trapPlan.mine > 0))
-      ? ccShuffle(gaps.map(function (g) { return [g[0], g[1]]; }), rnd)
-      : [];
-
-    function placeTrap(type) {
-      while (gapPool.length) {
-        const g = gapPool.shift();
-        if (place(type, g[0], g[1], trapLvl)) return true;
+    /* ---------- отсеки ---------- */
+    const mx = Math.floor((ix0 + ix1) / 2);
+    const my = Math.floor((iy0 + iy1) / 2);
+    [
+      [ix0, iy0, mx, my], [mx + 1, iy0, ix1, my],
+      [ix0, my + 1, mx, iy1], [mx + 1, my + 1, ix1, iy1]
+    ].forEach(function (r) {
+      if (r[2] - r[0] >= 3 && r[3] - r[1] >= 3) {
+        zones.push({ x0: r[0], y0: r[1], x1: r[2], y1: r[3] });
       }
-      // Затем — клетки рядом с ресурсами, как «сюрприз» у добычи.
-      const resOrder = ccShuffle(resPlaced, rnd);
-      for (let r = 0; r < resOrder.length; r++) {
-        const nbs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-        for (let n = 0; n < nbs.length; n++) {
-          const x = resOrder[r][0] + nbs[n][0];
-          const y = resOrder[r][1] + nbs[n][1];
-          if (place(type, x, y, trapLvl)) return true;
-        }
-      }
-      // Резерв: любая свободная клетка внутри отсека.
-      return putInZone(type, trapLvl, Math.floor(rnd() * zones.length) % zones.length, 'far');
-    }
-
-    ['mine', 'spring', 'airmine'].forEach(function (type) {
-      for (let k = 0; k < trapPlan[type]; k++) placeTrap(type);
     });
 
-    // Добыча растёт по эпохам и секторам. Новые эпохи дают заметно больше:
-    // их оборона L6–L10 стоит затраченного времени.
-    const loot = advancedEra
-      ? {
-        gold: 300 + era * 1400 + within * 120,
-        elixir: 200 + era * 1100 + within * 100
-      }
-      : {
-        gold: 300 + era * 900 + within * 80,
-        elixir: 200 + era * 650 + within * 60
-      };
+    /* ---------- лут: три ресурса, растут с TH ---------- */
+    const goldCap = ccStorageCapAt('storage', th);
+    const elixirCap = ccStorageCapAt('estorage', th);
+    const darkCap = ccStorageCapAt('darkstorage', th);
+    const sectorShare = finalLevel ? 1 : (0.6 + 0.4 * within / 9);
+    const capShare = 0.4 / Math.sqrt(th);
+    const round10 = function (v) {
+      return Math.max(0, Math.round(v / 10) * 10);
+    };
+    const loot = {
+      gold: round10(Math.min(goldCap * 0.6,
+        Math.max(300, goldCap * capShare * sectorShare))),
+      elixir: round10(Math.min(elixirCap * 0.6,
+        Math.max(300, elixirCap * capShare * sectorShare))),
+      dark: th >= 7
+        ? round10(Math.min(darkCap * 0.6, Math.max(50, darkCap * 0.16 * sectorShare)))
+        : 0
+    };
 
     let levelName = CC_ERA_TITLES[era] + ' ' + (within + 1);
-    let levelHint = CC_ERA_HINTS[era] +
-      (era >= 3 && within >= 4 ? ' На этом уровне пригодятся дроны-бомбардировщики.' : '');
+    let levelHint = CC_ERA_HINTS[era];
     if (finalLevel) {
       levelName += ' · Финал';
-      levelHint += ' Финал: нужна армия L10 и все пять героев.';
+      levelHint += ' Финал: TH17, все башни на максимуме; нужна армия и все герои.';
     }
 
     return {
@@ -1496,7 +2101,6 @@ CC.LevelGen = {
       seed: seed,
       era: era,
       th: th,
-      // Лимиты, по которым собрана база: верхняя граница эпохи (2/4/6/8/10).
       limitTh: capTh,
       final: finalLevel,
       boss: finalLevel,
@@ -1505,10 +2109,7 @@ CC.LevelGen = {
       air: era >= 3 && within >= 4,
       loot: loot,
       layout: layout,
-      // Отсеки (включительные координаты) — для отладки и проверок раскладки.
-      zones: zones.map(function (z) {
-        return { x0: z.x0, y0: z.y0, x1: z.x1, y1: z.y1 };
-      })
+      zones: zones
     };
   },
 
@@ -1522,83 +2123,40 @@ CC.LevelGen = {
 
 
 /* Расстановка своей базы: [тип, x, y].
-   Новый игрок начинает только с командным центром. Всё остальное — турель,
-   лазерная вышка, буры, склады и ангар — ставится по обучению Сержанта
-   (см. QUESTS в js/base.js). Раскладка не превышает лимиты TH1. */
+   Новый игрок начинает только с командным центром 2×2 в центре поля 44×44.
+   Всё остальное — турель, вышка, буры, склады и ангар — ставится по
+   обучению Сержанта (см. QUESTS в js/base.js). */
 CC.LAYOUT = [
-  ['townhall', 16, 16]
+  ['townhall', 20, 20]
 ];
 
-/* Сколько построек можно поставить на своей базе, по уровням командного центра.
-   Индекс массива — TH-1 (1..10 уровни). Base.left() считает по текущему TH;
-   CC.LIMITS ниже — те же значения для TH10, их читает интерфейс. */
-CC.LIMITS_BY_TH = {
-  townhall: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  cannon: [1, 2, 3, 3, 4, 4, 5, 5, 6, 8],
-  archer: [1, 1, 1, 2, 2, 3, 3, 4, 5, 6],
-  mortar: [0, 0, 1, 1, 2, 2, 2, 3, 3, 5],
-  airdef: [0, 0, 0, 1, 1, 1, 2, 2, 2, 3],
-  mage: [0, 0, 0, 0, 1, 1, 1, 2, 2, 2],
-  ambush: [0, 0, 0, 0, 0, 0, 1, 1, 2, 2],
-  beam: [0, 0, 0, 0, 0, 0, 0, 0, 1, 2],
-  mine: [0, 2, 3, 4, 4, 5, 5, 6, 6, 6],
-  spring: [0, 0, 0, 1, 2, 2, 3, 3, 4, 4],
-  airmine: [0, 0, 0, 0, 1, 2, 2, 3, 3, 4],
-  wall: [0, 20, 40, 60, 80, 100, 120, 130, 140, 150],
-  goldmine: [2, 3, 4, 4, 5, 5, 5, 5, 5, 5],
-  elixir: [2, 3, 4, 4, 5, 5, 5, 5, 5, 5],
-  storage: [1, 2, 2, 2, 3, 3, 3, 3, 3, 3],
-  estorage: [1, 2, 2, 2, 3, 3, 3, 3, 3, 3],
-  barracks: [1, 1, 2, 2, 3, 3, 4, 4, 4, 4],
-  lab: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  herohall: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-};
+/* Сколько построек можно поставить на своей базе: counts по TH1–17.
+   Base.left() и генератор читают одну и ту же таблицу. */
+CC.LIMITS_BY_TH = {};
+CC.BUILDING_ORDER.forEach(function (type) {
+  const row = [];
+  for (let t = 1; t <= CC.MAX_TH; t++) row.push(CC.limitAt(type, t));
+  CC.LIMITS_BY_TH[type] = row;
+});
 
-// Лимит типа на конкретном уровне центра (кривое th не ломает счёт).
-CC.limitAt = function (type, th) {
-  const row = CC.LIMITS_BY_TH[type];
-  if (!row) return 0;
-  const n = Math.round(Number(th) || 1);
-  const i = n < 1 ? 0 : (n > CC.MAX_TH ? CC.MAX_TH - 1 : n - 1);
-  return row[i] || 0;
-};
+/* Максимумы TH17: их читает интерфейс как «полный» лимит. */
+CC.LIMITS = {};
+CC.BUILDING_ORDER.forEach(function (type) {
+  CC.LIMITS[type] = CC.limitAt(type, CC.MAX_TH);
+});
 
-/* Сколько каких построек можно поставить на своей базе: максимумы TH10. */
-CC.LIMITS = {
-  townhall: 1,
-  cannon: 8,
-  archer: 6,
-  mortar: 5,
-  airdef: 3,
-  mage: 2,
-  ambush: 2,
-  beam: 2,
-  mine: 6,
-  spring: 4,
-  airmine: 4,
-  wall: 150,
-  goldmine: 5,
-  elixir: 5,
-  storage: 3,
-  estorage: 3,
-  barracks: 4,
-  lab: 1,
-  herohall: 1
-};
-
-/* Состав кампании: вражеские базы могут быть богаче игрока. Фиксируем
-   прежние лимиты ресурсных построек, чтобы снижение лимитов игрока
-   (5 буров и 3 склада) не меняло 100 уровней и баланс боёв. */
-CC.CAMPAIGN_RES_LIMITS = {
-  goldmine: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
-  elixir: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
-  storage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
-  estorage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5]
-};
+/* Состав кампании: вражеские базы могут быть богаче игрока, но не выходят
+   за counts. Отдельная функция оставлена для старых вызовов. */
+CC.CAMPAIGN_RES_LIMITS = {};
+['goldmine', 'elixir', 'darkdrill', 'storage', 'estorage', 'darkstorage'].forEach(function (type) {
+  const row = [];
+  for (let t = 1; t <= CC.MAX_TH; t++) row.push(CC.limitAt(type, t));
+  CC.CAMPAIGN_RES_LIMITS[type] = row;
+});
 
 CC.campaignResLimitAt = function (type, th) {
   const row = CC.CAMPAIGN_RES_LIMITS[type];
-  if (!row) return 0;
+  if (!row) return CC.limitAt(type, th);
   const n = Math.round(Number(th) || 1);
   const i = n < 1 ? 0 : (n > CC.MAX_TH ? CC.MAX_TH - 1 : n - 1);
   return row[i] || 0;
@@ -1625,8 +2183,12 @@ CC.Loot = (function () {
   'use strict';
 
   function roleOf(type) {
-    if (type === 'storage' || type === 'estorage') return 'storage';
-    if (type === 'goldmine' || type === 'elixir') return 'extract';
+    if (type === 'storage' || type === 'estorage' || type === 'darkstorage') {
+      return 'storage';
+    }
+    if (type === 'goldmine' || type === 'elixir' || type === 'darkdrill') {
+      return 'extract';
+    }
     return '';
   }
 
@@ -1668,7 +2230,9 @@ CC.Loot = (function () {
     let rem = amount - base * n;
     for (let i = 0; i < n; i++) {
       const r = list[i];
-      if (!out[r.key]) out[r.key] = { key: r.key, type: r.type, gold: 0, elixir: 0 };
+      if (!out[r.key]) {
+        out[r.key] = { key: r.key, type: r.type, gold: 0, elixir: 0, dark: 0 };
+      }
       out[r.key][res] += base + (rem > 0 ? 1 : 0);
       if (rem > 0) rem--;
     }
@@ -1678,7 +2242,7 @@ CC.Loot = (function () {
     spread(list, Math.max(0, Math.floor(amount)), res, out);
   }
 
-  /* Раскладка пула по постройкам. Возвращает объект key → {gold, elixir}.
+  /* Раскладка пула по постройкам. Возвращает объект key → {gold, elixir, dark}.
      Центр в раскладке не участвует. Если склада нужного ресурса нет,
      его доля уходит добытчикам (бурам/реакторам); если нет и их — ресурс
      просто негде хранить и в пул построек он не попадает. */
@@ -1689,12 +2253,15 @@ CC.Loot = (function () {
 
     const g = Math.max(0, Math.floor(Number(loot && loot.gold) || 0));
     const e = Math.max(0, Math.floor(Number(loot && loot.elixir) || 0));
-    if (!g && !e) return out;
+    const d = Math.max(0, Math.floor(Number(loot && loot.dark) || 0));
+    if (!g && !e && !d) return out;
 
     const oreStores = bucket(list, 'storage');
     const elixirStores = bucket(list, 'estorage');
+    const darkStores = bucket(list, 'darkstorage');
     const goldmine = bucket(list, 'goldmine');
     const reactor = bucket(list, 'elixir');
+    const darkDrill = bucket(list, 'darkdrill');
 
     const S = CC.LOOT_SPLIT || { storage: 0.85, extract: 0.15 };
 
@@ -1704,6 +2271,8 @@ CC.Loot = (function () {
     let gExt = g - gStore;
     let eStore = Math.floor(e * S.storage);
     let eExt = e - eStore;
+    let dStore = Math.floor(d * S.storage);
+    let dExt = d - dStore;
 
     // Нет складов — весь ресурс лежит в добытчиках.
     if (!oreStores.length) {
@@ -1725,10 +2294,21 @@ CC.Loot = (function () {
       eExt = 0;
     }
 
+    if (!darkStores.length) {
+      dExt += dStore;
+      dStore = 0;
+    }
+    if (!darkDrill.length) {
+      dStore += dExt;
+      dExt = 0;
+    }
+
     add(out, oreStores, gStore, 'gold');
     add(out, goldmine, gExt, 'gold');
     add(out, elixirStores, eStore, 'elixir');
     add(out, reactor, eExt, 'elixir');
+    add(out, darkStores, dStore, 'dark');
+    add(out, darkDrill, dExt, 'dark');
 
     return out;
   }
@@ -1740,32 +2320,33 @@ CC.Loot = (function () {
   };
 })();
 
-/* Порядок в палитре строительства. */
+/* Порядок в палитре строительства: оборона, стены, ловушки, экономика,
+   армия. Новые типы идут после привычных, чтобы старые кнопки не съезжали. */
 CC.PALETTE = [
-  'townhall', 'cannon', 'archer', 'mortar', 'airdef', 'mage',
-  'ambush', 'beam', 'wall', 'mine', 'spring', 'airmine',
-  'goldmine', 'elixir', 'storage', 'estorage', 'barracks', 'lab', 'herohall'
+  'townhall',
+  'cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper', 'ambush',
+  'bombtower', 'xbow', 'beam', 'eagle', 'scattershot', 'monolith',
+  'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter',
+  'wall', 'mine', 'spring', 'airmine', 'giantbomb', 'seekingair',
+  'skeletontrap', 'tornado', 'gigabomb',
+  'goldmine', 'elixir', 'darkdrill', 'storage', 'estorage', 'darkstorage',
+  'barracks', 'train', 'darktrain', 'spellfactory', 'darkspellfactory',
+  'lab', 'herohall', 'pethouse', 'blacksmith', 'workshop', 'clancastle',
+  'squadbarracks'
 ];
 
 /* Иконки для палитры. */
 CC.ICONS = {
-  townhall: '🛰️',
-  cannon: '💣',
-  archer: '📡',
-  mortar: '💥',
-  airdef: '🎯',
-  mage: '⚛️',
-  ambush: '🕳️',
-  beam: '🔆',
-  mine: '💥',
-  spring: '🌀',
-  airmine: '🎈',
-  wall: '🛡️',
-  goldmine: '⛏️',
-  elixir: '⚡',
-  storage: '🗄️',
-  estorage: '🔋',
-  barracks: '🏗️',
-  lab: '🔬',
-  herohall: '🏛️'
+  townhall: '🛰️', cannon: '💣', archer: '📡', mortar: '💥', airdef: '🎯',
+  mage: '⚛️', sweeper: '🌪️', ambush: '🕳️', bombtower: '🧨', xbow: '🏹',
+  beam: '🔆', eagle: '🦅', scattershot: '🎇', monolith: '🗿',
+  spelltower: '🔮', multiarcher: '📶', ricochet: '↩️', multigear: '⚙️',
+  firespitter: '🔥',
+  mine: '💥', spring: '🌀', airmine: '🎈', giantbomb: '💣',
+  seekingair: '🚀', skeletontrap: '💀', tornado: '🌪️', gigabomb: '☢️',
+  wall: '🛡️', goldmine: '⛏️', elixir: '⚡', darkdrill: '🛢️',
+  storage: '🗄️', estorage: '🔋', darkstorage: '🧪',
+  barracks: '🏗️', train: '🪖', darktrain: '🖤', spellfactory: '🧿',
+  darkspellfactory: '🔮', lab: '🔬', herohall: '🏛️', pethouse: '🐾',
+  blacksmith: '⚒️', workshop: '🛠️', clancastle: '🛸', squadbarracks: '✈️'
 };

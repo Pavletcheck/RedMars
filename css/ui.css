@@ -9783,3 +9783,652 @@ html:root {
     width: min(500px, calc(100% - 16px));
   }
 }
+
+/* ============================================================
+   P3: плазма, стены, вкладки армии, списки питомника и фабрик
+   ============================================================ */
+
+/* ---- третья панель ресурса: плазма ---- */
+#app .res-panel_dark .res-panel__icon {
+  background: radial-gradient(circle at 35% 30%, #e2b6ff, #8a4bc0 70%);
+  color: #2a1538;
+}
+
+#app .res-panel_dark .res-panel__value { color: #4a1f66; }
+#app .res-panel_dark .res-panel__cap { color: #6a3d80; }
+
+#app .res-panel_dark .res-panel__track {
+  background: rgba(58, 22, 78, .28);
+}
+
+#app .res-panel_dark .res-panel__track i {
+  background: linear-gradient(90deg, #8d4bd0, #d9a6ff);
+}
+
+#app .res-panel_dark.is-overflow .res-panel__value { color: #ffd98a; }
+
+/* ---- шапка терминала: плазма ---- */
+#app .terminal__res-chip_dark i { font-size: .9rem; }
+#app .terminal__res-chip_dark b { color: #4a1f66; }
+
+/* ---- рейл: отдельная кнопка «Стены» ---- */
+#app .term-cat_walls .term-cat__count {
+  color: #6b4a1f;
+}
+
+#app .term-cat__icon_wall {
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* ---- карточка-счётчик стены ---- */
+#app .term-card_wall .term-card__art-wrap {
+  background:
+    repeating-linear-gradient(90deg, rgba(70, 60, 50, .18) 0 8px,
+      transparent 8px 16px),
+    rgba(214, 196, 160, .35);
+}
+
+#app .term-card_wall .term-card__status { color: #3f5a33; font-weight: 800; }
+
+/* ---- окно армии: вкладки ---- */
+#app .recruit__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 0;
+  flex-wrap: wrap;
+}
+
+#app .recruit-tab {
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 4px 10px;
+  border: 1px solid #8c6a3f;
+  border-radius: 10px 10px 0 0;
+  background: rgba(247, 231, 198, .72);
+  color: #4a3517;
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#app .recruit-tab.is-active {
+  background: #f6e5bd;
+  border-color: #e0a24a;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .7);
+  color: #2f220e;
+}
+
+#app .recruit-tab:focus-visible {
+  outline: 2px solid #f5cf5a;
+  outline-offset: 1px;
+}
+
+/* Карточки заклинаний, питомцев и осад используют ту же сетку. */
+#app .recruit-card_spell .recruit-card__portrait__icon,
+#app .recruit-card_pet .recruit-card__portrait__icon,
+#app .recruit-card_siege .recruit-card__portrait__icon {
+  background: radial-gradient(circle at 35% 30%, #3d5a6a, #17222c 75%);
+  color: #dff0ff;
+}
+
+#app .recruit-card__off {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: #8a5a1f;
+  font-weight: 800;
+  text-align: center;
+}
+
+/* ---- панель постройки: питомник, фабрики, мастерская ---- */
+#app .selextra {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+#app .selextra.hidden { display: none; }
+
+#app .selextra__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: var(--fs-12);
+  font-weight: 800;
+  color: #3f3019;
+}
+
+#app .selextra__tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6a5330;
+  opacity: .8;
+}
+
+#app .selextra__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 148px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+#app .selextra__hint {
+  margin: 2px 0;
+  font-size: var(--fs-12);
+  color: #5a4526;
+}
+
+#app .exrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px;
+  border-radius: 8px;
+  background: rgba(255, 252, 240, .6);
+  border: 1px solid rgba(120, 90, 40, .22);
+}
+
+#app .exrow.is-locked { opacity: .58; }
+
+#app .exrow__icon {
+  flex: 0 0 20px;
+  font-size: .9rem;
+  text-align: center;
+}
+
+#app .exrow__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.15;
+}
+
+#app .exrow__body b {
+  font-size: var(--fs-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#app .exrow__body i {
+  font-style: normal;
+  font-size: 10px;
+  color: #6a5330;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#app .exrow__meta {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: #5a4526;
+  white-space: nowrap;
+}
+
+/* ---- окно «Инфо»: списки и заполненность ---- */
+#app .info-mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 260px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+#app .info-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 252, 240, .62);
+  border: 1px solid rgba(120, 90, 40, .22);
+}
+
+#app .info-line.is-locked { opacity: .58; }
+
+#app .info-line__icon {
+  flex: 0 0 20px;
+  text-align: center;
+  font-size: .95rem;
+}
+
+#app .info-line__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.15;
+}
+
+#app .info-line__body b { font-size: var(--fs-12); }
+#app .info-line__body i {
+  font-style: normal;
+  font-size: 10px;
+  color: #6a5330;
+}
+
+#app .info-line__meta,
+#app .info-line__price {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: #5a4526;
+  white-space: nowrap;
+}
+
+#app .info-line__btn {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 2px 8px;
+  border: 1px solid #a98a5a;
+  border-radius: 8px;
+  background: #f2e4c6;
+  color: #5a4526;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: default;
+}
+
+#app .info-fill {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0;
+  font-size: var(--fs-12);
+  color: #3f3019;
+}
+
+#app .info-fill__bar {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(70, 50, 20, .22);
+  overflow: hidden;
+}
+
+#app .info-fill__bar b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #5fa04a, #b7d96a);
+}
+
+#app .info-gather {
+  min-height: 40px;
+  width: 100%;
+  padding: 6px 12px;
+  border: 1px solid #a97b2b;
+  border-radius: 10px;
+  background: linear-gradient(#ffd980, #e0a24a);
+  color: #3a2408;
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#app .info-gather:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+#app .tup-head {
+  margin: 6px 0 2px;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  color: #4a3a1c;
+  text-transform: uppercase;
+  border-top: 1px dashed rgba(120, 90, 40, .35);
+}
+
+#app .tup_spell .tup__icon_spell {
+  background: radial-gradient(circle at 35% 30%, #5a7a8a, #1e2c36 75%);
+  color: #dff0ff;
+}
+
+#app .tup_spell.is-locked { opacity: .58; }
+
+/* ---- академия: шесть карточек ---- */
+#app .hero-roster { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+#app .hero-card__stats { font-size: 10px; }
+#app .hero-card .tcard__hire { min-height: 34px; padding: 2px 6px; }
+
+@media (max-width: 1200px) {
+  #app .hero-roster { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  #app .hero-roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---- узкий экран: три панели ресурса не ломают верх ---- */
+@media (max-width: 900px) {
+  #app .resbar { width: 132px; gap: 0; }
+  #app .resbar .res-panel { min-height: 36px; padding: 1px 2px; }
+  #app .resbar .res-panel__icon { width: 18px; height: 18px; flex-basis: 18px; font-size: .58rem; }
+  #app .resbar .res-panel__value { font-size: 12px; }
+  #app .resbar .res-panel__cap { display: none; }
+  #app .resbar .res-panel__track { height: 3px; margin-top: 1px; }
+  #app .recruit__tabs { flex-wrap: nowrap; overflow-x: auto; }
+  #app .recruit-tab { flex: 0 0 auto; min-width: 92px; padding: 4px 8px; font-size: 12px; }
+  #app .info-line__price { display: none; }
+}
+
+@media (max-height: 430px) {
+  #app .recruit__tabs { padding: 0 3px; }
+  #app .recruit-tab { min-height: 34px; padding: 2px 8px; }
+  #app .selextra__list { max-height: 96px; }
+  #app .info-mini-list { max-height: 150px; }
+}
+
+/* Плазма в результате боя: фиолетовый, контраст выше 4.5:1. */
+#app .loot-chip_dark { color: #5a2f80; }
+
+/* Шапка терминала: четвёртый чип плазмы переносится, а не прячет платину. */
+#app .terminal__res { flex-wrap: wrap; justify-content: flex-end; max-height: 74px; }
+
+@media (max-width: 900px) {
+  #app .terminal__res { max-height: 58px; gap: 3px; }
+  #app .terminal__res-chip { font-size: 10px; padding: 0 5px; min-height: 26px; }
+}
+
+/* Сбор плазмы: фиолетовая частица и всплывающая прибавка. */
+#app .collect-fx__p_dark {
+  background: radial-gradient(circle at 35% 30%, #e2b6ff, #7b3fb0 75%);
+  box-shadow: 0 0 8px rgba(190, 120, 255, .7);
+}
+
+#app .res-gain_dark { color: #b57bff; }
+
+/* Панель с буфером/списками — шире обычной карточки. */
+#app .selbar[data-type="pethouse"],
+#app .selbar[data-type="workshop"],
+#app .selbar[data-type="spellfactory"],
+#app .selbar[data-type="darkspellfactory"],
+#app .selbar[data-type="train"],
+#app .selbar[data-type="darktrain"],
+#app .selbar[data-type="goldmine"],
+#app .selbar[data-type="elixir"],
+#app .selbar[data-type="darkdrill"],
+#app .selbar[data-type="storage"],
+#app .selbar[data-type="estorage"],
+#app .selbar[data-type="darkstorage"] {
+  width: min(560px, calc(100% - 96px));
+}
+
+#app .selbar[data-type="goldmine"] .info-gather,
+#app .selbar[data-type="elixir"] .info-gather,
+#app .selbar[data-type="darkdrill"] .info-gather {
+  max-width: 220px;
+}
+
+/* ============================================================
+   P2 в UI: набор заклинаний, привязка питомцев, осада
+   ============================================================ */
+
+/* Выбранное в наборе: заметная рамка, не только цвет. */
+#app .recruit-card.is-picked {
+  border-color: #e0a24a;
+  box-shadow:
+    inset 0 0 0 1px rgba(224, 162, 74, .7),
+    0 0 0 2px rgba(224, 162, 74, .22);
+}
+
+#app .recruit-card__off.is-on {
+  color: #2f6423;
+  font-weight: 900;
+}
+
+#app .recruit-kitbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid rgba(120, 90, 40, .28);
+  border-radius: 8px;
+  background: rgba(255, 252, 240, .7);
+  font-size: var(--fs-12);
+  color: #3f3019;
+}
+
+#app .recruit-heroes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+#app .recruit-hero-chip {
+  min-height: 40px;
+  padding: 4px 6px;
+  border: 1px solid #a98a5a;
+  border-radius: 9px;
+  background: #f4e7ca;
+  color: #4a3517;
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#app .recruit-hero-chip.is-active {
+  border-color: #5f8a3a;
+  background: #dff0c8;
+  color: #2f4f1a;
+  box-shadow: inset 0 0 0 1px rgba(95, 138, 58, .5);
+}
+
+#app .recruit-hero-chip:focus-visible {
+  outline: 2px solid #f5cf5a;
+  outline-offset: 1px;
+}
+
+/* ---- боевой набор в HUD ---- */
+#app .battle-kit {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 150px);
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 16px));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+
+#app .battle-kit.hidden { display: none; }
+
+#app .battle-kit__spells {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+#app .battle-kit__spells::-webkit-scrollbar { display: none; }
+
+#app .bspell {
+  position: relative;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid #6b5a3a;
+  border-radius: 11px;
+  background: linear-gradient(#fff4d6, #e7c98f);
+  color: #2f220e;
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 0 #4b3417, 0 4px 8px rgba(20, 12, 4, .3);
+}
+
+#app .bspell.is-selected {
+  border-color: #f5cf5a;
+  box-shadow:
+    0 0 0 3px rgba(245, 207, 90, .5),
+    0 2px 0 #4b3417;
+  background: linear-gradient(#fff8dc, #f1c65a);
+}
+
+#app .bspell__icon {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 20px;
+  line-height: 1;
+}
+
+#app .bspell__left {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  border-radius: 9px;
+  background: #2c3a1c;
+  color: #fff6dc;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+}
+
+#app .battle-kit__support {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+
+#app .battle-kit__support.hidden { display: none; }
+
+#app .bkit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 210px;
+  padding: 2px 7px;
+  border: 1px solid rgba(120, 90, 40, .5);
+  border-radius: 999px;
+  background: rgba(28, 20, 10, .62);
+  color: #ffe9bd;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#app .bkit-chip b { font-size: 12px; line-height: 1; }
+#app .bkit-chip i { font-style: normal; color: #f5cf5a; }
+
+@media (max-width: 700px) {
+  #app .battle-kit {
+    left: 124px;
+    right: 8px;
+    width: auto;
+    transform: none;
+  }
+  #app .battle-kit__spells { justify-content: flex-start; }
+  #app .battle-kit__support { justify-content: flex-start; flex-wrap: nowrap; overflow: hidden; }
+  #app .bkit-chip { flex: 0 1 auto; min-width: 0; }
+}
+
+@media (max-height: 430px) {
+  #app .battle-kit { bottom: calc(env(safe-area-inset-bottom, 0px) + 138px); }
+  #app .bspell { flex-basis: 38px; width: 38px; height: 38px; border-radius: 9px; }
+  #app .bspell__icon { font-size: 17px; }
+  #app .battle-kit__support { gap: 3px; }
+  #app .bkit-chip { font-size: 9px; padding: 1px 6px; }
+}
+
+@media (max-width: 520px) {
+  #app .recruit-heroes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ============================================================
+   P1: прокачка заклинаний и питомцев
+   ============================================================ */
+
+#app .exrow.is-run {
+  border-color: rgba(224, 162, 74, .75);
+  background: rgba(255, 244, 214, .85);
+}
+
+#app .exrow__btn {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 2px 8px;
+  border: 1px solid #a97b2b;
+  border-radius: 8px;
+  background: linear-gradient(#ffd980, #e0a24a);
+  color: #3a2408;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#app .exrow__btn:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+#app .exrow__btn_speed {
+  background: linear-gradient(#e8d7ff, #b98ce0);
+  border-color: #7a4fa0;
+  color: #2d1745;
+}
+
+#app .exrow__bar {
+  display: block;
+  height: 5px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: rgba(70, 50, 20, .2);
+  overflow: hidden;
+}
+
+#app .exrow__bar b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #e0a24a, #f5cf5a);
+}
+
+/* Крупная иконка заклинания в окне исследования. */
+#app .research-spell-icon {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 64px;
+  line-height: 1;
+}
+
+@media (max-width: 520px) {
+  #app .exrow__meta { display: none; }
+  #app .exrow__btn { padding: 2px 6px; font-size: 9px; }
+}

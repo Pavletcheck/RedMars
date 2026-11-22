@@ -12,6 +12,40 @@ CC.Battle = (function () {
     ability: { name: 'Щит', duration: 3, radius: 2.5, uses: 1 }
   };
   const LEVELS = CC.LEVELS || [];
+  const PETS = CC.PETS || {};
+  const SPELLS = CC.SPELLS || {};
+  const SIEGE = CC.SIEGE || {};
+
+  // Все 19 заклинаний имеют боевой эффект. Флаг оставлен для UI: если
+  // появится новый id из будущего среза, он честно попадёт в «нет данных».
+  const SPELL_READY = {};
+  Object.keys(SPELLS).forEach(function (id) { SPELL_READY[id] = true; });
+  Object.keys(CC.SPELL_META || {}).forEach(function (id) {
+    if (SPELLS[id]) SPELL_READY[id] = true;
+  });
+
+  // Девять осадных машин: у каждой своя роль. HP/DPS в справочнике CoC
+  // для осад не заполнены, поэтому числа наши (док. COC-BATTLE-SPEC §7).
+  const SIEGE_READY = {
+    wallwrecker: { hp: 3200, dmg: 140, speed: 1.4, range: 1,
+      target: 'wall', wallBonus: 8, space: 0, role: 'стены' },
+    battleblimp: { hp: 2200, dmg: 90, speed: 1.5, range: 1.5,
+      target: 'any', splash: 1.8, fly: true, space: 0, role: 'воздух' },
+    stoneslammer: { hp: 3400, dmg: 120, speed: 1.3, range: 1,
+      target: 'defense', splash: 2, space: 0, role: 'площадной' },
+    siegebarracks: { hp: 2800, dmg: 45, speed: 1.2, range: 1,
+      target: 'any', spawnRole: 'siegebarracks', space: 0, role: 'десант' },
+    loglauncher: { hp: 2600, dmg: 180, speed: 1.2, range: 6,
+      target: 'wall', wallBonus: 6, space: 0, role: 'стены' },
+    flameflinger: { hp: 2400, dmg: 200, speed: 1.1, range: 7,
+      target: 'defense', splash: 2, space: 0, role: 'дальний' },
+    battledrill: { hp: 2800, dmg: 150, speed: 1.6, range: 1,
+      target: 'defense', miner: true, space: 0, role: 'подземный' },
+    trooplauncher: { hp: 2600, dmg: 20, speed: 1.2, range: 1,
+      target: 'any', spawnRole: 'trooplauncher', space: 0, role: 'десант' },
+    skywagon: { hp: 2000, dmg: 50, speed: 1.6, range: 2,
+      target: 'any', fly: true, spawnRole: 'skywagon', space: 0, role: 'воздух' }
+  };
 
   let S = null;
 
@@ -29,8 +63,9 @@ CC.Battle = (function () {
     return out;
   }
 
-  // Герои приходят либо явной картой army.heroes = {kind: 1}, либо старым
-  // флагом army.hero. Старый флаг означает одного «Сержанта».
+  // Герои приходят либо явной картой army.heroes = {kind: level}, либо
+  // старым флагом army.hero. Уровень героя теперь индивидуальный: значение
+  // карты — это уровень, а не просто «есть». Старый флаг = Сержант 1 ур.
   function copyHeroes(map) {
     const out = {};
     const list = CC.HEROES || [];
@@ -38,7 +73,8 @@ CC.Battle = (function () {
     if (src && typeof src === 'object') {
       for (let i = 0; i < list.length; i++) {
         const id = list[i].id;
-        if (Number(src[id]) > 0) out[id] = 1;
+        const v = Math.floor(Number(src[id]) || 0);
+        if (v > 0) out[id] = v;
       }
       // Неизвестный герой старого сейва не должен теряться: это barb.
       if (!Object.keys(out).length && Number(src.hero) > 0) out.barb = 1;
@@ -46,6 +82,132 @@ CC.Battle = (function () {
       out.barb = 1;
     }
     return out;
+  }
+
+  // Заклинания: army.spells / opts.spells — карта {id: количество}.
+  // Неизвестные и отрицательные значения отбрасываем.
+  function copySpells(map, extra) {
+    const out = {};
+    const src = (map && (map.spells || map.spell)) || extra || {};
+    function add(id, n) {
+      if (!SPELLS[id]) return;
+      const c = Math.max(0, Math.floor(Number(n) || 0));
+      if (c > 0) out[id] = (out[id] || 0) + c;
+    }
+    if (typeof src === 'string') add(src, 1);
+    else if (Array.isArray(src)) {
+      for (let i = 0; i < src.length; i++) {
+        const v = src[i];
+        if (typeof v === 'string') add(v, 1);
+        else if (v && typeof v === 'object') add(v.id, v.count || v.n || 1);
+      }
+    } else if (src && typeof src === 'object') {
+      for (const id in src) add(id, src[id]);
+    }
+    return out;
+  }
+
+  // Питомцы: army.pets = {heroKind: petId} либо {petId: 1}.
+  // Внутри боя храним привязку «герой → питомец», чтобы один питомец
+  // действительно шёл рядом со своим героем.
+  function copyPets(map, extra) {
+    const src = (map && (map.pets || map.pet)) || extra || null;
+    const out = {};
+    const heroList = CC.HEROES || [];
+    const free = [];
+
+    function assign(heroKind, petId) {
+      if (!PETS[petId]) return;
+      if (heroKind && CC.heroDef) {
+        const h = CC.heroDef(heroKind);
+        if (h && h.id) { out[h.id] = petId; return; }
+      }
+      free.push(petId);
+    }
+
+    if (typeof src === 'string') {
+      assign(null, src);
+    } else if (Array.isArray(src)) {
+      for (let i = 0; i < src.length; i++) assign(null, src[i]);
+    } else if (src && typeof src === 'object') {
+      for (const key in src) {
+        if (PETS[key]) {
+          if (Number(src[key]) > 0) assign(null, key);
+        } else if (PETS[src[key]]) {
+          assign(key, src[key]);
+        }
+      }
+    }
+
+    // Свободных питомцев раздаём героям по порядку: в бою герой один или
+    // несколько, но каждому нужен свой спутник.
+    for (let i = 0; i < free.length && i < heroList.length; i++) {
+      const kind = heroList[i] && heroList[i].id;
+      if (kind && !out[kind]) out[kind] = free[i];
+    }
+    return out;
+  }
+
+  // Осадная машина: строка, массив или карта {id: 1}.
+  function copySiege(map, extra) {
+    const src = (map && (map.siege || map.sieges)) || extra || null;
+    const out = [];
+    function add(id) {
+      if (SIEGE[id] && out.indexOf(id) === -1) out.push(id);
+    }
+    if (typeof src === 'string') add(src);
+    else if (Array.isArray(src)) src.forEach(add);
+    else if (src && typeof src === 'object') {
+      for (const id in src) if (Number(src[id]) > 0) add(id);
+    }
+    return out;
+  }
+
+  // Полное описание войска: таблица HP/DPS + ручная мета (стены, цепь,
+  // призыв, лечение). CC.troopStats отдаёт только табличные поля.
+  function troopDef(type, level) {
+    const meta = (CC.TROOP_META && CC.TROOP_META[type]) || {};
+    const base = TROOPS[type] || {};
+    const stats = CC.troopStats ? CC.troopStats(type, level) : null;
+    const def = Object.assign({}, base, meta, stats || {});
+    // Поля меты, которых нет в CC.TROOPS/CC.troopStats, переносим явно.
+    const keys = ['wallBonus', 'chain', 'spawn', 'heal', 'support',
+      'jumpsWalls', 'freeze', 'target', 'splash', 'fly', 'space'];
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (meta[k] !== undefined) def[k] = meta[k];
+    }
+    if (!def.hp) def.hp = Math.max(1, Number(base.hp) || 1);
+    if (!def.dmg && def.dmg !== 0) def.dmg = Number(base.dmg) || 0;
+    if (!def.speed) def.speed = Number(base.speed) || 2;
+    if (!def.range && def.range !== 0) def.range = Number(base.range) || 1;
+    if (!def.target) def.target = base.target || 'any';
+    def.fly = !!(def.fly || base.fly);
+    return def;
+  }
+
+  // Уровни из сейва применяются только в боях игрока: кампания, Арена,
+  // повтор и баланс-инструмент. Набег ИИ/симуляция — всегда 1 уровень.
+  function playerLevelsActive() {
+    if (!S || S.headless) return false;
+    return !!(S.useTroopLevels || S.kind === 'campaign' ||
+      S.kind === 'pvp' || S.kind === 'replay' || S.viewReplay);
+  }
+
+  // Уровень войска в бою.
+  function troopLevelFor(type) {
+    if (!CC.Game || !CC.Game.troopLevel) return 1;
+    if (!playerLevelsActive()) return 1;
+    const lv = Math.floor(Number(CC.Game.troopLevel(type)));
+    return lv >= 1 ? lv : 1;
+  }
+
+  // Уровень питомца: те же правила, что у войск.
+  function petLevelFor(id, outside) {
+    if (!CC.Game || !CC.Game.petLevel) return 1;
+    if (!outside && !playerLevelsActive()) return 1;
+    const lv = Math.floor(Number(CC.Game.petLevel(id)));
+    return lv >= 1 ? lv : 1;
   }
 
   function heroKindsLeft() {
@@ -103,6 +265,22 @@ CC.Battle = (function () {
       costs: new Float32Array(G * G),
       deployable: new Uint8Array(G * G),
       army: copyArmy(o.army),
+      // Заклинания, питомцы и осадная машина: не занимают места армии.
+      spells: copySpells(o.army, o.spells),
+      activeSpells: [],
+      selectedSpell: null,
+      spellLog: [],
+      pets: copyPets(o.army, o.pets),
+      petDeployed: {},
+      selectedPet: null,
+      siege: copySiege(o.army, o.siege),
+      siegeDeployed: false,
+      siegeUnit: null,
+      selectedSiege: null,
+      // Павшие герои: нужны заклинанию revive.
+      fallenHeroes: [],
+      // Прыжковое поле: на время стены становятся проходимыми для всех.
+      jumpUntil: 0,
       // Герои не входят в ARMY_ORDER: они не тратят места и не тренируются.
       // heroes — сколько экземпляров каждого вида ещё можно высадить (0/1).
       // army.hero остаётся флагом совместимости для старых снимков.
@@ -117,11 +295,11 @@ CC.Battle = (function () {
       level: o.level || 0,
       levelId: o.levelId || 0,
       levelName: o.levelName || 'Бой',
-      levelLoot: o.loot || { gold: 0, elixir: 0 },
-      lootPool: o.loot || { gold: 0, elixir: 0 },
+      levelLoot: o.loot || { gold: 0, elixir: 0, dark: 0 },
+      lootPool: o.loot || { gold: 0, elixir: 0, dark: 0 },
       // Фактически унесённое из разрушенных зданий. Заполняется сразу при
       // сносе, а не процентом в конце боя.
-      lootTaken: { gold: 0, elixir: 0 },
+      lootTaken: { gold: 0, elixir: 0, dark: 0 },
       lootedBuildings: [],
       kind: o.kind || 'custom',
       campaign: o.kind === 'campaign',
@@ -234,7 +412,7 @@ CC.Battle = (function () {
       if (!preview && hasVillage && heroAvailable(armyTh)) {
         army.hero = 1;
         army.heroes = CC.Game.heroBattleArmy
-          ? CC.Game.heroBattleArmy(armyTh, CC.Game.heroLevel())
+          ? CC.Game.heroBattleArmy(armyTh)
           : { barb: 1 };
       }
     } else {
@@ -242,11 +420,15 @@ CC.Battle = (function () {
     }
 
     const pool = lvl
-      ? { gold: (lvl.loot && lvl.loot.gold) || 0, elixir: (lvl.loot && lvl.loot.elixir) || 0 }
-      : { gold: 0, elixir: 0 };
+      ? {
+        gold: (lvl.loot && lvl.loot.gold) || 0,
+        elixir: (lvl.loot && lvl.loot.elixir) || 0,
+        dark: (lvl.loot && lvl.loot.dark) || 0
+      }
+      : { gold: 0, elixir: 0, dark: 0 };
 
     // Раскладываем пул уровня по конкретным зданиям: 85% руды — в склады
-    // руды, 15% — в буры; 85% энергии — в склады энергии, 15% — в реакторы.
+    // руды, 15% — в буры; так же энергия и плазма (darkstorage/ darkdrill).
     // Командный центр лут не получает. План считается по той же
     // детерминированной раскладке, поэтому ключи стабильны между заходами.
     const plan = CC.Loot && CC.Loot.distribute
@@ -256,7 +438,7 @@ CC.Battle = (function () {
       const key = CC.lootKey
         ? CC.lootKey(r[0], r[1], r[2])
         : r[0] + ':' + r[1] + ':' + r[2];
-      const part = plan[key] || { gold: 0, elixir: 0 };
+      const part = plan[key] || { gold: 0, elixir: 0, dark: 0 };
       const empty = !!(CC.Game && CC.Game.isLooted &&
         CC.Loot && CC.Loot.roleOf(r[0]) && CC.Game.isLooted(idx, key));
       return {
@@ -267,6 +449,7 @@ CC.Battle = (function () {
         key: key,
         lootGold: empty ? 0 : part.gold,
         lootElixir: empty ? 0 : part.elixir,
+        lootDark: empty ? 0 : (part.dark || 0),
         emptyLoot: empty
       };
     });
@@ -279,7 +462,15 @@ CC.Battle = (function () {
       levelId: lvl ? lvl.id : 0,
       levelName: lvl ? lvl.name : 'Тренировка',
       loot: pool,
-      limit: CC.TIME_LIMIT
+      limit: CC.TIME_LIMIT,
+      // P3 может добавить армейские снимки заклинаний/питомцев/осады;
+      // бой принимает их, не меняя старый формат армии.
+      spells: (CC.Game && CC.Game.spellBattleArmy)
+        ? CC.Game.spellBattleArmy() : null,
+      pets: (CC.Game && CC.Game.petBattleArmy)
+        ? CC.Game.petBattleArmy() : null,
+      siege: (CC.Game && CC.Game.siegeBattleArmy)
+        ? CC.Game.siegeBattleArmy() : null
     });
     // Десант проверяет не сегодняшний TH игрока, а уровень, под который
     // действительно собрана эта армия (важно для баланс-симулятора).
@@ -297,12 +488,15 @@ CC.Battle = (function () {
       level: d.level || 0,
       levelId: d.id || 0,
       levelName: d.name || 'База',
-      loot: d.loot || { gold: 0, elixir: 0 },
+      loot: d.loot || { gold: 0, elixir: 0, dark: 0 },
       limit: d.limit || CC.TIME_LIMIT,
       silent: !!d.silent,
       viewReplay: !!d.viewReplay,
       useTroopLevels: !!d.useTroopLevels,
-      deployPlan: d.deployPlan || []
+      deployPlan: d.deployPlan || [],
+      spells: d.spells || null,
+      pets: d.pets || null,
+      siege: d.siege || null
     });
   }
 
@@ -341,6 +535,18 @@ CC.Battle = (function () {
     if (stats.minRange !== undefined) def.minRange = stats.minRange;
     if (stats.rate !== undefined) def.rate = stats.rate;
     if (stats.splash !== undefined) def.splash = stats.splash;
+    // Табличный DPS не подменяем: у spell_tower его нет намеренно (поле).
+    if (!isFinite(Number(def.dmg))) def.dmg = 0;
+
+    // Оружие центра: модуль включается, когда по центру прошёл урон.
+    // Отдельной карточки у него нет, поэтому дальность/темп задаём здесь.
+    if (type === 'townhall' || def.thweapon) {
+      def.thweapon = true;
+      if (!def.range) def.range = 9;
+      if (!def.rate) def.rate = 0.8;
+      if (!def.dmg) def.dmg = Math.max(20, 14 + (stats.level || 1) * 6);
+      def.targetsAir = true;
+    }
 
     const b = {
       id: S.uid++,
@@ -364,10 +570,20 @@ CC.Battle = (function () {
       chargeTime: 0,
       beamTarget: null,
       beamTargetId: 0,
+      // Оружие центра включается первым уроном по ратуше.
+      thActive: false,
+      // Взрыв детонатора выполняется ровно один раз.
+      exploded: false,
+      // Заморозка обороны заклинанием/криополем.
+      freezeUntil: 0,
+      // Поле генератора аномалий: криополе или токсин, раз в 6 секунд.
+      fieldMode: 0,
+      fieldUntil: 0,
       // Добыча конкретного здания и стабильный ключ для прогресса.
       key: (meta && meta.key) || (CC.lootKey ? CC.lootKey(type, x, y) : type + ':' + x + ':' + y),
       lootGold: Math.max(0, Math.floor(Number(meta && meta.lootGold) || 0)),
       lootElixir: Math.max(0, Math.floor(Number(meta && meta.lootElixir) || 0)),
+      lootDark: Math.max(0, Math.floor(Number(meta && meta.lootDark) || 0)),
       // Уже разграбленная постройка: данные для художника и для строки
       // «в этом складе уже пусто» в результате.
       emptyLoot: !!(meta && meta.emptyLoot),
@@ -403,8 +619,13 @@ CC.Battle = (function () {
       radius: stats.radius || d.radius || 0.9,
       splash: stats.splash || d.splash || 0,
       dmg: stats.dmg || d.dmg || 0,
+      // Ловушки-ловушки (скелеты) выпускают своих юнитов, торнадо живёт
+      // несколько секунд и тянет отряд к центру.
+      spawn: stats.spawn || d.spawn || 0,
       capacity: d.capacity || 4,
-      maxUnitSpace: d.maxUnitSpace || 2
+      maxUnitSpace: d.maxUnitSpace || 2,
+      activeUntil: 0,
+      fieldTick: 0
     };
     S.traps.push(trap);
     return trap;
@@ -430,7 +651,12 @@ CC.Battle = (function () {
       if (oi < 0) {
         S.costs[i] = 1;
       } else {
-        S.costs[i] = S.buildings[oi].type === 'wall' ? 8 : Infinity;
+        const wall = S.buildings[oi].type === 'wall';
+        // Прыжковое поле/подкоп на время делают стены дешёвыми: A* пойдёт
+        // сквозь них, а updateUnit не станет перенацеливаться на барьер.
+        S.costs[i] = wall
+          ? ((S.jumpUntil && S.jumpUntil > S.time) ? 1 : 8)
+          : Infinity;
       }
     }
   }
@@ -458,6 +684,13 @@ CC.Battle = (function () {
     return Math.hypot(nx - x, ny - y);
   }
 
+  function canPassWalls(u) {
+    if (!u || !u.def) return false;
+    if (u.def.jumpsWalls || u.def.miner) return true;
+    if ((u.jumpUntil || 0) > S.time) return true;
+    return !!(S.jumpUntil && S.jumpUntil > S.time);
+  }
+
   function pathTo(u, b) {
     const candidates = [];
 
@@ -475,10 +708,12 @@ CC.Battle = (function () {
 
     const sx = clamp(Math.floor(u.x), 0, G - 1);
     const sy = clamp(Math.floor(u.y), 0, G - 1);
+    const opts = canPassWalls(u) ? { wallCost: 1 } : null;
 
     const limit = Math.min(candidates.length, 6);
     for (let i = 0; i < limit; i++) {
-      const p = CC.Path.find(S.costs, G, G, sx, sy, candidates[i].x, candidates[i].y);
+      const p = CC.Path.find(S.costs, G, G, sx, sy,
+        candidates[i].x, candidates[i].y, opts);
       if (p !== null) return p;
     }
     return null;
@@ -504,23 +739,49 @@ CC.Battle = (function () {
     let bd = Infinity;
     let wall = null;
     let wd = Infinity;
+    let heroBest = null;
+    let heroDist = Infinity;
+    let defBest = null;
+    let defDist = Infinity;
 
     for (let i = 0; i < S.buildings.length; i++) {
       const b = S.buildings[i];
       if (b.dead) continue;
       // Скрытая засада не выбирается целью, пока не раскрылась.
       if (b.hidden && !b.revealed) continue;
-      if (pref === 'defense' && !b.def.range) continue;
-      if (pref === 'resource' && !b.def.resource) continue;
 
       // Летающие не видят энергобарьеры: они не цель и не препятствие.
       if (b.type === 'wall' && u.def.fly) continue;
 
       const d = distToBuilding(u.x, u.y, b);
+      const isWall = b.type === 'wall';
+      const isHero = !!(b.def && (b.def.hero || b.type === 'hero')) || b.type === 'hero';
+      const isDef = !!(b.def && b.def.range);
+      const isRes = !!(b.def && b.def.resource);
+
+      if (isHero && d < heroDist) { heroDist = d; heroBest = b; }
+      if (isDef && d < defDist) { defDist = d; defBest = b; }
+
+      if (pref === 'wall') {
+        if (isWall && d < bd) { bd = d; best = b; }
+        continue;
+      }
+      if (pref === 'defense') {
+        if (isDef && d < bd) { bd = d; best = b; }
+        continue;
+      }
+      if (pref === 'resource') {
+        if (isRes && d < bd) { bd = d; best = b; }
+        continue;
+      }
+      if (pref === 'hero') {
+        if (isHero && d < bd) { bd = d; best = b; }
+        continue;
+      }
 
       // Стены — не цель, а препятствие: ломаем их, только если больше
       // нечего бить. Иначе отряд застревает, грызя кольцо по кирпичу.
-      if (pref === 'any' && b.type === 'wall') {
+      if (isWall) {
         if (d < wd) { wd = d; wall = b; }
         continue;
       }
@@ -528,6 +789,18 @@ CC.Battle = (function () {
       if (d < bd) { bd = d; best = b; }
     }
 
+    // Корневой таран бьёт стены осознанно, а не «когда больше нечего».
+    if (!best && (u.def.target === 'wall' ||
+        (u.def.wallBonus && wall && wd <= 3.5))) {
+      best = wall;
+    }
+    // Root Rider: стены — приоритетная цель, если они рядом.
+    if (wall && wd <= 3.5 && (u.type === 'rootrider' || u.type === 'gnome')) {
+      best = wall;
+    }
+    // Охотник за головами: героев на обороне может не быть, поэтому
+    // ближайшая оборона — запасная цель, а не простой.
+    if (!best && pref === 'hero') best = defBest;
     if (pref === 'any' && !best) best = wall;
 
     // если любимых целей не осталось — бьём что попало
@@ -536,12 +809,13 @@ CC.Battle = (function () {
         const b = S.buildings[i];
         if (b.dead) continue;
         if (b.hidden && !b.revealed) continue;
+        if (b.type === 'wall' && u.def.fly) continue;
         const d = distToBuilding(u.x, u.y, b);
         if (d < bd) { bd = d; best = b; }
       }
     }
 
-    u.target = best;
+    u.target = best || null;
     u.path = null;
   }
 
@@ -553,27 +827,49 @@ CC.Battle = (function () {
 
     const gold = Math.max(0, Math.floor(Number(b.lootGold) || 0));
     const elixir = Math.max(0, Math.floor(Number(b.lootElixir) || 0));
-    if (!gold && !elixir && !b.emptyLoot) return;
+    const dark = Math.max(0, Math.floor(Number(b.lootDark) || 0));
+    if (!gold && !elixir && !dark && !b.emptyLoot) return;
 
     S.lootTaken.gold += gold;
     S.lootTaken.elixir += elixir;
+    S.lootTaken.dark += dark;
     S.lootedBuildings.push({
       key: b.key,
       type: b.type,
       name: (DEFS[b.type] && DEFS[b.type].name) || b.type,
       gold: gold,
       elixir: elixir,
+      dark: dark,
       empty: !!b.emptyLoot
     });
 
     // С этого момента здание пустое — даже если бой ещё не закончился.
     b.lootGold = 0;
     b.lootElixir = 0;
+    b.lootDark = 0;
+  }
+
+  // Площадной урон по постройкам (взрыв детонатора, смерть метеорита или
+  // дирижабля). Цель не нужна: накрываем всё в радиусе.
+  function bombArea(x, y, amount, radius, skip) {
+    if (!(amount > 0)) return;
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (b === skip || b.dead) continue;
+      if (b.hidden && !b.revealed) continue;
+      const nx = Math.max(b.x, Math.min(x, b.x + b.w));
+      const ny = Math.max(b.y, Math.min(y, b.y + b.h));
+      if (Math.hypot(nx - x, ny - y) > (radius || 1.5)) continue;
+      damageBuilding(b, amount);
+    }
   }
 
   function damageBuilding(b, amount) {
     if (b.dead) return;
     b.hp -= amount;
+
+    // Модуль центра просыпается от первого попадания по ратуше.
+    if (b.type === 'townhall' && b.def.thweapon) b.thActive = true;
 
     const kind = b.type === 'wall' ? 'wall' : 'building';
     if (!S.silent && CC.Sound) CC.Sound.play('hit', undefined, kind);
@@ -584,6 +880,14 @@ CC.Battle = (function () {
       collectBuildingLoot(b);
       S.fx.push({ x: b.x + b.w / 2, y: b.y + b.h / 2, t: 0, dur: 0.55, kind: 'boom', size: b.w * b.h });
       if (!S.silent && CC.Sound) CC.Sound.play('destroy', undefined, kind);
+
+      // Детонатор взрывается при сносе: половина DPS по площади 1.5.
+      if (b.def.special === 'bombtower' && !b.exploded) {
+        b.exploded = true;
+        splashDamage(b.x + b.w / 2, b.y + b.h / 2,
+          (b.def.dmg || 0) * 0.5, 1.5, true);
+      }
+
       if (S.campaign && CC.Game && CC.Game.addStat) {
         if (b.type === 'wall') CC.Game.addStat('wallsDestroyed', 1);
       }
@@ -610,29 +914,366 @@ CC.Battle = (function () {
 
   /* ---------- обновление ---------- */
 
+  function unitSpeed(u) {
+    let sp = Number(u.def.speed);
+    if (!isFinite(sp)) sp = 2;
+    if ((u.rageUntil || 0) > S.time) sp *= 1.5;
+    if ((u.hasteUntil || 0) > S.time) sp *= 2;
+    if ((u.slowUntil || 0) > S.time) sp *= 0.8;
+    if ((u.poisonUntil || 0) > S.time) sp *= 0.7;
+    return sp;
+  }
+
+  function effectiveDmg(u) {
+    let dmg = isFinite(u.dmg) ? u.dmg : (u.def.dmg || 0);
+    if ((u.rageUntil || 0) > S.time) dmg *= 1.8;
+    if ((u.buffUntil || 0) > S.time) dmg *= 1.15;
+    if ((u.totemUntil || 0) > S.time) dmg *= 1.3;
+    if (u.isHero && (u.heroicUntil || 0) > S.time) dmg *= 1.5;
+    if ((u.angryUntil || 0) > S.time) dmg *= 2;
+    return dmg;
+  }
+
+  function unitById(id) {
+    if (!S || !id) return null;
+    for (let i = 0; i < S.units.length; i++) {
+      if (S.units[i].id === id && S.units[i].hp > 0) return S.units[i];
+    }
+    return null;
+  }
+
+  function moveToward(u, tx, ty, dt) {
+    const dx = tx - u.x;
+    const dy = ty - u.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.001) return;
+    const mv = unitSpeed(u) * dt;
+    if (len <= mv) { u.x = tx; u.y = ty; return; }
+    u.x = clamp(u.x + dx / len * mv, 0, G - 0.001);
+    u.y = clamp(u.y + dy / len * mv, 0, G - 0.001);
+  }
+
+  // Лекарь/друид: лечим союзников в радиусе, а не бьём постройки.
+  // Сила лечения — 4% максимального HP в секунду: табличного лечения в CoC
+  // нет, это наше решение под текущий движок.
+  function healAllies(u, dt) {
+    const radius = Math.max(2.5, Number(u.def.range) || 0);
+    let healed = false;
+    for (let i = 0; i < S.units.length; i++) {
+      const a = S.units[i];
+      if (a === u || a.hp <= 0 || a.hp >= a.maxHp) continue;
+      if (Math.hypot(a.x - u.x, a.y - u.y) > radius) continue;
+      a.hp = Math.min(a.maxHp, a.hp + a.maxHp * 0.04 * dt);
+      healed = true;
+    }
+    if (!healed) {
+      // Никого не лечим — держимся рядом с ближайшим союзником, чтобы
+      // поддержка не отставала от отряда.
+      let near = null;
+      let nd = Infinity;
+      for (let i = 0; i < S.units.length; i++) {
+        const a = S.units[i];
+        if (a === u || a.hp <= 0) continue;
+        const d = Math.hypot(a.x - u.x, a.y - u.y);
+        if (d < nd) { nd = d; near = a; }
+      }
+      if (near && nd > 2.5) moveToward(u, near.x, near.y, dt);
+    }
+    return healed;
+  }
+
+  // Ученик/друид: аура усиления и лечение. Ученик даёт +15% урона союзникам,
+  // друид лечит и при низком HP превращается в медведя (упрощённо: +HP/DMG).
+  function supportTick(u, dt) {
+    if (u.type === 'druid' || u.def.heal) {
+      healAllies(u, dt);
+      if (u.type === 'druid' && !u.bearForm && u.hp < u.maxHp * 0.3) {
+        u.bearForm = true;
+        u.maxHp = Math.round(u.maxHp * 1.3);
+        u.hp = u.maxHp;
+        u.dmg = Math.round((u.dmg || 0) * 2) || u.dmg;
+        u.def = Object.assign({}, u.def, { range: 1, speed: 2.4 });
+        S.fx.push({ x: u.x, y: u.y, t: 0, dur: 0.5, kind: 'poof' });
+      }
+      return;
+    }
+    if (u.type === 'apprentice') {
+      for (let i = 0; i < S.units.length; i++) {
+        const a = S.units[i];
+        if (a === u || a.hp <= 0) continue;
+        if (Math.hypot(a.x - u.x, a.y - u.y) > 3.2) continue;
+        a.buffUntil = Math.max(a.buffUntil || 0, S.time + 0.25);
+      }
+      return;
+    }
+    // Неизвестная поддержка не зависает: идёт за отрядом.
+    healAllies(u, dt);
+  }
+
+  function summonDef(baseType, scale, fly) {
+    const def = troopDef(baseType, 1);
+    const s = scale || 1;
+    def.hp = Math.max(1, Math.round((def.hp || 10) * s));
+    def.dmg = Math.max(1, Math.round((def.dmg || 1) * s));
+    def.spawn = 0;
+    def.chain = 0;
+    def.splash = 0;
+    def.heal = false;
+    def.support = false;
+    def.jumpsWalls = false;
+    def.wallBonus = 0;
+    if (fly !== undefined) def.fly = !!fly;
+    return def;
+  }
+
+  // Призыв юнита без тренировки: скелеты/детёныши/огни/руины. Не занимает
+  // места в армии и не попадает в счётчик высаженных войск.
+  function spawnSummon(owner, baseType, count, scale, fly) {
+    const n = clamp(Math.floor(Number(count) || 0), 0, 10);
+    for (let i = 0; i < n; i++) {
+      const def = summonDef(baseType, scale, fly);
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.35 + Math.random() * 0.7;
+      const u = {
+        id: S.uid++,
+        type: baseType,
+        def: def,
+        x: clamp((owner && owner.x || 1) + Math.cos(a) * r, 0, G - 0.001),
+        y: clamp((owner && owner.y || 1) + Math.sin(a) * r, 0, G - 0.001),
+        hp: def.hp,
+        maxHp: def.hp,
+        dmg: def.dmg,
+        cd: 0,
+        atk: 0,
+        target: null,
+        path: null,
+        summoned: true,
+        ownerKind: owner && owner.type,
+        expireAt: 0,
+        spawnCd: 0,
+        buffUntil: 0,
+        rageUntil: 0,
+        hasteUntil: 0,
+        totemUntil: 0,
+        heroicUntil: 0,
+        angryUntil: 0,
+        invisibleUntil: 0,
+        slowUntil: 0,
+        freezeUntil: 0,
+        poisonUntil: 0,
+        jumpUntil: 0
+      };
+      S.units.push(u);
+    }
+    return n;
+  }
+
+  // Ведьма/печь/руинная ведьма: периодический призыв, пока живы.
+  function updateSpawner(u, dt) {
+    if (!u.def.spawn) return;
+    if (u.type !== 'witch' && u.type !== 'furnace' && u.type !== 'ruinwitch') return;
+    if (!(u.spawnCd > 0)) u.spawnCd = 4;
+    u.spawnCd -= dt;
+    if (u.spawnCd > 0) return;
+    u.spawnCd = 6;
+    if (u.type === 'witch') spawnSummon(u, 'barb', 2, 0.45);
+    else if (u.type === 'furnace') spawnSummon(u, 'minion', 2, 0.35, true);
+    else spawnSummon(u, 'barb', 2, 0.8);
+    S.fx.push({ x: u.x, y: u.y, t: 0, dur: 0.4, kind: 'poof' });
+  }
+
+  // Осадные машины с ролью «десант/транспорт»: периодически выпускают
+  // своих юнитов. Остальные девять id воюют как обычные войска.
+  function siegeTick(u, dt) {
+    if (!u.isSiege) return;
+    const role = u.def.spawnRole;
+    if (!role) return;
+    if (!(u.spawnCd > 0)) u.spawnCd = role === 'trooplauncher' ? 6 : 8;
+    u.spawnCd -= dt;
+    if (u.spawnCd > 0) return;
+    u.spawnCd = role === 'trooplauncher' ? 6 : 8;
+
+    if (role === 'siegebarracks') {
+      spawnSummon(u, 'barb', 1, 0.7);
+    } else if (role === 'skywagon') {
+      spawnSummon(u, 'minion', 1, 0.45, true);
+    } else if (role === 'trooplauncher') {
+      // Пусковая установка забрасывает бойцов вглубь: к ближайшей к центру
+      // поля постройке, а не рядом с собственной позицией.
+      let target = null;
+      let best = Infinity;
+      for (let i = 0; i < S.buildings.length; i++) {
+        const b = S.buildings[i];
+        if (b.dead || b.type === 'wall') continue;
+        const d = Math.hypot(b.x + b.w / 2 - G / 2, b.y + b.h / 2 - G / 2);
+        if (d < best) { best = d; target = b; }
+      }
+      const px = target ? target.x + target.w / 2 : u.x;
+      const py = target ? target.y + target.h / 2 : u.y;
+      spawnSummon({ x: px, y: py, type: 'barb' }, 'barb', 1, 0.8);
+    }
+    S.fx.push({ x: u.x, y: u.y, t: 0, dur: 0.4, kind: 'poof' });
+  }
+
+  // Питомец держится рядом с хозяином. Единорог лечит героя, дух-лис
+  // телепортирует его к цели; остальные эффекты — в applyPetHit.
+  function petTick(u, dt) {
+    if (!u.isPet) return false;
+    const owner = unitById(u.ownerId);
+    if (owner) {
+      // Дух-лис: один раз за бой переносит героя к его цели.
+      if (u.type === 'fox' && !u.teleported) {
+        if (!owner.target && !owner.path) pickTarget(owner);
+        if (owner.target && !owner.target.dead) {
+          const t = owner.target;
+          const spot = freeSpotNear(t.x + t.w / 2, t.y + t.h / 2, 3);
+          if (spot) {
+            owner.x = spot.x + 0.5;
+            owner.y = spot.y + 0.5;
+            owner.path = null;
+            owner.target = t;
+            u.x = owner.x;
+            u.y = owner.y;
+            u.teleported = true;
+            u.path = null;
+            S.fx.push({ x: owner.x, y: owner.y, t: 0, dur: 0.6,
+              kind: 'spell', size: 1.2 });
+            return true;
+          }
+        }
+      }
+      const d = Math.hypot(owner.x - u.x, owner.y - u.y);
+      if (d > 3.2) {
+        moveToward(u, owner.x, owner.y, dt);
+        return true;
+      }
+      if (u.def.heal && d <= 5 && owner.hp < owner.maxHp) {
+        owner.hp = Math.min(owner.maxHp, owner.hp + owner.maxHp * 0.06 * dt);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function ravenSteal(target, amount) {
+    if (!target || !(amount > 0)) return;
+    const takeGold = Math.min(Math.max(0, Math.floor(Number(target.lootGold) || 0)),
+      Math.max(1, Math.round(amount)));
+    const takeElixir = Math.min(Math.max(0, Math.floor(Number(target.lootElixir) || 0)),
+      Math.max(1, Math.round(amount * 0.7)));
+    const takeDark = Math.min(Math.max(0, Math.floor(Number(target.lootDark) || 0)),
+      Math.max(1, Math.round(amount * 0.5)));
+    if (takeGold) { target.lootGold -= takeGold; S.lootTaken.gold += takeGold; }
+    if (takeElixir) { target.lootElixir -= takeElixir; S.lootTaken.elixir += takeElixir; }
+    if (takeDark) { target.lootDark -= takeDark; S.lootTaken.dark += takeDark; }
+  }
+
+  // Уникальные эффекты питомцев при ударе по постройке.
+  function applyPetHit(u, target, dmg) {
+    if (!u || !u.isPet || !target) return;
+    if (u.type === 'frosty') {
+      target.freezeUntil = Math.max(target.freezeUntil || 0, S.time + 1);
+    } else if (u.type === 'lizard') {
+      target.poisonUntil = Math.max(target.poisonUntil || 0, S.time + 4);
+      target.poisonDps = Math.max(1, (u.dmg || 10) * 0.4);
+      target.poisonTick = 0;
+    } else if (u.type === 'jelly') {
+      target.slowUntil = Math.max(target.slowUntil || 0, S.time + 3);
+    } else if (u.type === 'raven') {
+      ravenSteal(target, dmg);
+    }
+  }
+
+  function chainBuildings(target, amount, count) {
+    if (!target || target.dead || !(amount > 0)) return 0;
+    const cx = target.x + target.w / 2;
+    const cy = target.y + target.h / 2;
+    const hit = [];
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (b === target || b.dead || b.type === 'wall') continue;
+      if (b.hidden && !b.revealed) continue;
+      const nx = Math.max(b.x, Math.min(cx, b.x + b.w));
+      const ny = Math.max(b.y, Math.min(cy, b.y + b.h));
+      const d = Math.hypot(nx - cx, ny - cy);
+      if (d <= 2.8) hit.push({ b: b, d: d });
+    }
+    hit.sort(function (a, b) { return a.d - b.d; });
+    const n = Math.min(hit.length, Math.max(0, count || 0));
+    let cur = amount;
+    for (let i = 0; i < n; i++) {
+      damageBuilding(hit[i].b, cur);
+      cur *= 0.6;
+    }
+    return n;
+  }
+
+  function attackBuilding(u, target, amount) {
+    if (!target || target.dead) return;
+    const d = u.def;
+    let dmg = amount;
+    if (target.type === 'wall') dmg *= (d.wallBonus || 1);
+    if (target.def && target.def.resource &&
+        (u.type === 'goblin' || d.target === 'resource')) {
+      dmg *= 2;
+    }
+    if (target.def && target.def.hero && u.type === 'headhunter') dmg *= 3;
+
+    if (d.splash) bombBuildings(target, dmg, d.splash);
+    else damageBuilding(target, dmg);
+
+    if (d.chain > 1) chainBuildings(target, dmg * 0.6, d.chain - 1);
+    if (d.freeze && u.type === 'icegolem') {
+      target.freezeUntil = Math.max(target.freezeUntil || 0, S.time + 1.5);
+    }
+    if (u.isPet) applyPetHit(u, target, dmg);
+  }
+
   function updateUnit(u, dt) {
     const d = u.def;
-    // Урон берём с юнита: уровень войск уже умножен при высадке.
-    const dmg = isFinite(u.dmg) ? u.dmg : d.dmg;
+    if (!u.hp || u.hp <= 0) return;
+    // Клон/временный юнит истёк.
+    if (u.expireAt && u.expireAt <= S.time) { u.hp = 0; return; }
+
+    // Заморозка: юнит не двигается и не атакует (криополе/морозко).
+    if ((u.freezeUntil || 0) > S.time) return;
+    // Токсин: 5% HP в секунду, но не убивает мгновенно.
+    if ((u.poisonUntil || 0) > S.time) {
+      u.hp -= u.maxHp * 0.05 * dt;
+      if (u.hp < 0) u.hp = 0;
+    }
+
     if (u.cd > 0) u.cd -= dt;
     if (u.atk > 0) u.atk -= dt;
+
+    updateSpawner(u, dt);
+    if (u.isSiege) siegeTick(u, dt);
+
+    // Поддержка не выбирает постройки: лечит/баффает и держится с отрядом.
+    if (d.heal || d.support) {
+      supportTick(u, dt);
+      return;
+    }
+
+    // Питомец вне радиуса хозяина сначала догоняет его.
+    if (petTick(u, dt)) return;
+
+    const dmg = effectiveDmg(u);
 
     if (u.target && u.target.dead) {
       u.target = null;
       u.path = null;
     }
 
+    const range = Math.max(0.9, Number(d.range) || 0.9);
+
     // в радиусе — бьём
-    if (u.target && distToBuilding(u.x, u.y, u.target) <= d.range) {
+    if (u.target && distToBuilding(u.x, u.y, u.target) <= range) {
       u.path = null;
       if (u.cd <= 0) {
         u.cd = 1;
         u.atk = 0.18;
-        if (d.splash) bombBuildings(u.target, dmg, d.splash);
-        else {
-          const bonus = u.target.type === 'wall' ? (d.wallBonus || 1) : 1;
-          damageBuilding(u.target, dmg * bonus);
-        }
+        attackBuilding(u, u.target, dmg);
       }
       return;
     }
@@ -644,20 +1285,8 @@ CC.Battle = (function () {
 
     // Летающие идут напрямую к цели: A* и энергобарьеры им не нужны.
     if (d.fly) {
-      const tx = u.target.x + u.target.w / 2;
-      const ty = u.target.y + u.target.h / 2;
-      const dx = tx - u.x;
-      const dy = ty - u.y;
-      const len = Math.hypot(dx, dy);
-      const mv = d.speed * dt;
-
-      if (len <= mv || len < 0.001) {
-        u.x = tx;
-        u.y = ty;
-      } else {
-        u.x += dx / len * mv;
-        u.y += dy / len * mv;
-      }
+      moveToward(u, u.target.x + u.target.w / 2,
+        u.target.y + u.target.h / 2, dt);
       return;
     }
 
@@ -670,14 +1299,8 @@ CC.Battle = (function () {
       }
       if (u.path.length === 0) {
         // уже на месте, но не в радиусе — подойдём поближе напрямую
-        const tx = u.target.x + u.target.w / 2;
-        const ty = u.target.y + u.target.h / 2;
-        const dx = tx - u.x;
-        const dy = ty - u.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const mv = d.speed * dt;
-        u.x += dx / len * mv;
-        u.y += dy / len * mv;
+        moveToward(u, u.target.x + u.target.w / 2,
+          u.target.y + u.target.h / 2, dt);
         return;
       }
     }
@@ -687,7 +1310,7 @@ CC.Battle = (function () {
 
     if (oi >= 0) {
       const blocker = S.buildings[oi];
-      if (blocker && !blocker.dead) {
+      if (blocker && !blocker.dead && !canPassWalls(u)) {
         u.target = blocker;
         u.path = null;
         return;
@@ -699,7 +1322,7 @@ CC.Battle = (function () {
     const dx = tx - u.x;
     const dy = ty - u.y;
     const len = Math.hypot(dx, dy);
-    const mv = d.speed * dt;
+    const mv = unitSpeed(u) * dt;
 
     if (len <= mv || len < 0.001) {
       u.x = tx;
@@ -723,7 +1346,9 @@ CC.Battle = (function () {
     for (let i = 0; i < S.units.length; i++) {
       const u = S.units[i];
       if (u.hp <= 0) continue;
+      if ((u.invisibleUntil || 0) > S.time) continue;
       if (b.def.onlyGround && u.def.fly) continue;
+      if (b.def.airOnly && !u.def.fly) continue;
       const d = Math.hypot(u.x - cx, u.y - cy);
       if (d > b.def.range) continue;
       if (d < bd) { bd = d; best = u; }
@@ -757,16 +1382,51 @@ CC.Battle = (function () {
     }
   }
 
+  function tornadoPull(trap, cx, cy, step) {
+    const r = (trap.radius || 2) * 1.6;
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (u.hp <= 0) continue;
+      const dx = cx - u.x;
+      const dy = cy - u.y;
+      const d = Math.hypot(dx, dy);
+      if (d > r || d < 0.001) continue;
+      const pull = Math.min(d, 2.2 * step);
+      u.x += dx / d * pull;
+      u.y += dy / d * pull;
+      u.path = null;
+      if (d <= (trap.radius || 2) && !heroShielded(u)) {
+        u.hp -= (trap.dmg || 0) * step;
+      }
+    }
+    trap.fieldTick = (trap.fieldTick || 0) + step;
+    if (trap.fieldTick >= 0.5) {
+      trap.fieldTick = 0;
+      S.fx.push({ x: cx, y: cy, t: 0, dur: 0.45,
+        kind: 'trapBoom', size: trap.radius || 2 });
+    }
+  }
+
   // Ловушки. Срабатывают один раз, когда вражеский юнит входит в радиус.
   // В процент и цели не входят; после срабатывания armed=false.
-  function updateTraps() {
+  // Торнадо — исключение: после взведения ещё 5 секунд тянет отряд.
+  function updateTraps(dt) {
+    const step = dt || 0;
+
     for (let t = 0; t < S.traps.length; t++) {
       const trap = S.traps[t];
-      if (!trap.armed) continue;
-
       const cx = trap.x + 0.5;
       const cy = trap.y + 0.5;
       const kind = trap.def.trapKind || 'ground';
+
+      // Активное торнадо: затягивает и наносит урон по таблице.
+      if (trap.type === 'tornado' && trap.triggered &&
+          trap.activeUntil > S.time) {
+        tornadoPull(trap, cx, cy, step);
+        continue;
+      }
+
+      if (!trap.armed) continue;
 
       if (kind === 'spring') {
         // Пружина поднимает только лёгких наземных: суммарный вес до 4,
@@ -802,16 +1462,59 @@ CC.Battle = (function () {
         continue;
       }
 
+      if (kind === 'skeleton') {
+        // Ловушка-дрон: выпускает скелетов, которые сразу вступают в бой.
+        let hit = false;
+        for (let i = 0; i < S.units.length; i++) {
+          const u = S.units[i];
+          if (u.hp <= 0) continue;
+          if (Math.hypot(u.x - cx, u.y - cy) > trap.radius) continue;
+          hit = true;
+          break;
+        }
+        if (!hit) continue;
+        trap.armed = false;
+        trap.triggered = true;
+        trap.revealed = true;
+        spawnSummon({ x: cx, y: cy, type: 'skeleton' }, 'barb',
+          trap.spawn || trap.capacity || 2, 0.5);
+        S.fx.push({ x: cx, y: cy, t: 0, dur: 0.5, kind: 'poof', size: 1 });
+        continue;
+      }
+
+      if (kind === 'tornado') {
+        let hit = false;
+        for (let i = 0; i < S.units.length; i++) {
+          const u = S.units[i];
+          if (u.hp <= 0) continue;
+          if (Math.hypot(u.x - cx, u.y - cy) > trap.radius) continue;
+          hit = true;
+          break;
+        }
+        if (!hit) continue;
+        trap.armed = false;
+        trap.triggered = true;
+        trap.revealed = true;
+        trap.activeUntil = S.time + 5;
+        trap.fieldTick = 0;
+        tornadoPull(trap, cx, cy, step);
+        S.fx.push({ x: cx, y: cy, t: 0, dur: 0.6, kind: 'trapBoom', size: trap.radius });
+        continue;
+      }
+
       // Мины: сначала ищем подходящую цель в радиусе взведения.
       let hit = false;
+      let nearest = null;
+      let nd = Infinity;
       for (let i = 0; i < S.units.length; i++) {
         const u = S.units[i];
         if (u.hp <= 0) continue;
         if (kind === 'ground' && u.def.fly) continue;
         if (kind === 'air' && !u.def.fly) continue;
-        if (Math.hypot(u.x - cx, u.y - cy) > trap.radius) continue;
+        const d = Math.hypot(u.x - cx, u.y - cy);
+        if (d > trap.radius) continue;
         hit = true;
-        break;
+        if (d < nd) { nd = d; nearest = u; }
       }
       if (!hit) continue;
 
@@ -819,17 +1522,126 @@ CC.Battle = (function () {
       trap.triggered = true;
       trap.revealed = true;
 
+      const dmg = trap.dmg || trap.def.dmg || 0;
+
+      // Ракетная мина бьёт одну воздушную цель без площади.
+      if (trap.type === 'seekingair' && nearest) {
+        if (!heroShielded(nearest)) nearest.hp -= dmg;
+        S.fx.push({ x: nearest.x, y: nearest.y, t: 0, dur: 0.45,
+          kind: 'trapBoom', size: 0.8 });
+        continue;
+      }
+
       // Урон по площади: mine бьёт только землю, airmine — только воздух.
       // Базовый splashDamage умеет фильтр «только земля», для воздуха
       // передаём отдельный флаг.
-      const dmg = trap.dmg || trap.def.dmg || 0;
       splashDamage(cx, cy, dmg, trap.splash || 0, kind === 'ground', kind === 'air');
       S.fx.push({ x: cx, y: cy, t: 0, dur: 0.5, kind: 'trapBoom', size: trap.splash || 1 });
     }
   }
 
+  // Выбор целей обороны. airOnly (зенитка) — строго только воздух:
+  // наземные юниты для неё не существуют, даже если воздуха в радиусе нет.
+  function defenseTargets(b, cx, cy, maxN) {
+    const out = [];
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (u.hp <= 0) continue;
+      if ((u.invisibleUntil || 0) > S.time) continue;
+      // Турели и гаубицы по воздуху не стреляют.
+      if (b.def.onlyGround && u.def.fly) continue;
+      if (b.def.airOnly && !u.def.fly) continue;
+      const d = Math.hypot(u.x - cx, u.y - cy);
+      if (d > b.def.range) continue;
+      if (b.def.minRange && d < b.def.minRange) continue;
+      out.push({ u: u, d: d });
+    }
+    out.sort(function (a, c) { return a.d - c.d; });
+    return out.slice(0, Math.max(1, maxN || 1));
+  }
+
+  function pushShot(b, cx, cy, target, dmg, splash, dur) {
+    S.shots.push({
+      x1: cx, y1: cy, x2: target.x, y2: target.y,
+      t: 0, dur: dur || (splash ? 0.6 : 0.14), kind: b.type,
+      dmg: dmg, splash: splash || 0,
+      onlyGround: !!b.def.onlyGround
+    });
+  }
+
+  function hitUnit(u, dmg) {
+    if (!u || u.hp <= 0) return;
+    if (!isFinite(dmg) || dmg <= 0) return;
+    if (heroShielded(u)) return;
+    u.hp -= dmg;
+    if (u.hp <= 0) {
+      S.fx.push({ x: u.x, y: u.y, t: 0, dur: 0.4, kind: 'poof' });
+    }
+  }
+
+  // Вихревой генератор: без урона отталкивает воздух на 1.5 тайла.
+  function updateSweeper(b, dt) {
+    if (b.cd > 0) b.cd -= dt * (((b.slowUntil || 0) > S.time) ? 0.5 : 1);
+    if (b.cd > 0) return;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const targets = defenseTargets(b, cx, cy, 99);
+    let pushed = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const u = targets[i].u;
+      if (!u.def.fly) continue;
+      const dx = u.x - cx;
+      const dy = u.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      u.x = clamp(u.x + dx / len * 1.5, 0, G - 0.001);
+      u.y = clamp(u.y + dy / len * 1.5, 0, G - 0.001);
+      u.path = null;
+      pushed++;
+    }
+    if (!pushed) return;
+    b.cd = 5;
+    b.aim = Math.atan2(targets[0].u.y - cy, targets[0].u.x - cx);
+    S.fx.push({ x: cx, y: cy, t: 0, dur: 0.5, kind: 'shot', size: 2 });
+    if (!S.silent && CC.Sound) CC.Sound.play('mortarShot');
+  }
+
+  // Генератор поля: раз в 6 секунд криополе (заморозка 1.5 с) или токсин
+  // (1% HP/с на 4 секунды). Режим чередуется.
+  function updateSpellTower(b, dt) {
+    if (b.cd > 0) b.cd -= dt * (((b.slowUntil || 0) > S.time) ? 0.5 : 1);
+    if (b.cd > 0) return;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const targets = defenseTargets(b, cx, cy, 1);
+    if (!targets.length) return;
+    b.cd = 6;
+    const t = targets[0].u;
+    const r = 2.5;
+    const mode = b.fieldMode % 2;
+    b.fieldMode++;
+    b.fieldUntil = S.time + (mode === 0 ? 1.5 : 4);
+    b.aim = Math.atan2(t.y - cy, t.x - cx);
+
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (u.hp <= 0) continue;
+      if (Math.hypot(u.x - t.x, u.y - t.y) > r) continue;
+      if (mode === 0) u.freezeUntil = Math.max(u.freezeUntil || 0, S.time + 1.5);
+      else u.poisonUntil = Math.max(u.poisonUntil || 0, S.time + 4);
+    }
+    S.fx.push({ x: t.x, y: t.y, t: 0, dur: 0.6, kind: 'reveal', size: r });
+  }
+
   function updateDefense(b, dt) {
     if (b.dead || !b.def.range) return;
+
+    // Заморозка заклинанием/криополем: оборона не стреляет.
+    if ((b.freezeUntil || 0) > S.time) return;
+    // Обрастание: оборона в поле не стреляет 6 секунд.
+    if ((b.overgrowthUntil || 0) > S.time) return;
+
+    // Оружие центра спит, пока ратуша не получила урон.
+    if (b.def.thweapon && b.type === 'townhall' && !b.thActive) return;
 
     // ambush: пока не раскрылась — не стреляет и не выбирает цель.
     if (b.hidden && !b.revealed) {
@@ -853,27 +1665,25 @@ CC.Battle = (function () {
       return;
     }
 
-    if (b.cd > 0) b.cd -= dt;
+    if (b.def.special === 'sweeper') {
+      updateSweeper(b, dt);
+      return;
+    }
+    if (b.def.special === 'spelltower') {
+      updateSpellTower(b, dt);
+      return;
+    }
+
+    if (b.cd > 0) b.cd -= dt * (((b.slowUntil || 0) > S.time) ? 0.5 : 1);
     if (b.cd > 0) return;
 
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
-
-    let best = null;
-    let bd = Infinity;
-
-    for (let i = 0; i < S.units.length; i++) {
-      const u = S.units[i];
-      if (u.hp <= 0) continue;
-      // Турели и гаубицы по воздуху не стреляют.
-      if (b.def.onlyGround && u.def.fly) continue;
-      const d = Math.hypot(u.x - cx, u.y - cy);
-      if (d > b.def.range) continue;
-      if (b.def.minRange && d < b.def.minRange) continue;
-      if (d < bd) { bd = d; best = u; }
-    }
-
-    if (!best) return;
+    const special = b.def.special || '';
+    const maxTargets = special === 'multiarcher' ? 2 : 1;
+    const targets = defenseTargets(b, cx, cy, maxTargets);
+    if (!targets.length) return;
+    const best = targets[0].u;
 
     b.cd = 1 / (b.def.rate || 1);
     b.aim = Math.atan2(best.y - cy, best.x - cx);
@@ -884,27 +1694,93 @@ CC.Battle = (function () {
       else CC.Sound.play('archerShot');
     }
 
-    // Гаубица не бьёт сразу: снаряд летит в точку и накрывает площадь.
-    if (b.def.splash) {
+    // Залпы «Молота»: три снаряда по площади с интервалом 0.3 с.
+    if (special === 'eagle') {
+      for (let i = 0; i < 3; i++) {
+        const off = (i - 1) * 0.55;
+        S.shots.push({
+          x1: cx, y1: cy,
+          x2: clamp(best.x + off, 0, G), y2: clamp(best.y - off, 0, G),
+          t: -i * 0.3, dur: 0.6, kind: 'eagle',
+          dmg: b.def.dmg, splash: b.def.splash || 1.5,
+          onlyGround: !!b.def.onlyGround
+        });
+      }
+      return;
+    }
+
+    // Картечь: три снаряда веером.
+    if (special === 'scattershot') {
+      for (let i = 0; i < 3; i++) {
+        const off = (i - 1) * 0.7;
+        S.shots.push({
+          x1: cx, y1: cy, x2: best.x + off, y2: best.y - off,
+          t: 0, dur: 0.55, kind: 'scattershot',
+          dmg: b.def.dmg, splash: b.def.splash || 1.2,
+          onlyGround: !!b.def.onlyGround
+        });
+      }
+      return;
+    }
+
+    // Спаренная вышка: две цели одновременно.
+    if (special === 'multiarcher') {
+      for (let i = 0; i < targets.length; i++) {
+        hitUnit(targets[i].u, b.def.dmg);
+        S.shots.push({
+          x1: cx, y1: cy, x2: targets[i].u.x, y2: targets[i].u.y,
+          t: 0, dur: 0.14, kind: b.type
+        });
+      }
+      return;
+    }
+
+    // Рикошет: основной удар и два прыжка по -30%.
+    if (special === 'ricochet') {
+      hitUnit(best, b.def.dmg);
+      const jumps = [];
+      for (let i = 0; i < S.units.length; i++) {
+        const u = S.units[i];
+        if (u === best || u.hp <= 0) continue;
+        if (b.def.onlyGround && u.def.fly) continue;
+        const d = Math.hypot(u.x - best.x, u.y - best.y);
+        if (d <= 3) jumps.push({ u: u, d: d });
+      }
+      jumps.sort(function (a, c) { return a.d - c.d; });
+      let dmg = b.def.dmg * 0.7;
+      for (let i = 0; i < Math.min(2, jumps.length); i++) {
+        hitUnit(jumps[i].u, dmg);
+        dmg *= 0.7;
+      }
       S.shots.push({
         x1: cx, y1: cy, x2: best.x, y2: best.y,
-        t: 0, dur: 0.6, kind: b.type,
-        dmg: b.def.dmg, splash: b.def.splash,
-        onlyGround: !!b.def.onlyGround
+        t: 0, dur: 0.14, kind: b.type
       });
       return;
     }
 
-    if (!heroShielded(best)) best.hp -= b.def.dmg;
-
-    S.shots.push({
-      x1: cx, y1: cy, x2: best.x, y2: best.y,
-      t: 0, dur: 0.14, kind: b.type
-    });
-
-    if (best.hp <= 0) {
-      S.fx.push({ x: best.x, y: best.y, t: 0, dur: 0.4, kind: 'poof' });
+    // Обелиск: мощный одиночный удар и замедление на 3 секунды.
+    if (special === 'monolith') {
+      hitUnit(best, b.def.dmg);
+      best.slowUntil = Math.max(best.slowUntil || 0, S.time + 3);
+      pushShot(b, cx, cy, best, 0, 0, 0.18);
+      return;
     }
+
+    // Многоствольная башня: по земле два ствола, по воздуху один.
+    let power = b.def.dmg || 0;
+    if (special === 'multigear' && !best.def.fly) power *= 2;
+    // Рельсотрон в воздушном режиме слабее на 40%.
+    if (special === 'xbow' && best.def.fly) power *= 0.6;
+
+    // Гаубица/плазмомёт/картечь не бьют сразу: снаряд летит в точку.
+    if (b.def.splash) {
+      pushShot(b, cx, cy, best, power, b.def.splash, 0.6);
+      return;
+    }
+
+    hitUnit(best, power);
+    pushShot(b, cx, cy, best, 0, 0, 0.14);
   }
 
   // Урон по площади от снаряда гаубицы/мага/мины.
@@ -932,9 +1808,9 @@ CC.Battle = (function () {
 
   // Добыча уровня: рукотворный пул, а не общий процент от всех построек.
   function levelLoot() {
-    if (!LEVELS.length) return { gold: 0, elixir: 0 };
+    if (!LEVELS.length) return { gold: 0, elixir: 0, dark: 0 };
     const lvl = LEVELS[clamp(S.level, 0, LEVELS.length - 1)];
-    return (lvl && lvl.loot) || { gold: 0, elixir: 0 };
+    return (lvl && lvl.loot) || { gold: 0, elixir: 0, dark: 0 };
   }
 
   // Остаток невысаженных войск возвращается в деревню, высаженные — потеряны.
@@ -977,10 +1853,15 @@ CC.Battle = (function () {
     }
 
     const pool = S.lootPool || levelLoot();
-    const lootPool = { gold: pool.gold || 0, elixir: pool.elixir || 0 };
+    const lootPool = {
+      gold: pool.gold || 0,
+      elixir: pool.elixir || 0,
+      dark: pool.dark || 0
+    };
     const lootTaken = {
       gold: Math.max(0, Math.floor(S.lootTaken.gold || 0)),
-      elixir: Math.max(0, Math.floor(S.lootTaken.elixir || 0))
+      elixir: Math.max(0, Math.floor(S.lootTaken.elixir || 0)),
+      dark: Math.max(0, Math.floor(S.lootTaken.dark || 0))
     };
 
     const replay = !!(S.campaign && CC.Game && CC.Game.clearedLevels &&
@@ -988,22 +1869,26 @@ CC.Battle = (function () {
     const firstClear = !!S.campaign && !replay;
     S.replay = replay;
 
-    const lootOffered = { gold: lootTaken.gold, elixir: lootTaken.elixir };
-    let loot = { gold: lootTaken.gold, elixir: lootTaken.elixir };
-    let lootLost = { gold: 0, elixir: 0 };
+    const lootOffered = {
+      gold: lootTaken.gold,
+      elixir: lootTaken.elixir,
+      dark: lootTaken.dark
+    };
+    let loot = { gold: lootTaken.gold, elixir: lootTaken.elixir, dark: lootTaken.dark };
+    let lootLost = { gold: 0, elixir: 0, dark: 0 };
     let gemsWon = 0;
     let allCleared = false;
 
     if (S.viewReplay || S.kind === 'replay') {
       // Повтор — только просмотр: ни добычи, ни прогресса, ни армии.
-      loot = { gold: 0, elixir: 0 };
+      loot = { gold: 0, elixir: 0, dark: 0 };
     } else if (S.campaign && CC.Game) {
       // Разграбленные здания запоминаем навсегда: в следующий заход
       // именно они будут пустыми. Пустые с прошлого раза не дублируем.
       for (let i = 0; i < S.lootedBuildings.length; i++) {
         const e = S.lootedBuildings[i];
         if (e.empty) continue;
-        if ((e.gold || 0) + (e.elixir || 0) <= 0) continue;
+        if ((e.gold || 0) + (e.elixir || 0) + (e.dark || 0) <= 0) continue;
         if (CC.Game.markLooted) CC.Game.markLooted(S.level, e.key);
       }
 
@@ -1015,9 +1900,18 @@ CC.Battle = (function () {
 
       // Добыча зачисляется даже при поражении: склад уже снесён.
       const added = CC.Game.addLoot(lootOffered);
-      loot = { gold: added.gold, elixir: added.elixir };
-      lootLost = added.lost || { gold: 0, elixir: 0 };
+      loot = {
+        gold: added.gold,
+        elixir: added.elixir,
+        dark: added.dark || 0
+      };
+      lootLost = {
+        gold: (added.lost && added.lost.gold) || 0,
+        elixir: (added.lost && added.lost.elixir) || 0,
+        dark: (added.lost && added.lost.dark) || 0
+      };
       CC.Game.addStat('lootGold', loot.gold);
+      CC.Game.addStat('lootDark', loot.dark);
       if (win) {
         CC.Game.addStat('battleWins', 1);
         CC.Game.addXp(20 + Math.min(30, Math.floor(S.percent * 0.3)));
@@ -1048,9 +1942,9 @@ CC.Battle = (function () {
       lootedBuildings: S.lootedBuildings.slice(),
       emptyLoot: emptyLoot,
       // Совместимость со старыми окнами: бонусов и «недобора» больше нет.
-      lootCut: { gold: 0, elixir: 0 },
-      lootBonus: { gold: 0, elixir: 0 },
-      lootShare: (lootTaken.gold + lootTaken.elixir) > 0 ? 1 : 0,
+      lootCut: { gold: 0, elixir: 0, dark: 0 },
+      lootBonus: { gold: 0, elixir: 0, dark: 0 },
+      lootShare: (lootTaken.gold + lootTaken.elixir + lootTaken.dark) > 0 ? 1 : 0,
       gems: gemsWon,
       level: S.level,
       replay: !!S.replay,
@@ -1198,13 +2092,801 @@ CC.Battle = (function () {
     };
   }
 
+  /* ---------- заклинания ---------- */
+
+  function spellLevelFor(id, outside) {
+    if (!CC.Game || !CC.Game.spellLevel) return 1;
+    if (!outside && !playerLevelsActive()) return 1;
+    const lv = Math.floor(Number(CC.Game.spellLevel(id)));
+    return lv >= 1 ? lv : 1;
+  }
+
+  function spellDamageBuildings(x, y, dmg, radius) {
+    const r = radius || 3;
+    let hit = 0;
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (b.dead) continue;
+      if (b.hidden && !b.revealed) continue;
+      const nx = Math.max(b.x, Math.min(x, b.x + b.w));
+      const ny = Math.max(b.y, Math.min(y, b.y + b.h));
+      if (Math.hypot(nx - x, ny - y) > r) continue;
+      damageBuilding(b, dmg);
+      hit++;
+    }
+    return hit;
+  }
+
+  function unitsInRadius(x, y, r) {
+    const out = [];
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (u.hp <= 0) continue;
+      if (Math.hypot(u.x - x, u.y - y) > r) continue;
+      out.push(u);
+    }
+    return out;
+  }
+
+  function buildingsInRadius(x, y, r) {
+    const out = [];
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (b.dead) continue;
+      if (b.hidden && !b.revealed) continue;
+      const nx = Math.max(b.x, Math.min(x, b.x + b.w));
+      const ny = Math.max(b.y, Math.min(y, b.y + b.h));
+      if (Math.hypot(nx - x, ny - y) > r) continue;
+      out.push(b);
+    }
+    return out;
+  }
+
+  // Один общий конструктор героя для revive и будущих подкреплений.
+  function makeHeroUnit(kind, level, x, y, hpRatio) {
+    const heroDef = CC.heroDef ? CC.heroDef(kind) : { id: kind || 'barb', base: 'barb' };
+    const baseDef = troopDef(heroDef.base || 'barb', 1);
+    const lv = Math.max(1, Math.floor(Number(level) || 1));
+    const stats = (CC.Game && CC.Game.heroStatsFor)
+      ? CC.Game.heroStatsFor(heroDef.id, lv)
+      : (CC.heroStatsFor ? CC.heroStatsFor(heroDef.id, lv) : null);
+    const hp = (stats && stats.hp) || baseDef.hp;
+    const dmg = (stats && stats.dmg) || baseDef.dmg;
+    const def = Object.assign({}, baseDef, {
+      name: heroDef.name || baseDef.name,
+      hero: true,
+      heroKind: heroDef.id,
+      hp: hp,
+      dmg: dmg,
+      speed: (stats && stats.speed) || baseDef.speed,
+      range: (stats && stats.range) || baseDef.range,
+      target: (stats && stats.target) || baseDef.target,
+      fly: !!(stats && stats.fly),
+      color: heroDef.color || baseDef.color
+    });
+    const u = {
+      id: S.uid++,
+      type: 'hero',
+      def: def,
+      x: clamp(x, 0, G - 0.001),
+      y: clamp(y, 0, G - 0.001),
+      hp: Math.max(1, Math.round(hp * (hpRatio === undefined ? 0.5 : hpRatio))),
+      maxHp: hp,
+      dmg: dmg,
+      level: lv,
+      cd: 0,
+      atk: 0,
+      target: null,
+      path: null,
+      isHero: true,
+      heroKind: heroDef.id,
+      base: heroDef.base,
+      shieldUntil: 0,
+      abilityUsed: false,
+      reviveReady: false,
+      spawnCd: 0,
+      buffUntil: 0,
+      rageUntil: 0,
+      hasteUntil: 0,
+      totemUntil: 0,
+      heroicUntil: 0,
+      angryUntil: 0,
+      invisibleUntil: 0,
+      slowUntil: 0,
+      freezeUntil: 0,
+      poisonUntil: 0,
+      jumpUntil: 0
+    };
+    S.units.push(u);
+    S.hero = u;
+    S.heroDeployed = true;
+    return u;
+  }
+
+  // Клонирование: до 10 места войск на 20 секунд. Герои/питомцы/осада не
+  // копируются, копии не дают добычу и не призывают детей при смерти.
+  function cloneUnitsAt(x, y, radius, maxSpace, seconds) {
+    const max = maxSpace || 10;
+    let used = 0;
+    let made = 0;
+    const srcs = unitsInRadius(x, y, radius).filter(function (u) {
+      return !u.isHero && !u.isPet && !u.isSiege && !u.summoned && !u.isClone;
+    });
+    for (let i = 0; i < srcs.length && used < max; i++) {
+      const src = srcs[i];
+      const sp = Math.max(1, Number(src.def.space) || 1);
+      if (used + sp > max) continue;
+      used += sp;
+      const clone = {
+        id: S.uid++,
+        type: src.type,
+        def: Object.assign({}, src.def),
+        x: clamp(src.x + (Math.random() - 0.5) * 0.8, 0, G - 0.001),
+        y: clamp(src.y + (Math.random() - 0.5) * 0.8, 0, G - 0.001),
+        hp: src.maxHp,
+        maxHp: src.maxHp,
+        dmg: src.dmg,
+        level: src.level,
+        cd: 0,
+        atk: 0,
+        target: null,
+        path: null,
+        summoned: true,
+        isClone: true,
+        expireAt: S.time + (seconds || 20),
+        spawnCd: 0,
+        buffUntil: 0,
+        rageUntil: 0,
+        hasteUntil: 0,
+        totemUntil: 0,
+        heroicUntil: 0,
+        angryUntil: 0,
+        invisibleUntil: 0,
+        slowUntil: 0,
+        freezeUntil: 0,
+        poisonUntil: 0,
+        jumpUntil: 0
+      };
+      S.units.push(clone);
+      made++;
+    }
+    return made;
+  }
+
+  // Эвакуация: возвращает живые обычные войска в руку. Герой, питомцы,
+  // осада, клоны и призванные юниты остаются в бою.
+  function recallUnitsAt(x, y, radius) {
+    let n = 0;
+    for (let i = S.units.length - 1; i >= 0; i--) {
+      const u = S.units[i];
+      if (u.hp <= 0) continue;
+      if (u.isHero || u.isPet || u.isSiege || u.summoned || u.isClone) continue;
+      if (Math.hypot(u.x - x, u.y - y) > radius) continue;
+      if (!S.army[u.type]) S.army[u.type] = 0;
+      S.army[u.type]++;
+      S.units.splice(i, 1);
+      n++;
+    }
+    return n;
+  }
+
+  // Реанимация: последний павший герой встаёт с 50% HP. Если cleanup ещё
+  // не успел убрать героя (hp<=0 прямо в массиве), забираем его оттуда.
+  function reviveFallenAt(x, y) {
+    let f = null;
+    if (S.fallenHeroes && S.fallenHeroes.length) {
+      f = S.fallenHeroes.pop();
+    } else {
+      for (let i = 0; i < S.units.length; i++) {
+        const u = S.units[i];
+        if (u.isHero && u.hp <= 0) {
+          f = { kind: u.heroKind || 'barb', level: u.level || 1, x: u.x, y: u.y };
+          S.units.splice(i, 1);
+          break;
+        }
+      }
+    }
+    if (!f) return null;
+    const u = makeHeroUnit(f.kind, f.level, x, y, 0.5);
+    S.fx.push({ x: x, y: y, t: 0, dur: 0.8, kind: 'spell', size: 1.5 });
+    return u;
+  }
+
+  function hasFallenHero() {
+    if (S.fallenHeroes && S.fallenHeroes.length) return true;
+    for (let i = 0; i < S.units.length; i++) {
+      if (S.units[i].isHero && S.units[i].hp <= 0) return true;
+    }
+    return false;
+  }
+
+  function poisonBuildings(list, seconds) {
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      b.poisonUntil = Math.max(b.poisonUntil || 0, S.time + (seconds || 8));
+      b.slowUntil = Math.max(b.slowUntil || 0, S.time + (seconds || 8));
+      b.poisonDps = Math.max(1, b.maxHp * 0.05);
+      b.poisonTick = 0;
+    }
+  }
+
+  function freezeBuildings(list, seconds) {
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      b.freezeUntil = Math.max(b.freezeUntil || 0, S.time + (seconds || 4));
+    }
+  }
+
+
+  // Высадка заклинания в точку. Реализованы все 19 эффектов из
+  // COC-BATTLE-SPEC §6. Экзотика (clone/revive/invisibility) упрощена,
+  // но работает в текущем движке.
+  function deploySpell(id, gx, gy) {
+    if (!S) return { error: 'Бой не начат' };
+    if (S.over) return { error: 'Бой окончен' };
+    if (S.viewReplay && !S.autoDeploy) return { error: 'Повтор без управления' };
+    if (!S.spells) S.spells = {};
+    if (!S.activeSpells) S.activeSpells = [];
+    if (!S.spellLog) S.spellLog = [];
+    if (!S.fallenHeroes) S.fallenHeroes = [];
+    const type = String(id || '');
+    if (!SPELLS[type]) return { error: 'Неизвестное заклинание' };
+    if (!SPELL_READY[type]) return { error: 'Нет данных заклинания', id: type };
+    const left = Math.floor(Number(S.spells[type]) || 0);
+    if (left <= 0) return { error: 'Заклинание закончилось', id: type };
+
+    const x = Number(gx);
+    const y = Number(gy);
+    if (!isFinite(x) || !isFinite(y) || x < 0 || y < 0 || x >= G || y >= G) {
+      return { error: 'За пределами поля' };
+    }
+
+    const lv = spellLevelFor(type);
+    const st = CC.spellStats ? CC.spellStats(type, lv) : null;
+    const radius = (st && st.radius) || 3;
+    const dmg = (st && st.dmg) || 0;
+    const dur = (st && st.dur) || 8;
+    // Лечение в таблице CoC не оцифровано: базовая скорость 40%/с растёт
+    // на 2% за уровень заклинания, чтобы прокачка ощущалась в бою.
+    const healRate = Math.min(0.65, 0.4 + (lv - 1) * 0.02);
+    const healBurst = Math.min(0.2, 0.1 + (lv - 1) * 0.01);
+
+    // Проверки «нечего делать» до списания: не тратим заряд впустую.
+    if (type === 'revive' && !hasFallenHero()) {
+      return { error: 'Нет павшего героя', id: type };
+    }
+    if (type === 'clone') {
+      const has = unitsInRadius(x, y, radius).some(function (u) {
+        return !u.isHero && !u.isPet && !u.isSiege && !u.summoned;
+      });
+      if (!has) return { error: 'Нет войск для клонирования', id: type };
+    }
+    if (type === 'recall') {
+      const has = unitsInRadius(x, y, radius).some(function (u) {
+        return !u.isHero && !u.isPet && !u.isSiege && !u.summoned;
+      });
+      if (!has) return { error: 'Нет войск для эвакуации', id: type };
+    }
+
+    S.spells[type] = left - 1;
+    const entry = {
+      id: type,
+      type: type,
+      x: x,
+      y: y,
+      radius: radius,
+      level: lv,
+      until: S.time + dur
+    };
+    let result = { ok: true, id: type, x: x, y: y, radius: radius };
+
+    if (type === 'lightning') {
+      spellDamageBuildings(x, y, dmg || 150, radius);
+      splashDamage(x, y, (dmg || 150) * 0.5, radius, false, false);
+      entry.until = S.time + 0.4;
+    } else if (type === 'healing') {
+      entry.kind = 'healing';
+      entry.rate = healRate;
+      entry.until = S.time + dur;
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].hp = Math.min(list[i].maxHp, list[i].hp + list[i].maxHp * healBurst);
+      }
+    } else if (type === 'rage') {
+      entry.kind = 'rage';
+      entry.until = S.time + dur;
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].rageUntil = Math.max(list[i].rageUntil || 0, entry.until);
+        list[i].hasteUntil = Math.max(list[i].hasteUntil || 0, entry.until);
+      }
+    } else if (type === 'jump') {
+      entry.kind = 'jump';
+      entry.until = S.time + Math.max(10, dur);
+      S.jumpUntil = Math.max(S.jumpUntil || 0, entry.until);
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].jumpUntil = Math.max(list[i].jumpUntil || 0, entry.until);
+        list[i].path = null;
+      }
+      rebuild();
+    } else if (type === 'freeze') {
+      const freezeDur = (st && st.dur) || 4;
+      entry.kind = 'freeze';
+      entry.until = S.time + freezeDur;
+      freezeBuildings(buildingsInRadius(x, y, radius), freezeDur);
+    } else if (type === 'clone') {
+      const cloneDur = Math.max(20, dur);
+      const n = cloneUnitsAt(x, y, radius, 10, cloneDur);
+      entry.kind = 'clone';
+      entry.until = S.time + cloneDur;
+      entry.count = n;
+      result.count = n;
+    } else if (type === 'invisibility') {
+      entry.kind = 'invisibility';
+      entry.until = S.time + dur;
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].invisibleUntil = Math.max(list[i].invisibleUntil || 0, entry.until);
+      }
+      result.count = list.length;
+    } else if (type === 'recall') {
+      const n = recallUnitsAt(x, y, radius);
+      entry.kind = 'recall';
+      entry.until = S.time + 0.4;
+      result.count = n;
+    } else if (type === 'revive') {
+      const hero = reviveFallenAt(x, y);
+      entry.kind = 'revive';
+      entry.until = S.time + 0.5;
+      result.hero = hero ? hero.heroKind : null;
+    } else if (type === 'totem') {
+      entry.kind = 'totem';
+      entry.until = S.time + dur;
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].totemUntil = Math.max(list[i].totemUntil || 0, entry.until);
+      }
+    } else if (type === 'heroic') {
+      entry.kind = 'heroic';
+      entry.until = S.time + dur;
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        if (!list[i].isHero) continue;
+        list[i].heroicUntil = Math.max(list[i].heroicUntil || 0, entry.until);
+      }
+    } else if (type === 'angry') {
+      entry.kind = 'angry';
+      entry.until = S.time + dur;
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].angryUntil = Math.max(list[i].angryUntil || 0, entry.until);
+        list[i].hp = Math.max(1, list[i].hp * 0.7);
+      }
+    } else if (type === 'poison') {
+      entry.kind = 'poison';
+      entry.until = S.time + dur;
+      poisonBuildings(buildingsInRadius(x, y, radius), dur);
+    } else if (type === 'earthquake') {
+      entry.kind = 'earthquake';
+      entry.until = S.time + 0.5;
+      const list = buildingsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        const b = list[i];
+        const part = b.type === 'wall' ? 1 : 0.25;
+        damageBuilding(b, b.maxHp * part);
+      }
+    } else if (type === 'haste') {
+      entry.kind = 'haste';
+      entry.until = S.time + dur;
+      const list = unitsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].hasteUntil = Math.max(list[i].hasteUntil || 0, entry.until);
+      }
+    } else if (type === 'skeleton') {
+      entry.kind = 'skeleton';
+      entry.until = S.time + 0.5;
+      result.count = spawnSummon({ x: x, y: y, type: 'skeleton' }, 'barb', 8, 0.5);
+    } else if (type === 'bat') {
+      entry.kind = 'bat';
+      entry.until = S.time + 0.5;
+      result.count = spawnSummon({ x: x, y: y, type: 'bat' }, 'minion', 8, 0.35, true);
+    } else if (type === 'overgrowth') {
+      const growDur = (st && st.dur) || 6;
+      entry.kind = 'overgrowth';
+      entry.until = S.time + growDur;
+      const list = buildingsInRadius(x, y, radius);
+      for (let i = 0; i < list.length; i++) {
+        list[i].overgrowthUntil = Math.max(list[i].overgrowthUntil || 0, entry.until);
+      }
+    } else if (type === 'iceblock') {
+      let list = buildingsInRadius(x, y, radius);
+      if (!list.length) list = buildingsInRadius(x, y, radius * 2.5);
+      if (list.length) {
+        list.sort(function (a, b) {
+          const da = Math.hypot(a.x + a.w / 2 - x, a.y + a.h / 2 - y);
+          const db = Math.hypot(b.x + b.w / 2 - x, b.y + b.h / 2 - y);
+          return da - db;
+        });
+        freezeBuildings([list[0]], dur);
+        result.target = list[0].type;
+      }
+      entry.kind = 'iceblock';
+      entry.until = S.time + dur;
+    }
+
+    S.activeSpells.push(entry);
+    S.spellLog.push({
+      t: Math.round(S.time * 100) / 100,
+      type: type,
+      level: lv,
+      x: x,
+      y: y
+    });
+    S.fx.push({ x: x, y: y, t: 0, dur: 0.6, kind: 'spell', size: radius });
+    if (!S.silent && CC.Sound) CC.Sound.play('upgradeDone');
+    result.until = entry.until;
+    result.level = lv;
+    return result;
+  }
+
+  // Поля лечения/ярости/прыжка/тотема/героики живут во времени и
+  // обновляются каждый кадр; мгновенные эффекты уже применены при высадке.
+  function updateActiveSpells(dt) {
+    if (!S.activeSpells || !S.activeSpells.length) return;
+    for (let i = S.activeSpells.length - 1; i >= 0; i--) {
+      const s = S.activeSpells[i];
+      if (s.until <= S.time) { S.activeSpells.splice(i, 1); continue; }
+      if (s.kind === 'healing') {
+        for (let k = 0; k < S.units.length; k++) {
+          const u = S.units[k];
+          if (u.hp <= 0 || u.hp >= u.maxHp) continue;
+          if (Math.hypot(u.x - s.x, u.y - s.y) > s.radius) continue;
+          u.hp = Math.min(u.maxHp, u.hp + u.maxHp * (s.rate || 0.4) * dt);
+        }
+      } else if (s.kind === 'rage') {
+        for (let k = 0; k < S.units.length; k++) {
+          const u = S.units[k];
+          if (u.hp <= 0) continue;
+          if (Math.hypot(u.x - s.x, u.y - s.y) > s.radius) continue;
+          u.rageUntil = Math.max(u.rageUntil || 0, s.until);
+          u.hasteUntil = Math.max(u.hasteUntil || 0, s.until);
+        }
+      } else if (s.kind === 'jump') {
+        for (let k = 0; k < S.units.length; k++) {
+          const u = S.units[k];
+          if (u.hp <= 0) continue;
+          if (Math.hypot(u.x - s.x, u.y - s.y) > s.radius) continue;
+          u.jumpUntil = Math.max(u.jumpUntil || 0, s.until);
+        }
+      } else if (s.kind === 'totem') {
+        for (let k = 0; k < S.units.length; k++) {
+          const u = S.units[k];
+          if (u.hp <= 0) continue;
+          if (Math.hypot(u.x - s.x, u.y - s.y) > s.radius) continue;
+          u.totemUntil = Math.max(u.totemUntil || 0, s.until);
+        }
+      } else if (s.kind === 'heroic') {
+        for (let k = 0; k < S.units.length; k++) {
+          const u = S.units[k];
+          if (!u.isHero || u.hp <= 0) continue;
+          if (Math.hypot(u.x - s.x, u.y - s.y) > s.radius) continue;
+          u.heroicUntil = Math.max(u.heroicUntil || 0, s.until);
+        }
+      }
+    }
+  }
+
+  function selectSpell(id) {
+    if (!S) return { error: 'Бой не начат' };
+    if (!S.spells) S.spells = {};
+    const type = String(id || '');
+    if (!SPELLS[type]) return { error: 'Неизвестное заклинание' };
+    if (!(Number(S.spells[type]) > 0)) {
+      return { error: 'Заклинание закончилось', id: type };
+    }
+    S.selectedSpell = type;
+    return { ok: true, id: type };
+  }
+
+  // Списки для панели P3: имена, роли, остатки, выбранное.
+  function spellList() {
+    const out = [];
+    const th = (CC.Game && CC.Game.townhallLevel)
+      ? CC.Game.townhallLevel() : CC.MAX_TH;
+    Object.keys(SPELLS).forEach(function (id) {
+      const s = SPELLS[id];
+      out.push({
+        id: id,
+        name: s.name || id,
+        role: s.role || '',
+        level: spellLevelFor(id, !S),
+        left: S ? Math.floor(Number(S.spells && S.spells[id]) || 0) : 0,
+        selected: !!(S && S.selectedSpell === id),
+        ready: !!SPELL_READY[id],
+        unlocked: CC.spellMaxLevel ? CC.spellMaxLevel(id, th) > 0 : true
+      });
+    });
+    return out;
+  }
+
+  function petList() {
+    const out = [];
+    const petDeployed = (S && S.petDeployed) || {};
+    const assigned = (S && S.pets) || {};
+    const th = (CC.Game && CC.Game.townhallLevel)
+      ? CC.Game.townhallLevel() : CC.MAX_TH;
+    Object.keys(PETS).forEach(function (id) {
+      let heroKind = null;
+      for (const k in assigned) if (assigned[k] === id) heroKind = k;
+      const p = PETS[id];
+      out.push({
+        id: id,
+        name: p.name || id,
+        role: p.role || '',
+        fly: !!p.fly,
+        heal: !!p.heal,
+        level: petLevelFor(id, !S),
+        heroKind: heroKind,
+        deployed: !!petDeployed[id],
+        selected: !!(S && S.selectedPet === id),
+        unlocked: CC.petMaxLevel ? CC.petMaxLevel(id, th) > 0 : true
+      });
+    });
+    return out;
+  }
+
+  function siegeList() {
+    const out = [];
+    const current = S && (S.selectedSiege || (S.siege && S.siege[0]));
+    Object.keys(SIEGE).forEach(function (id) {
+      const s = SIEGE[id];
+      out.push({
+        id: id,
+        name: s.name || id,
+        role: s.role || '',
+        minTh: s.minTh || 0,
+        ready: !!SIEGE_READY[id],
+        selected: !!(current && current === id),
+        deployed: !!(current === id && S && S.siegeDeployed)
+      });
+    });
+    return out;
+  }
+
+  // Выбор питомца: selectPet(petId) или selectPet(heroKind, petId).
+  // Один питомец — один герой; повторное назначение переносит его.
+  function selectPet(a, b) {
+    if (!S) return { error: 'Бой не начат' };
+    let heroKind = null;
+    let petId = null;
+    if (b !== undefined && b !== null) {
+      heroKind = String(a || '');
+      petId = String(b || '');
+    } else {
+      petId = String(a || '');
+    }
+    if (!PETS[petId]) return { error: 'Неизвестный питомец' };
+    if (S.petDeployed && S.petDeployed[petId]) {
+      return { error: 'Питомец уже в бою', id: petId };
+    }
+    if (!S.pets) S.pets = {};
+    if (heroKind) {
+      const h = CC.heroDef ? CC.heroDef(heroKind) : null;
+      if (!h || h.id !== heroKind) return { error: 'Неизвестный герой' };
+    } else {
+      const list = CC.HEROES || [];
+      for (let i = 0; i < list.length; i++) {
+        if (!S.pets[list[i].id]) { heroKind = list[i].id; break; }
+      }
+      if (!heroKind) heroKind = (list[0] && list[0].id) || 'barb';
+    }
+    for (const k in S.pets) {
+      if (k !== heroKind && S.pets[k] === petId) delete S.pets[k];
+    }
+    S.pets[heroKind] = petId;
+    S.selectedPet = petId;
+    return { ok: true, heroKind: heroKind, id: petId };
+  }
+
+  // Выбор осадной машины: одна на бой. Пустой id очищает слот.
+  function selectSiege(id) {
+    if (!S) return { error: 'Бой не начат' };
+    const type = String(id || '');
+    if (!type) {
+      S.siege = [];
+      S.selectedSiege = null;
+      return { ok: true, id: null };
+    }
+    if (!SIEGE[type]) return { error: 'Неизвестная осадная машина' };
+    if (!SIEGE_READY[type]) return { error: 'Нет данных осадной машины', id: type };
+    if (S.siegeDeployed) return { error: 'Осада уже выехала', id: type };
+    S.siege = [type];
+    S.selectedSiege = type;
+    return { ok: true, id: type };
+  }
+
+  // Эффекты смерти: детёныши/осколки/щенки, криополе, метеорит.
+  function onUnitDeath(u) {
+    if (!u || u.summoned) return;
+    const d = u.def || {};
+    const x = u.x;
+    const y = u.y;
+
+    if (d.spawn) {
+      if (u.type === 'yeti') spawnSummon(u, 'barb', 2, 1.2);
+      else if (u.type === 'golem') spawnSummon(u, 'barb', 2, 2);
+      else if (u.type === 'lavahound') spawnSummon(u, 'minion', 6, 0.5, true);
+      else if (u.type === 'witch') spawnSummon(u, 'barb', 3, 0.45);
+      else if (u.type === 'furnace') spawnSummon(u, 'minion', 2, 0.35, true);
+      else if (u.type === 'ruinwitch') spawnSummon(u, 'barb', 3, 0.8);
+      else spawnSummon(u, 'barb', Math.min(6, d.spawn), 0.6);
+    }
+
+    // Взрыв при смерти: дрон-бомбардировщик и метеорит.
+    if (d.splash && (u.type === 'airship' || u.type === 'meteorgolem')) {
+      bombArea(x, y, (u.dmg || d.dmg || 0) * 0.5, d.splash);
+      S.fx.push({ x: x, y: y, t: 0, dur: 0.6, kind: 'boom', size: d.splash });
+    }
+
+    // Криоголем оставляет криополе: оборона рядом замирает на 2 с.
+    if (d.freeze) {
+      for (let i = 0; i < S.buildings.length; i++) {
+        const b = S.buildings[i];
+        if (b.dead) continue;
+        if (Math.hypot(b.x + b.w / 2 - x, b.y + b.h / 2 - y) > 2.5) continue;
+        b.freezeUntil = Math.max(b.freezeUntil || 0, S.time + 2);
+      }
+    }
+
+    // Боевой дирижабль при смерти высаживает десант на 10 места.
+    if (u.isSiege && u.siegeType === 'battleblimp') {
+      spawnSummon(u, 'barb', 10, 0.6);
+    }
+  }
+
+  function freeSpotNear(x, y, maxR) {
+    const r = maxR || 4;
+    const cx = clamp(Math.floor(x), 0, G - 1);
+    const cy = clamp(Math.floor(y), 0, G - 1);
+    for (let rad = 0; rad <= r; rad++) {
+      for (let yy = cy - rad; yy <= cy + rad; yy++) {
+        for (let xx = cx - rad; xx <= cx + rad; xx++) {
+          if (xx < 0 || yy < 0 || xx >= G || yy >= G) continue;
+          if (Math.max(Math.abs(xx - cx), Math.abs(yy - cy)) !== rad) continue;
+          if (S.occ[cell(xx, yy)] >= 0) continue;
+          return { x: xx, y: yy };
+        }
+      }
+    }
+    return null;
+  }
+
+  // Питомец героя: один вид на героя, не занимает места в армии.
+  function spawnHeroPet(hero) {
+    if (!hero || !hero.heroKind || !S.pets) return null;
+    if (!S.petDeployed) S.petDeployed = {};
+    const petId = S.pets[hero.heroKind];
+    if (!petId || !PETS[petId] || S.petDeployed[petId]) return null;
+    const petLv = petLevelFor(petId);
+    const stats = CC.petStats ? CC.petStats(petId, petLv) : null;
+    if (!stats) return null;
+    const spot = freeSpotNear(hero.x, hero.y, 3);
+    if (!spot) return null;
+    const def = Object.assign({}, CC.PET_META && CC.PET_META[petId] || {},
+      stats, { name: stats.name || petId, space: 0, target: 'any' });
+    def.speed = stats.speed || 2.5;
+    def.range = Math.max(1, stats.range || 1);
+    def.petId = petId;
+    // Уникальные роли питомцев.
+    if (petId === 'yak') def.target = 'defense';
+    if (petId === 'diggy') { def.miner = true; def.target = 'defense'; }
+    if (petId === 'sneezy') def.splash = 1.5;
+    if (petId === 'unicorn') def.heal = true;
+    if (petId === 'phoenix') def.revive = true;
+    if (petId === 'fox') def.teleport = true;
+    if (petId === 'raven') def.steal = true;
+    const u = {
+      id: S.uid++,
+      type: petId,
+      def: def,
+      x: spot.x + 0.5,
+      y: spot.y + 0.5,
+      hp: def.hp || 100,
+      maxHp: def.hp || 100,
+      dmg: def.dmg || 0,
+      level: petLv,
+      petLevel: petLv,
+      cd: 0,
+      atk: 0,
+      target: null,
+      path: null,
+      isPet: true,
+      ownerId: hero.id,
+      ownerKind: hero.heroKind,
+      teleported: false,
+      expireAt: 0,
+      spawnCd: 0,
+      buffUntil: 0,
+      rageUntil: 0,
+      hasteUntil: 0,
+      totemUntil: 0,
+      heroicUntil: 0,
+      angryUntil: 0,
+      invisibleUntil: 0,
+      slowUntil: 0,
+      freezeUntil: 0,
+      poisonUntil: 0,
+      jumpUntil: 0
+    };
+    S.units.push(u);
+    S.petDeployed[petId] = true;
+    // Феникс даёт герою один шанс вернуться с 50% HP.
+    if (petId === 'phoenix') hero.reviveReady = true;
+    return u;
+  }
+
+  // Осадная машина выезжает вместе с первым десантом (один слот).
+  // Все девять ролей из SIEGE_READY работают; неизвестный id просто
+  // не занимает слот боя.
+  function maybeDeploySiege(x, y) {
+    if (!S.siege || !S.siege.length || S.siegeDeployed) return null;
+    S.siegeDeployed = true;
+    const id = S.siege[0];
+    const extra = SIEGE_READY[id];
+    if (!extra) return null;
+    const spot = freeSpotNear(x, y, 4);
+    if (!spot) return null;
+    const def = Object.assign({
+      name: (SIEGE[id] && SIEGE[id].name) || id,
+      role: (SIEGE[id] && SIEGE[id].role) || '',
+      color: '#9a8a6a', icon: '🚚', space: 0,
+      splash: 0, target: 'any', fly: false, chain: 0, spawn: 0
+    }, extra);
+    const u = {
+      id: S.uid++,
+      type: id,
+      def: def,
+      x: spot.x + 0.5,
+      y: spot.y + 0.5,
+      hp: def.hp,
+      maxHp: def.hp,
+      dmg: def.dmg,
+      cd: 0,
+      atk: 0,
+      target: null,
+      path: null,
+      isSiege: true,
+      siegeType: id,
+      expireAt: 0,
+      spawnCd: 0,
+      buffUntil: 0,
+      rageUntil: 0,
+      hasteUntil: 0,
+      totemUntil: 0,
+      heroicUntil: 0,
+      angryUntil: 0,
+      invisibleUntil: 0,
+      slowUntil: 0,
+      freezeUntil: 0,
+      poisonUntil: 0,
+      jumpUntil: 0
+    };
+    S.units.push(u);
+    S.siegeUnit = u;
+    S.selectedSiege = id;
+    return u;
+  }
+
   function update(dt) {
     if (!S) return;
 
     for (let i = S.shots.length - 1; i >= 0; i--) {
       const s = S.shots[i];
       s.t += dt;
-      if (s.kind !== 'mortar' && s.t >= s.dur) S.shots.splice(i, 1);
+      // Площадные снаряды снимаем после детонации ниже; остальные — по
+      // времени полёта. Отрицательный t у залпов «Молота» — задержка.
+      if (!s.splash && s.t >= s.dur) S.shots.splice(i, 1);
     }
     for (let i = S.fx.length - 1; i >= 0; i--) {
       S.fx[i].t += dt;
@@ -1218,6 +2900,12 @@ CC.Battle = (function () {
     // даёт 180.000… и ломает проверки «время ≤ 180».
     if (S.time > S.limit) S.time = S.limit;
 
+    // Прыжковое поле кончилось — стены снова дорогие.
+    if (S.jumpUntil && S.jumpUntil <= S.time) {
+      S.jumpUntil = 0;
+      rebuild();
+    }
+
     // Отложенная высадка набега и записанный повтор идут по своим временам.
     if (S.deployPlan && S.deployPlan.length) {
       S.autoDeploy = true;
@@ -1225,23 +2913,64 @@ CC.Battle = (function () {
       S.autoDeploy = false;
     }
 
+    updateActiveSpells(dt);
     for (let i = 0; i < S.units.length; i++) updateUnit(S.units[i], dt);
-    updateTraps();
+    updateTraps(dt);
     for (let i = 0; i < S.buildings.length; i++) updateDefense(S.buildings[i], dt);
 
-    // Снаряды гаубицы долетают и накрывают площадь.
+    // Детонатор, снесённый напрямую (тест/инструмент), тоже взрывается.
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (!b.dead || b.exploded || !b.def || b.def.special !== 'bombtower') continue;
+      b.exploded = true;
+      splashDamage(b.x + b.w / 2, b.y + b.h / 2,
+        (b.def.dmg || 0) * 0.5, 1.5, true);
+    }
+
+    // Токсин на зданиях: 5% HP раз в секунду. Отдельный тик, чтобы не
+    // звенеть звуком попадания каждый кадр.
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (b.dead || !((b.poisonUntil || 0) > S.time)) continue;
+      b.poisonTick = (b.poisonTick || 0) + dt;
+      while (b.poisonTick >= 1 && !b.dead) {
+        b.poisonTick -= 1;
+        damageBuilding(b, b.poisonDps || 1);
+      }
+    }
+
+    // Площадные снаряды (гаубица, картечь, «Молот», плазмомёт) долетают
+    // и накрывают площадь.
     for (let i = S.shots.length - 1; i >= 0; i--) {
       const s = S.shots[i];
-      if (s.kind !== 'mortar' || s.t < s.dur) continue;
+      if (!s.splash || s.t < s.dur) continue;
       splashDamage(s.x2, s.y2, s.dmg, s.splash, s.onlyGround);
       S.shots.splice(i, 1);
     }
 
     for (let i = S.units.length - 1; i >= 0; i--) {
-      if (S.units[i].hp <= 0) {
-        if (S.units[i].isHero) S.hero = null;
-        S.units.splice(i, 1);
+      const u = S.units[i];
+      if (u.hp > 0) continue;
+      // Феникс: герой один раз возвращается с половиной HP.
+      if (u.isHero && u.reviveReady) {
+        u.reviveReady = false;
+        u.hp = Math.max(1, Math.round(u.maxHp * 0.5));
+        u.cd = 0;
+        S.fx.push({ x: u.x, y: u.y, t: 0, dur: 0.7, kind: 'poof' });
+        continue;
       }
+      onUnitDeath(u);
+      if (u.isHero) {
+        S.hero = null;
+        if (!S.fallenHeroes) S.fallenHeroes = [];
+        S.fallenHeroes.push({
+          kind: u.heroKind || 'barb',
+          level: u.level || 1,
+          x: u.x,
+          y: u.y
+        });
+      }
+      S.units.splice(i, 1);
     }
 
     // Герой после смерти не возвращается: S.hero обнуляется, вторая
@@ -1270,7 +2999,13 @@ CC.Battle = (function () {
 
     if (S.percent >= 100) endBattle(true);
     else if (S.time >= S.limit) endBattle(won);
-    else if (!S.units.length && armyLeft() === 0) endBattle(won);
+    else if (!S.units.length && armyLeft() === 0) {
+      // Пока есть заряд revive и павший герой, игрок ещё может вернуть
+      // отряд — бой не обрываем. Без этого revive был бы недоступен.
+      const canRevive = !!(S.fallenHeroes && S.fallenHeroes.length &&
+        S.spells && S.spells.revive > 0);
+      if (!canRevive) endBattle(won);
+    }
   }
 
   /* ---------- действия игрока ---------- */
@@ -1321,47 +3056,44 @@ CC.Battle = (function () {
       return { error: 'Эти войска закончились' };
     }
 
-    const d = TROOPS[type];
     const isHero = type === 'hero';
     let heroKind = null;
     let heroDef = null;
-    let baseDef = d;
+    let baseDef = null;
+    let troopLevel = 1;
+    let heroLevel = 0;
     if (isHero) {
       heroKind = S.selectedHero || firstHeroKind();
       heroDef = CC.heroDef ? CC.heroDef(heroKind) : { id: heroKind, base: 'barb' };
-      baseDef = TROOPS[heroDef.base] || d;
+      baseDef = troopDef(heroDef.base || 'barb', 1);
+      // Новый API P1: у каждого героя свой уровень. Считываем до обнуления
+      // карты высадки, иначе уровень потеряется.
+      heroLevel = Math.floor(Number(S.heroes[heroKind])) || 1;
+      if (heroLevel < 1) heroLevel = 1;
     } else {
+      troopLevel = troopLevelFor(type);
+      baseDef = troopDef(type, troopLevel);
       S.army[type]--;
     }
     if (isHero) {
+      // Значение карты — индивидуальный уровень героя. После высадки
+      // обнуляем: каждый вид героя доступен один раз за бой.
       S.heroes[heroKind] = 0;
       syncHeroFlag();
     }
     // Повтор и headless-прогон ставят бойцов ровно в записанную клетку.
     const jitter = (S.headless || S.viewReplay) ? 0 : 0.3;
 
-    // Уровень войск игрока действует только в его атаках (кампания и Арена).
-    // Набег ИИ и headless-симуляции остаются на 1 уровне: пороги баланса
-    // и сложность набегов не должны зависеть от прокачки игрока.
-    // Герой считается по общему уровню и базовому войску.
-    let mult = 1;
-    if (!S.headless && (S.kind === 'campaign' || S.kind === 'pvp' ||
-        S.useTroopLevels) && CC.Game && CC.Game.troopMultiplier) {
-      mult = CC.Game.troopMultiplier(type);
-    }
-    if (!isFinite(mult) || mult < 1) mult = 1;
-
-    let hp = baseDef.hp * mult;
-    let dmg = baseDef.dmg * mult;
-    let heroLevel = 0;
+    let hp = baseDef.hp;
+    let dmg = baseDef.dmg;
     if (isHero) {
-      heroLevel = CC.Game && CC.Game.heroLevel ? CC.Game.heroLevel() : 1;
-      if (!(heroLevel >= 1)) heroLevel = 1;
       const stats = CC.Game && CC.Game.heroStatsFor
         ? CC.Game.heroStatsFor(heroKind, heroLevel)
-        : { hp: baseDef.hp, dmg: baseDef.dmg };
-      hp = stats.hp;
-      dmg = stats.dmg;
+        : (CC.heroStatsFor ? CC.heroStatsFor(heroKind, heroLevel) : null);
+      if (stats && stats.hp) {
+        hp = stats.hp;
+        dmg = stats.dmg;
+      }
     }
 
     // Герой рисуется как type 'hero' (художник получит heroKind), но
@@ -1371,9 +3103,22 @@ CC.Battle = (function () {
         name: heroDef.name,
         hero: true,
         heroKind: heroKind,
+        hp: hp,
+        dmg: dmg,
+        speed: (CC.heroStatsFor
+          ? (CC.heroStatsFor(heroKind, heroLevel) || {}).speed
+          : baseDef.speed) || baseDef.speed,
+        range: (CC.heroStatsFor
+          ? (CC.heroStatsFor(heroKind, heroLevel) || {}).range
+          : baseDef.range) || baseDef.range,
+        target: (CC.heroStatsFor
+          ? (CC.heroStatsFor(heroKind, heroLevel) || {}).target
+          : baseDef.target) || baseDef.target,
+        fly: !!(CC.heroStatsFor &&
+          (CC.heroStatsFor(heroKind, heroLevel) || {}).fly),
         color: heroDef.color || baseDef.color
       })
-      : d;
+      : baseDef;
 
     const unit = {
       id: S.uid++,
@@ -1384,17 +3129,30 @@ CC.Battle = (function () {
       hp: hp,
       maxHp: hp,
       dmg: dmg,
+      level: isHero ? heroLevel : troopLevel,
       cd: 0,
       atk: 0,
       target: null,
-      path: null
+      path: null,
+      spawnCd: 0,
+      expireAt: 0,
+      buffUntil: 0,
+      rageUntil: 0,
+      hasteUntil: 0,
+      totemUntil: 0,
+      heroicUntil: 0,
+      angryUntil: 0,
+      invisibleUntil: 0,
+      slowUntil: 0,
+      freezeUntil: 0,
+      poisonUntil: 0,
+      jumpUntil: 0
     };
 
     if (isHero) {
       unit.isHero = true;
       unit.heroKind = heroKind;
       unit.base = heroDef.base;
-      unit.level = heroLevel;
       unit.shieldUntil = 0;
       unit.abilityUsed = false;
       S.hero = unit;
@@ -1402,19 +3160,28 @@ CC.Battle = (function () {
     }
 
     S.units.push(unit);
-    if (isHero) syncHeroState();
+    if (isHero) {
+      syncHeroState();
+      spawnHeroPet(unit);
+    }
+
+    // Осадная машина выезжает вместе с первым десантом (один слот).
+    if (S.siege && S.siege.length && !S.siegeDeployed) {
+      maybeDeploySiege(unit.x, unit.y);
+    }
 
     // Запись высадки для истории набега и повтора. Время — игровое.
     S.deployLog.push({
       t: Math.round(S.time * 100) / 100,
       type: type,
       heroKind: heroKind,
+      level: isHero ? heroLevel : troopLevel,
       x: x,
       y: y
     });
     S.deployedCount++;
 
-    return { ok: true };
+    return { ok: true, hp: hp, dmg: dmg, level: isHero ? heroLevel : troopLevel };
   }
 
   // Высадка из записанного плана: если клетка уже занята (база изменилась),
@@ -1549,7 +3316,13 @@ CC.Battle = (function () {
 
     let placed = 0;
     let k = 0;
-    const order = ['giant', 'barb', 'archer', 'goblin', 'airship', 'gnome'];
+    // Сначала тяжёлые и старые типы, затем все остальные из ARMY_ORDER:
+    // новые 32 войска тоже должны высаживаться в headless-набеге.
+    const order = ['giant', 'gnome', 'barb', 'archer', 'airship', 'goblin'];
+    const all = (CC.ARMY_ORDER || []).slice();
+    for (let i = 0; i < all.length; i++) {
+      if (order.indexOf(all[i]) === -1) order.push(all[i]);
+    }
     const step = Math.max(0.05, Number(stepSec) || 0.45);
     const plan = [];
 
@@ -1595,7 +3368,7 @@ CC.Battle = (function () {
       return {
         type: b.type, x: b.x, y: b.y, level: b.level,
         // Добыча в повторе не начисляется, даже если снимок её содержал.
-        lootGold: 0, lootElixir: 0
+        lootGold: 0, lootElixir: 0, lootDark: 0
       };
     });
 
@@ -1623,7 +3396,7 @@ CC.Battle = (function () {
       army: army,
       kind: 'replay',
       levelName: d.name || 'Повтор нападения',
-      loot: { gold: 0, elixir: 0 },
+      loot: { gold: 0, elixir: 0, dark: 0 },
       limit: d.limit || CC.TIME_LIMIT,
       viewReplay: true,
       deployPlan: log
@@ -1658,7 +3431,7 @@ CC.Battle = (function () {
         army: raidArmy,
         kind: 'raid',
         levelName: desc.name || 'Набег',
-        loot: desc.loot || { gold: 0, elixir: 0 },
+        loot: desc.loot || { gold: 0, elixir: 0, dark: 0 },
         limit: desc.limit || o.limit || CC.TIME_LIMIT,
         silent: true
       });
@@ -1727,6 +3500,23 @@ CC.Battle = (function () {
     update: update,
     deploy: deploy,
     select: select,
+    deploySpell: deploySpell,
+    selectSpell: selectSpell,
+    spellList: spellList,
+    petList: petList,
+    siegeList: siegeList,
+    selectPet: selectPet,
+    selectSiege: selectSiege,
+    deploySiege: function (gx, gy) {
+      if (!S) return { error: 'Бой не начат' };
+      if (S.over) return { error: 'Бой окончен' };
+      if (S.siegeDeployed) return { error: 'Осада уже выехала' };
+      const x = isFinite(Number(gx)) ? Number(gx) : G / 2;
+      const y = isFinite(Number(gy)) ? Number(gy) : G / 2;
+      const u = maybeDeploySiege(x, y);
+      if (!u) return { error: 'Осадная машина недоступна', id: S.siege[0] || null };
+      return { ok: true, id: u.type, unit: u };
+    },
     deployPaintMs: PAINT_MS,
     paintPlan: paintPlan,
     heroAbility: heroAbility,

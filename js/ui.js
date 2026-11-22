@@ -18,6 +18,9 @@ CC.UI = (function () {
   const shopResGoldCap = document.getElementById('shop-res-gold-cap');
   const shopResElixir = document.getElementById('shop-res-elixir');
   const shopResElixirCap = document.getElementById('shop-res-elixir-cap');
+  const shopResDarkChip = document.getElementById('shop-res-dark-chip');
+  const shopResDark = document.getElementById('shop-res-dark');
+  const shopResDarkCap = document.getElementById('shop-res-dark-cap');
   const shopResGems = document.getElementById('shop-res-gems');
   const ghostEl = document.getElementById('place-ghost');
   const ghostShape = document.getElementById('place-ghost-shape');
@@ -45,12 +48,14 @@ CC.UI = (function () {
   const labUp = document.getElementById('lab-up');
   const selHero = document.getElementById('sel-hero');
   const heroList = document.getElementById('hero-list');
+  const selExtra = document.getElementById('sel-extra');
   const trainQueue = document.getElementById('train-queue');
   const recruitEl = document.getElementById('recruit');
   const recruitGrid = document.getElementById('recruit-grid');
   const recruitSide = document.getElementById('recruit-side');
   const recruitX = document.getElementById('recruit-x');
   const recruitSub = document.getElementById('recruit-sub');
+  const recruitTabs = document.getElementById('recruit-tabs');
   const hangarRecruitBtn = document.getElementById('hangar-recruit');
   const shopPrev = document.getElementById('shop-prev');
   const shopNext = document.getElementById('shop-next');
@@ -65,11 +70,16 @@ CC.UI = (function () {
   const resElixir = document.getElementById('res-elixir');
   const resElixirCap = document.getElementById('res-elixir-cap');
   const resElixirBar = document.getElementById('res-elixir-bar');
+  // Плазма (dark): третья панель, скрыта до первого бура/склада.
+  const resDark = document.getElementById('res-dark');
+  const resDarkCap = document.getElementById('res-dark-cap');
+  const resDarkBar = document.getElementById('res-dark-bar');
   const resGems = document.getElementById('res-gems');
   const resbar = document.getElementById('resbar');
   // Кликабельные панели ресурсов в правом верхнем углу.
   const resGoldPanel = document.getElementById('res-gold-panel');
   const resElixirPanel = document.getElementById('res-elixir-panel');
+  const resDarkPanel = document.getElementById('res-dark-panel');
   const resGemsPanel = document.getElementById('res-gems-panel');
   const hudArmyUsed = document.getElementById('hud-army-used');
   const hudArmyCap = document.getElementById('hud-army-cap');
@@ -198,6 +208,10 @@ CC.UI = (function () {
   const btnFinish = document.getElementById('btn-finish');
   // Кнопка способности героя в бою: 40+ px, горячая клавиша Q.
   const heroShieldBtn = document.getElementById('hero-shield');
+  // Боевой набор P2: заклинания, питомец, осадная машина.
+  const battleKit = document.getElementById('battle-kit');
+  const battleSpells = document.getElementById('battle-spells');
+  const battleSupport = document.getElementById('battle-support');
 
   // Арена (локальный PvP)
   const arenaBtn = document.getElementById('arena-btn');
@@ -332,6 +346,8 @@ CC.UI = (function () {
   let chapterOpen = false;
   let chapterIndex = 0;
   let recruitOpen = false;
+  let recruitTab = 'troops';  // troops | spells | pets | siege
+  let recruitSel = null;      // выбранная карточка во вкладках армии
   let replaysOpen = false;
   let replayRecord = null;     // запись, которую сейчас смотрим
   let replayEndShown = false;
@@ -339,7 +355,12 @@ CC.UI = (function () {
   let infoBound = false;
   let researchOpen = false;    // окно исследования войск
   let researchType = null;
+  let researchKind = 'troop';  // troop | spell
   let researchBound = false;
+  // Наблюдение за завершением прокачки заклинаний/питомцев: у P1 нет
+  // take*Done-событий, поэтому ловим переход «идёт → готово» в sync().
+  let spellWatch = null;
+  let petWatch = null;
 
   const DRAG_PX = 9; // порог «это тап, а не перетаскивание»
 
@@ -367,6 +388,9 @@ CC.UI = (function () {
     }
     if (resElixirPanel) {
       resElixirPanel.addEventListener('click', function () { openBuyResource('elixir'); });
+    }
+    if (resDarkPanel) {
+      resDarkPanel.addEventListener('click', function () { openBuyResource('dark'); });
     }
     if (resGemsPanel) {
       resGemsPanel.addEventListener('click', function () { openBuyPlatinum(); });
@@ -829,6 +853,9 @@ CC.UI = (function () {
         heroAbility();
       });
     }
+    if (battleKit) {
+      battleKit.addEventListener('click', onBattleKitClick);
+    }
     btnAgain.addEventListener('click', battleAgain);
     document.getElementById('btn-tobase').addEventListener('click', function () {
       setMode('base');
@@ -948,6 +975,7 @@ CC.UI = (function () {
       overlayEl.classList.add('hidden');
       // Первый вход в бой закрывает шаг «В бой» и не откатывается назад.
       if (CC.Game.markBattleStarted) CC.Game.markBattleStarted();
+      installLoadoutHooks();
       CC.Battle.reset(chosenLevel());
       retryReadyAt = Date.now() + 2000;
       cache.pct = cache.time = cache.level = null;
@@ -981,8 +1009,10 @@ CC.UI = (function () {
   function syncRes() {
     const gold = CC.Game.gold();
     const elixir = CC.Game.elixir();
+    const dark = CC.Game.dark ? CC.Game.dark() : 0;
     const gcap = Math.round(CC.Game.cap('gold'));
     const ecap = Math.round(CC.Game.cap('elixir'));
+    const dcap = Math.round(CC.Game.cap('dark'));
 
     if (cache.gold !== gold) {
       resGold.textContent = gold;
@@ -1001,6 +1031,32 @@ CC.UI = (function () {
       cache.ecap = ecap;
     }
 
+    // Плазма: панель появляется с первым плазменным буром или складом.
+    // Старый сейв с ненулевой плазмой тоже не прячет её.
+    if (resDarkPanel) {
+      const show = dark > 0 || darkVisible();
+      resDarkPanel.classList.toggle('hidden', !show);
+      if (show && cache.darkShown !== true) {
+        cache.darkShown = true;
+        cache.dark = null;
+        cache.dcap = null;
+        cache.dfill = null;
+      }
+    }
+    if (resDark) {
+      if (cache.dark !== dark) {
+        resDark.textContent = dark;
+        cache.dark = dark;
+      }
+    }
+    if (resDarkCap) {
+      const capTextDark = dcap > 0 ? 'из ' + dcap : 'нет склада';
+      if (cache.dcap !== capTextDark) {
+        resDarkCap.textContent = capTextDark;
+        cache.dcap = capTextDark;
+      }
+    }
+
     // Переполнение: подсвечиваем панель, чтобы игрок видел, что пора тратить.
     if (resGoldPanel) {
       resGoldPanel.classList.toggle('is-overflow', gcap > 0 && gold >= gcap);
@@ -1008,9 +1064,13 @@ CC.UI = (function () {
     if (resElixirPanel) {
       resElixirPanel.classList.toggle('is-overflow', ecap > 0 && elixir >= ecap);
     }
+    if (resDarkPanel) {
+      resDarkPanel.classList.toggle('is-overflow', dcap > 0 && dark >= dcap);
+    }
 
     const gp = gcap > 0 ? Math.min(100, gold / gcap * 100) : 0;
     const ep = ecap > 0 ? Math.min(100, elixir / ecap * 100) : 0;
+    const dp = dcap > 0 ? Math.min(100, dark / dcap * 100) : 0;
 
     const gs = gp.toFixed(0) + '%';
     if (cache.gfill !== gs) {
@@ -1022,6 +1082,13 @@ CC.UI = (function () {
       resElixirBar.style.width = es;
       cache.efill = es;
     }
+    if (resDarkBar) {
+      const ds = dp.toFixed(0) + '%';
+      if (cache.dfill !== ds) {
+        resDarkBar.style.width = ds;
+        cache.dfill = ds;
+      }
+    }
 
     if (resGems) {
       const gems = CC.Game.gems();
@@ -1029,6 +1096,17 @@ CC.UI = (function () {
         resGems.textContent = String(gems);
         cache.gems = gems;
       }
+    }
+  }
+
+  // Есть ли на базе источник плазмы: бур или хранилище. HUD скрывает
+  // третью панель, пока игрок не построил первый.
+  function darkVisible() {
+    try {
+      if (!CC.Base || typeof CC.Base.count !== 'function') return false;
+      return CC.Base.count('darkdrill') > 0 || CC.Base.count('darkstorage') > 0;
+    } catch (e) {
+      return false;
     }
   }
 
@@ -1258,7 +1336,10 @@ CC.UI = (function () {
       el.dataset.type = info.type;
       el.dataset.res = info.res;
 
-      if (el.__icon) el.__icon.textContent = info.res === 'gold' ? '🔩' : '⚡';
+      if (el.__icon) {
+        el.__icon.textContent = info.res === 'gold' ? '🔩'
+          : (info.res === 'dark' ? '🛢️' : '⚡');
+      }
       if (el.__count) el.__count.textContent = String(Math.floor(info.amount));
 
       // Прозрачность и размер считаются каждый кадр: сбор мог измениться,
@@ -1278,7 +1359,8 @@ CC.UI = (function () {
       }
       el.dataset.size = String(size);
 
-      const label = (info.res === 'gold' ? 'Руда' : 'Энергия') +
+      const label = (info.res === 'gold' ? 'Руда'
+        : (info.res === 'dark' ? 'Плазма' : 'Энергия')) +
         ': ' + Math.floor(info.amount) + ' из ' + Math.round(info.cap);
       el.title = info.full
         ? label + ' · полон, забери'
@@ -1301,7 +1383,8 @@ CC.UI = (function () {
     } else if (res.got > 0) {
       if (CC.Sound) CC.Sound.play('questDone');
       toast('+' + Math.floor(res.got) +
-        (res.res === 'gold' ? ' руды' : ' энергии') +
+        (res.res === 'gold' ? ' руды'
+          : (res.res === 'dark' ? ' плазмы' : ' энергии')) +
         (res.left > 0.5 ? ' · осталось ' + Math.floor(res.left) : ''));
       // Иконка ещё на месте: снимаем стартовую точку до sync().
       playCollectFx([{ id: id, res: res.res, amount: res.got }]);
@@ -1328,6 +1411,7 @@ CC.UI = (function () {
     const parts = [];
     if (res.gold > 0) parts.push('+' + fmtNum(res.gold) + ' руды');
     if (res.elixir > 0) parts.push('+' + fmtNum(res.elixir) + ' энергии');
+    if (res.dark > 0) parts.push('+' + fmtNum(res.dark) + ' плазмы');
 
     let text = parts.length ? parts.join(' · ') : 'Склад полон — некуда девать';
     if (res.left > 1) {
@@ -1359,9 +1443,11 @@ CC.UI = (function () {
 
     let gold = 0;
     let elixir = 0;
+    let dark = 0;
     let full = false;
     for (let i = 0; i < list.length; i++) {
       if (list[i].res === 'gold') gold += list[i].amount;
+      else if (list[i].res === 'dark') dark += list[i].amount;
       else elixir += list[i].amount;
       if (list[i].full) full = true;
     }
@@ -1373,6 +1459,7 @@ CC.UI = (function () {
     const parts = [];
     if (gold >= 1) parts.push(fmtNum(gold) + ' руды');
     if (elixir >= 1) parts.push(fmtNum(elixir) + ' энергии');
+    if (dark >= 1) parts.push(fmtNum(dark) + ' плазмы');
     const title = 'Собрать всё: ' + (parts.length ? parts.join(', ') : 'пусто') +
       (full ? ' · часть буферов полна' : '');
     if (collectAllBtn.title !== title) collectAllBtn.title = title;
@@ -1430,7 +1517,8 @@ CC.UI = (function () {
       ? window.innerWidth - 75 : 320;
     let y = 64;
 
-    const valueEl = res === 'gold' ? resGold : resElixir;
+    const valueEl = res === 'gold' ? resGold
+      : (res === 'dark' ? resDark : resElixir);
     if (!valueEl) return { x: x, y: y };
 
     let panel = null;
@@ -1503,7 +1591,8 @@ CC.UI = (function () {
 
   // Пульс значения и всплывающее «+N» после прилёта частиц.
   function fxPulse(res, amount, delayMs) {
-    const valueEl = res === 'gold' ? resGold : resElixir;
+    const valueEl = res === 'gold' ? resGold
+      : (res === 'dark' ? resDark : resElixir);
     if (!valueEl || !(amount > 0)) return;
 
     const run = function () {
@@ -1537,18 +1626,20 @@ CC.UI = (function () {
   function playCollectFx(sources) {
     if (!sources || !sources.length) return;
 
-    const totals = { gold: 0, elixir: 0 };
+    const totals = { gold: 0, elixir: 0, dark: 0 };
     for (let i = 0; i < sources.length; i++) {
       const s = sources[i];
-      if (s && s.amount > 0 && (s.res === 'gold' || s.res === 'elixir')) {
+      if (s && s.amount > 0 &&
+          (s.res === 'gold' || s.res === 'elixir' || s.res === 'dark')) {
         totals[s.res] += s.amount;
       }
     }
-    if (totals.gold <= 0 && totals.elixir <= 0) return;
+    if (totals.gold <= 0 && totals.elixir <= 0 && totals.dark <= 0) return;
 
     if (reducedMotion()) {
       fxPulse('gold', totals.gold, 0);
       fxPulse('elixir', totals.elixir, 0);
+      fxPulse('dark', totals.dark, 0);
       return;
     }
 
@@ -1561,7 +1652,7 @@ CC.UI = (function () {
     for (let i = 0; i < sources.length && created < FX_MAX; i++) {
       const src = sources[i];
       if (!src || !(src.amount > 0)) continue;
-      if (src.res !== 'gold' && src.res !== 'elixir') continue;
+      if (src.res !== 'gold' && src.res !== 'elixir' && src.res !== 'dark') continue;
 
       const from = fxFrom(src.id);
       if (!from) continue;
@@ -1580,6 +1671,7 @@ CC.UI = (function () {
     const pulseDelay = lastFlight > 0 ? lastFlight : duration;
     fxPulse('gold', totals.gold, pulseDelay);
     fxPulse('elixir', totals.elixir, pulseDelay);
+    fxPulse('dark', totals.dark, pulseDelay);
   }
 
   /* ---------- ежедневный контракт ---------- */
@@ -1653,8 +1745,11 @@ CC.UI = (function () {
     }
 
     if (dailyReward) {
-      dailyReward.textContent = 'Награда: ' + fmtNum(d.reward.gold) + ' руды, ' +
-        fmtNum(d.reward.elixir) + ' энергии, ' + platText(d.reward.gems);
+      const parts = [fmtNum(d.reward.gold) + ' руды',
+        fmtNum(d.reward.elixir) + ' энергии'];
+      if (d.reward.dark) parts.push(fmtNum(d.reward.dark) + ' плазмы');
+      dailyReward.textContent = 'Награда: ' + parts.join(', ') + ', ' +
+        platText(d.reward.gems);
     }
 
     if (dailyHint) {
@@ -1704,9 +1799,10 @@ CC.UI = (function () {
     const parts = [];
     if (res.reward.gold > 0) parts.push('+' + fmtNum(res.reward.gold) + ' руды');
     if (res.reward.elixir > 0) parts.push('+' + fmtNum(res.reward.elixir) + ' энергии');
+    if (res.reward.dark > 0) parts.push('+' + fmtNum(res.reward.dark) + ' плазмы');
     if (res.reward.gems > 0) parts.push('+' + platText(res.reward.gems));
 
-    const lost = (res.lost.gold || 0) + (res.lost.elixir || 0);
+    const lost = (res.lost.gold || 0) + (res.lost.elixir || 0) + (res.lost.dark || 0);
     toast('Контракт: ' + parts.join(', ') +
       (lost > 0 ? ' · часть не влезла в склады' : ''));
 
@@ -2100,10 +2196,12 @@ CC.UI = (function () {
     const span = formatDuration(info.seconds);
     const capGold = info.capGold || 0;
     const capElixir = info.capElixir || 0;
+    const capDark = info.capDark || 0;
 
     const parts = [];
     let fullGold = true;
     let fullElixir = true;
+    let fullDark = true;
     if (capGold > 0) {
       fullGold = info.storedGold >= capGold - 0.5;
       parts.push(fmtNum(info.storedGold) + ' из ' + fmtNum(capGold) + ' руды');
@@ -2112,8 +2210,12 @@ CC.UI = (function () {
       fullElixir = info.storedElixir >= capElixir - 0.5;
       parts.push(fmtNum(info.storedElixir) + ' из ' + fmtNum(capElixir) + ' энергии');
     }
+    if (capDark > 0) {
+      fullDark = info.storedDark >= capDark - 0.5;
+      parts.push(fmtNum(info.storedDark) + ' из ' + fmtNum(capDark) + ' плазмы');
+    }
 
-    const full = parts.length > 0 && fullGold && fullElixir;
+    const full = parts.length > 0 && fullGold && fullElixir && fullDark;
     // Если пока игрока не было базу ограбили, «Пока тебя не было» говорит
     // об этом теми же фактическими цифрами, что и окно набега.
     let raidText = '';
@@ -2122,6 +2224,7 @@ CC.UI = (function () {
       const taken = [];
       if (raid.stolen.gold > 0) taken.push(fmtNum(raid.stolen.gold) + ' руды');
       if (raid.stolen.elixir > 0) taken.push(fmtNum(raid.stolen.elixir) + ' энергии');
+      if (raid.stolen.dark > 0) taken.push(fmtNum(raid.stolen.dark) + ' плазмы');
       if (taken.length) raidText = 'На базу напали — увели ' + taken.join(', ') + '.';
     }
     offlineText.textContent = raidText;
@@ -2191,6 +2294,7 @@ CC.UI = (function () {
     const parts = [];
     if (info.stolen.gold > 0) parts.push(info.stolen.gold + ' руды');
     if (info.stolen.elixir > 0) parts.push(info.stolen.elixir + ' энергии');
+    if (info.stolen.dark > 0) parts.push(info.stolen.dark + ' плазмы');
     raidLoot.textContent = parts.length ? 'Увели: ' + parts.join(', ') : 'Ничего не унесли';
 
     const stolenTotal = info.stolen.gold + info.stolen.elixir;
@@ -2670,17 +2774,19 @@ CC.UI = (function () {
   function storageFree() {
     return {
       gold: Math.max(0, Math.floor(CC.Game.cap('gold') - CC.Game.gold())),
-      elixir: Math.max(0, Math.floor(CC.Game.cap('elixir') - CC.Game.elixir()))
+      elixir: Math.max(0, Math.floor(CC.Game.cap('elixir') - CC.Game.elixir())),
+      dark: Math.max(0, Math.floor(CC.Game.cap('dark') - CC.Game.dark()))
     };
   }
 
   function lootOverflow(pool) {
-    const loot = pool || { gold: 0, elixir: 0 };
+    const loot = pool || { gold: 0, elixir: 0, dark: 0 };
     const free = storageFree();
     return {
       free: free,
       over: (Number(loot.gold) || 0) > free.gold ||
-        (Number(loot.elixir) || 0) > free.elixir
+        (Number(loot.elixir) || 0) > free.elixir ||
+        (Number(loot.dark) || 0) > free.dark
     };
   }
 
@@ -2702,10 +2808,13 @@ CC.UI = (function () {
     const state = mapNodeState(i);
     const stars = CC.Game.levelStars(i);
     const locked = state === 'locked';
-    const pool = lvl.loot || { gold: 0, elixir: 0 };
+    const pool = lvl.loot || { gold: 0, elixir: 0, dark: 0 };
 
     if (mapCardName) mapCardName.textContent = lvl.name;
-    if (mapCardTh) mapCardTh.textContent = 'TH' + lvl.th;
+    if (mapCardTh) {
+      mapCardTh.textContent = 'Командный центр ' + lvl.th + ' · TH ' + lvl.th +
+        (lvl.boss || lvl.final ? ' · финал' : '');
+    }
     if (mapCardChapter) {
       const era = Math.floor(i / 10);
       const st = chapterStats(era);
@@ -2714,12 +2823,13 @@ CC.UI = (function () {
     }
     if (mapCardLoot) {
       mapCardLoot.textContent = 'Добыча: ' + fmtNum(pool.gold) + ' руды, ' +
-        fmtNum(pool.elixir) + ' энергии';
+        fmtNum(pool.elixir) + ' энергии, ' + fmtNum(pool.dark || 0) + ' плазмы';
     }
     if (mapCardFree) {
       const fit = lootOverflow(pool);
       mapCardFree.textContent = 'Свободно: ' + fmtNum(fit.free.gold) +
-        ' руды / ' + fmtNum(fit.free.elixir) + ' энергии' +
+        ' руды / ' + fmtNum(fit.free.elixir) + ' энергии / ' +
+        fmtNum(fit.free.dark) + ' плазмы' +
         (fit.over ? ' · часть добычи не влезет' : '');
       mapCardFree.classList.toggle('is-warn', fit.over);
     }
@@ -2756,6 +2866,7 @@ CC.UI = (function () {
     cache.time = null;
 
     if (CC.App.mode === 'battle') {
+      installLoadoutHooks();
       CC.Battle.reset(index);
       retryReadyAt = Date.now() + 2000;
       const lvl = CC.LEVELS[index];
@@ -2933,33 +3044,72 @@ CC.UI = (function () {
       size + '" height="' + size + '" draggable="false" decoding="async">';
   }
 
+  /* Категории терминала. Рейл остаётся пятью основными вкладками —
+     так его читают старые тесты и инструменты; «Стены» — отдельная
+     кнопка-счётчик (data-shop-wall), потому что стена не карточка,
+     а режим постановки сегментов. */
   const SHOP_CATS = [
     { id: 'all', name: 'Все', icon: '▦', asset: 'cat-all' },
     { id: 'defense', name: 'Оборона', icon: '🛡', asset: 'cat-defense',
-      types: ['cannon', 'archer', 'mortar', 'airdef', 'mage', 'ambush', 'beam', 'wall'] },
+      types: ['cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper',
+        'ambush', 'bombtower', 'xbow', 'beam', 'eagle', 'scattershot',
+        'monolith', 'spelltower', 'multiarcher', 'ricochet', 'multigear',
+        'firespitter', 'wall'] },
     { id: 'resources', name: 'Ресурсы', icon: '⛏', asset: 'cat-resources',
-      types: ['goldmine', 'elixir', 'storage', 'estorage'] },
+      types: ['goldmine', 'elixir', 'darkdrill', 'storage', 'estorage',
+        'darkstorage'] },
     { id: 'army', name: 'Армия', icon: '🪖', asset: 'cat-army',
-      types: ['barracks', 'lab', 'herohall'] },
+      types: ['barracks', 'train', 'darktrain', 'spellfactory',
+        'darkspellfactory', 'lab', 'herohall', 'pethouse', 'blacksmith',
+        'workshop', 'clancastle', 'squadbarracks'] },
     { id: 'traps', name: 'Ловушки', icon: '💥', asset: 'cat-traps',
-      types: ['mine', 'spring', 'airmine'] }
+      types: ['mine', 'spring', 'airmine', 'giantbomb', 'seekingair',
+        'skeletontrap', 'tornado', 'gigabomb'] }
   ];
 
+  // «Стены» — не шестая вкладка рейла, а отдельный режим-счётчик.
+  const WALLS_CAT = { id: 'walls', name: 'Стены', icon: '🧱', asset: 'cat-defense' };
+
   function shopCatTypes(id) {
+    if (id === 'walls') return ['wall'];
     if (id === 'all') return CC.PALETTE.slice();
     const cat = SHOP_CATS.find(function (c) { return c.id === id; });
     return cat && cat.types ? cat.types.slice() : CC.PALETTE.slice();
   }
 
   function shopTypeCategory(type) {
+    if (type === 'wall') return 'walls';
     for (let i = 1; i < SHOP_CATS.length; i++) {
       if ((SHOP_CATS[i].types || []).indexOf(type) !== -1) return SHOP_CATS[i].id;
     }
     return 'all';
   }
 
+  // Сначала доступные карточки, затем закрытые; внутри — по TH открытия.
+  function shopSortedTypes(id) {
+    const th = CC.Game.townhallLevel();
+    const list = shopCatTypes(id).filter(function (t) {
+      return !!CC.BUILDINGS[t];
+    });
+    const rank = function (type) {
+      const limit = CC.limitAt(type, th);
+      const open = CC.Game.canBuild(type).ok && limit > 0;
+      return { open: open ? 0 : 1, th: firstThFor(type) };
+    };
+    const order = {};
+    list.forEach(function (t, i) { order[t] = i; });
+    return list.slice().sort(function (a, b) {
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra.open !== rb.open) return ra.open - rb.open;
+      if (ra.th !== rb.th) return ra.th - rb.th;
+      return order[a] - order[b];
+    });
+  }
+
   function shopCardHtml(type) {
     const d = CC.BUILDINGS[type];
+    if (!d) return '';
     const have = CC.Base.count(type);
     const th = CC.Game.townhallLevel();
     const limit = CC.limitAt(type, th);
@@ -2987,20 +3137,22 @@ CC.UI = (function () {
       ? CC.Game.storageRescue(type) : null;
     const free = !!(lesson || rescue);
     const price = free
-      ? { gold: 0, elixir: 0 }
-      : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 });
-    const poorGold = CC.Game.gold() < price.gold;
-    const poorElixir = CC.Game.elixir() < price.elixir;
-    const poor = !locked && !full && !free && (poorGold || poorElixir);
+      ? { gold: 0, elixir: 0, dark: 0 }
+      : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0, dark: 0 });
+    const poorGold = CC.Game.gold() < (price.gold || 0);
+    const poorElixir = CC.Game.elixir() < (price.elixir || 0);
+    const poorDark = CC.Game.dark() < (price.dark || 0);
+    const poor = !locked && !full && !free && (poorGold || poorElixir || poorDark);
     const icon = locked ? '🔒' : CC.ICONS[type];
-    // Уровень для арта: обычная карточка показывает текущий TH (не выше 10),
+    // Уровень для арта: обычная карточка показывает текущий TH,
     // закрытая — 1, чтобы художнику не пришлось рисовать «нулевой» вид.
     const artLevel = locked ? 1 : Math.min(CC.MAX_TH, th);
     const art = cardArt('building', type, 180, artLevel, 'shop-card__art term-card__art');
     const cls = 'shop-card term-card' + (art ? ' has-art' : '') +
       (locked ? ' is-locked' : '') + (full ? ' is-empty' : '') +
       (poor ? ' is-poor' : '') + (lesson ? ' is-lesson' : '') +
-      (rescue ? ' is-rescue' : '');
+      (rescue ? ' is-rescue' : '') +
+      (d.trap ? ' is-trap' : '');
     const iconCls = 'shop-card__icon cc-icon term-card__art-fallback' +
       (art ? ' has-art' : '');
     const lockBadge = locked
@@ -3015,11 +3167,7 @@ CC.UI = (function () {
         : have + ' / ' + limit) + '</span>';
     const ptime = lesson ? lesson.seconds
       : (CC.Game.placeTime ? CC.Game.placeTime(type) : 0);
-    const priceIcon = price.gold > 0 ? '🔩' : (price.elixir > 0 ? '⚡' : '');
-    const costLabel = free
-      ? 'Бесплатно'
-      : (priceIcon ? '<i class="term-card__res">' + priceIcon + '</i> ' +
-        placePriceText(price) : placePriceText(price));
+    const costLabel = free ? 'Бесплатно' : placePriceText(price);
     const costText = costLabel + (ptime > 0 ? ' · ' + formatTime(ptime) : '');
     const cost = '<span class="shop-card__cost term-card__cost">' + costText + '</span>';
     let status = '';
@@ -3037,8 +3185,9 @@ CC.UI = (function () {
     else if (rescue) title = 'Первый склад: бесплатно, чтобы не потерять ресурсы';
     else if (poor) {
       const lack = [];
-      if (poorGold) lack.push('ещё ' + fmtNum(price.gold - CC.Game.gold()) + ' руды');
-      if (poorElixir) lack.push('ещё ' + fmtNum(price.elixir - CC.Game.elixir()) + ' энергии');
+      if (poorGold) lack.push('ещё ' + fmtNum((price.gold || 0) - CC.Game.gold()) + ' руды');
+      if (poorElixir) lack.push('ещё ' + fmtNum((price.elixir || 0) - CC.Game.elixir()) + ' энергии');
+      if (poorDark) lack.push('ещё ' + fmtNum((price.dark || 0) - CC.Game.dark()) + ' плазмы');
       title = 'Не хватает ' + lack.join(' и ');
     } else title = d.name + (d.trap ? ' · ловушка' : '') + ' · ' + placePriceText(price);
 
@@ -3061,11 +3210,62 @@ CC.UI = (function () {
       '</button>';
   }
 
-  // «400 руды», «300 энергии» или «Бесплатно» для пустой цены.
+  // Карточка-счётчик стен: стена ставится сегментами, а не одной постройкой.
+  function wallCardHtml() {
+    const th = CC.Game.townhallLevel();
+    const have = CC.Base.count('wall');
+    const limit = CC.limitAt('wall', th);
+    const open = CC.Game.canBuild('wall');
+    const locked = !open.ok || limit <= 0;
+    const needTh = locked ? firstThFor('wall') : th;
+    const full = !locked && have >= limit;
+    const price = CC.wallUpgrade ? CC.wallUpgrade(wallLevel()) : { gold: 0, elixir: 0 };
+    const poor = !locked && !full &&
+      (CC.Game.gold() < (price.gold || 0) || CC.Game.elixir() < (price.elixir || 0));
+    const art = cardArt('building', 'wall', 180, 1, 'shop-card__art term-card__art');
+    const cls = 'shop-card term-card term-card_wall' +
+      (locked ? ' is-locked' : '') + (full ? ' is-empty' : '') +
+      (poor ? ' is-poor' : '');
+    const status = locked
+      ? 'С командного центра ' + needTh
+      : (full ? 'Лимит исчерпан' : 'Поставлено ' + have + ' / ' + limit);
+    return '<button class="' + cls + '" type="button" data-type="wall"' +
+      ' data-wall-card="1"' +
+      (locked ? ' data-locked="1" aria-disabled="true"' : '') +
+      ' data-level="' + needTh + '" data-state="' +
+      (locked ? 'locked' : (full || poor ? 'insufficient' : 'available')) + '"' +
+      ' title="Энергобарьер: сегмент за ' + placePriceText(price) + '">' +
+      '<span class="term-card__banner">' +
+        '<b class="shop-card__name term-card__name">Энергобарьер</b>' +
+        '<span class="shop-card__count term-card__limit">' + have + ' / ' + limit + '</span>' +
+      '</span>' +
+      '<span class="term-card__art-wrap">' +
+        '<span class="shop-card__icon cc-icon term-card__art-fallback" data-type="wall">' +
+          (art || '🧱') + '</span>' +
+      '</span>' +
+      '<span class="shop-card__desc term-card__desc">Сегмент барьера: ' +
+        'держит врага и не пропускает</span>' +
+      '<span class="shop-card__req term-card__status">' + status + '</span>' +
+      '<span class="shop-card__cost term-card__cost">' + placePriceText(price) + '</span>' +
+      '</button>';
+  }
+
+  // Уровень стен — самого прокачанного сегмента; на пустой базе 1.
+  function wallLevel() {
+    const list = CC.Base.list().filter(function (b) { return b.type === 'wall'; });
+    let lv = 0;
+    for (let i = 0; i < list.length; i++) {
+      lv = Math.max(lv, CC.Game.level(list[i].id));
+    }
+    return lv || 1;
+  }
+
+  // «400 руды», «300 энергии», «20 плазмы» или «Бесплатно» для пустой цены.
   function placePriceText(price) {
     const parts = [];
     if (price && price.gold) parts.push(fmtNum(price.gold) + ' руды');
     if (price && price.elixir) parts.push(fmtNum(price.elixir) + ' энергии');
+    if (price && price.dark) parts.push(fmtNum(price.dark) + ' плазмы');
     return parts.length ? parts.join(' · ') : '—';
   }
 
@@ -3084,8 +3284,8 @@ CC.UI = (function () {
       ? CC.resBuyAmount(res, count, CC.Game.townhallLevel())
       : 0;
     const bonus = CC.resBuyBonus ? CC.resBuyBonus(count) : 1;
-    const name = res === 'gold' ? 'руды' : 'энергии';
-    const icon = res === 'gold' ? '🔩' : '⚡';
+    const name = res === 'gold' ? 'руды' : (res === 'dark' ? 'плазмы' : 'энергии');
+    const icon = res === 'gold' ? '🔩' : (res === 'dark' ? '🛢️' : '⚡');
     const bonusText = bonus > 1
       ? ' · +' + Math.round((bonus - 1) * 100) + '%'
       : '';
@@ -3109,24 +3309,29 @@ CC.UI = (function () {
   function buyRateText(res) {
     const th = CC.Game.townhallLevel();
     const rate = CC.gemExchange ? CC.gemExchange(res, th) : 0;
-    return 'Курс TH' + th + ': 1 платина = ' + fmtNum(rate) +
-      (res === 'gold' ? ' руды' : ' энергии');
+    const name = res === 'gold' ? 'руды' : (res === 'dark' ? 'плазмы' : 'энергии');
+    return 'Курс TH' + th + ': 1 платина = ' + fmtNum(rate) + ' ' + name;
   }
 
   // Перерисовать окно покупки ресурса и подпись про платину.
   function syncBuyResource() {
     if (!buyResOpen) return;
 
-    const res = buyResKind === 'elixir' ? 'elixir' : 'gold';
+    const res = buyResKind === 'elixir' ? 'elixir'
+      : (buyResKind === 'dark' ? 'dark' : 'gold');
     const th = CC.Game.townhallLevel();
+    const cap = CC.Game.cap(res);
     const sig = res + '|th' + th + '|g' + CC.Game.gems() +
       '|gc' + Math.round(CC.Game.cap('gold')) +
       '|ec' + Math.round(CC.Game.cap('elixir')) +
+      '|dc' + Math.round(CC.Game.cap('dark')) +
       '|gold' + Math.round(CC.Game.gold()) +
-      '|elixir' + Math.round(CC.Game.elixir());
+      '|elixir' + Math.round(CC.Game.elixir()) +
+      '|dark' + Math.round(CC.Game.dark());
 
     if (buyResTitle) {
-      buyResTitle.textContent = res === 'gold' ? 'Купить руду' : 'Купить энергию';
+      buyResTitle.textContent = res === 'gold' ? 'Купить руду'
+        : (res === 'dark' ? 'Купить плазму' : 'Купить энергию');
     }
 
     if (buyResGrid && cache.buyResSig !== sig) {
@@ -3138,10 +3343,12 @@ CC.UI = (function () {
 
     const gems = CC.Game.gems();
     const balance = 'Платина: ' + platText(gems);
-    const held = res === 'elixir' ? CC.Game.elixir() : CC.Game.gold();
-    const noCap = CC.Game.cap(res) <= 0;
-    const full = Math.floor(CC.Game.cap(res) - held) <= 0;
-    const capMsg = 'Сначала построй склад ' + (res === 'gold' ? 'руды' : 'энергии');
+    const held = res === 'elixir' ? CC.Game.elixir()
+      : (res === 'dark' ? CC.Game.dark() : CC.Game.gold());
+    const noCap = cap <= 0;
+    const full = Math.floor(cap - held) <= 0;
+    const capMsg = 'Сначала построй склад ' +
+      (res === 'gold' ? 'руды' : (res === 'dark' ? 'плазмы' : 'энергии'));
     const text = buyResNoteText || (noCap ? capMsg : (full ? 'Склад полон' : balance));
     const kind = buyResNoteText
       ? (buyResNoteKind || 'error')
@@ -3187,7 +3394,8 @@ CC.UI = (function () {
     closeReplays();
     closeBuyPlatinum();
 
-    buyResKind = res === 'elixir' ? 'elixir' : 'gold';
+    buyResKind = res === 'elixir' ? 'elixir'
+      : (res === 'dark' ? 'dark' : 'gold');
     buyResNoteText = '';
     buyResNoteKind = '';
     cache.buyResSig = null;
@@ -3238,7 +3446,8 @@ CC.UI = (function () {
     buyResNoteKind = '';
     // Штатный путь: набор влёз целиком и оплачен.
     toast('Куплено: +' + fmtNum(out.got) +
-      (out.res === 'gold' ? ' руды' : ' энергии'));
+      (out.res === 'gold' ? ' руды'
+        : (out.res === 'dark' ? ' плазмы' : ' энергии')));
 
     sync();
     return out;
@@ -3320,6 +3529,7 @@ CC.UI = (function () {
       const missing = [];
       if (CC.Game.cap('gold') <= 0) missing.push('Поставь склад руды');
       if (CC.Game.cap('elixir') <= 0) missing.push('Поставь склад энергии');
+      if (darkVisible() && CC.Game.cap('dark') <= 0) missing.push('Поставь склад плазмы');
       if (missing.length) hint = missing.join(' · ');
       else if (CC.Game.townhallLevel() === 1) {
         hint = 'На 1 уровне доступны центр, турель и лазерная вышка.' +
@@ -3344,10 +3554,20 @@ CC.UI = (function () {
       const ec = CC.Game.cap('elixir');
       shopResElixirCap.textContent = ec > 0 ? '/' + fmtNum(ec) : ' · нет склада';
     }
+    // Плазма в шапке терминала — только когда на базе есть бур/склад.
+    if (shopResDarkChip) {
+      shopResDarkChip.classList.toggle('hidden', !(darkVisible() || CC.Game.dark() > 0));
+    }
+    if (shopResDark) shopResDark.textContent = fmtNum(CC.Game.dark());
+    if (shopResDarkCap) {
+      const dc = CC.Game.cap('dark');
+      shopResDarkCap.textContent = dc > 0 ? '/' + fmtNum(dc) : ' · нет склада';
+    }
     if (shopResGems) shopResGems.textContent = fmtNum(CC.Game.gems());
 
     const tutor = CC.Game.tutorial ? CC.Game.tutorial() : null;
-    if (SHOP_CATS.findIndex(function (c) { return c.id === shopCat; }) === -1) {
+    if (SHOP_CATS.findIndex(function (c) { return c.id === shopCat; }) === -1 &&
+        shopCat !== WALLS_CAT.id) {
       shopCat = 'all';
     }
 
@@ -3355,16 +3575,19 @@ CC.UI = (function () {
       CC.PALETTE.map(function (t) { return CC.Base.count(t); }).join(',') +
       '|th' + CC.Game.townhallLevel() + '|gold' + Math.round(CC.Game.gold()) +
       '|elixir' + Math.round(CC.Game.elixir()) +
+      '|dark' + Math.round(CC.Game.dark()) +
       '|gems' + CC.Game.gems() +
       '|gc' + Math.round(CC.Game.cap('gold')) + '|ec' + Math.round(CC.Game.cap('elixir')) +
+      '|dc' + Math.round(CC.Game.cap('dark')) +
       '|cat' + shopCat +
       '|lesson' + (tutor && tutor.active ? tutor.id : '-');
     if (cache.shopSig === sig) return;
     cache.shopSig = sig;
 
-    // Рейл категорий: счётчик доступных/всего.
+    // Рейл категорий: счётчик доступных/всего. «Стены» — отдельная
+    // кнопка-счётчик без `data-shop-cat`, чтобы не сломать старый рейл.
     if (shopCats) {
-      shopCats.innerHTML = SHOP_CATS.map(function (cat) {
+      let rail = SHOP_CATS.map(function (cat) {
         const types = shopCatTypes(cat.id);
         let can = 0;
         for (let i = 0; i < types.length; i++) {
@@ -3386,10 +3609,26 @@ CC.UI = (function () {
           '<span class="term-cat__count">' + can + '/' + types.length + '</span>' +
         '</button>';
       }).join('');
+
+      const wallsActive = shopCat === WALLS_CAT.id ? ' is-active' : '';
+      const wallHave = CC.Base.count('wall');
+      const wallLimit = CC.limitAt('wall', CC.Game.townhallLevel());
+      rail += '<button class="term-cat term-cat_walls' + wallsActive + '" type="button"' +
+        ' data-shop-wall="1" role="tab" aria-selected="' +
+        (shopCat === WALLS_CAT.id ? 'true' : 'false') + '"' +
+        ' onclick="CC.UI.setShopCategory(\'' + WALLS_CAT.id + '\')">' +
+        '<span class="term-cat__icon term-cat__icon_wall" aria-hidden="true">🧱</span>' +
+        '<span class="term-cat__name">Стены</span>' +
+        '<span class="term-cat__count">' + wallHave + ' / ' + wallLimit + '</span>' +
+        '</button>';
+      shopCats.innerHTML = rail;
     }
 
     const shopScroll = shopGrid.scrollTop || 0;
-    shopGrid.innerHTML = shopCatTypes(shopCat).map(shopCardHtml).join('');
+    const types = shopSortedTypes(shopCat);
+    shopGrid.innerHTML = types.map(function (type) {
+      return shopCat === WALLS_CAT.id ? wallCardHtml() : shopCardHtml(type);
+    }).join('');
     shopGrid.scrollLeft = 0;
     if (shopScroll) shopGrid.scrollTop = shopScroll;
   }
@@ -3863,35 +4102,66 @@ CC.UI = (function () {
     cache.gems = null;
     cache.infoSig = null;
     cache.researchSig = null;
+    cache.extraSig = null;
+    cache.recruitSig = null;
+    cache.kitSig = null;
+  }
+
+  // Ёмкость/производство строки таблицы без обращения к закрытым полям
+  // Game.stats: UI читает CC.buildingLevel напрямую.
+  function rowCap(type, lvl) {
+    const row = CC.buildingLevel ? CC.buildingLevel(type, lvl) : {};
+    return Math.max(0, Math.round(Number(row.cap) || 0));
+  }
+
+  function rowProd(type, lvl) {
+    const row = CC.buildingLevel ? CC.buildingLevel(type, lvl) : {};
+    return +((Number(row.prod) || 0) / 3600).toFixed(6);
   }
 
   function describe(type, s) {
     const parts = [];
+    const perHour = s.production ? Math.round(s.production * 3600) : 0;
 
     if (type === 'townhall') {
       parts.push('Центр ' + s.level + ' из ' + s.max +
         (s.level < s.max ? ' · до ур. ' + (s.level + 1) : ''));
-    } else if (type === 'goldmine') {
-      parts.push('Добыча ' + s.production + ' руды/с');
-      if (s.extractCap) parts.push('в буре ' + Math.floor(s.stored) + ' из ' + s.extractCap);
-    } else if (type === 'elixir') {
-      parts.push('Добыча ' + s.production + ' энергии/с');
-      if (s.extractCap) parts.push('в реакторе ' + Math.floor(s.stored) + ' из ' + s.extractCap);
-    } else if (type === 'storage') {
-      parts.push('Хранит руду');
-      parts.push('лимит ' + fmtNum(s.capGold));
-      parts.push('вклад в общий ' + fmtNum(CC.Game.cap('gold')));
-    } else if (type === 'estorage') {
-      parts.push('Хранит энергию');
-      parts.push('лимит ' + fmtNum(s.capElixir));
-      parts.push('вклад в общий ' + fmtNum(CC.Game.cap('elixir')));
+    } else if (type === 'goldmine' || type === 'elixir' || type === 'darkdrill') {
+      parts.push('Добыча ' + fmtNum(perHour) + ' ' + resWord(s.res) + '/ч');
+      if (s.extractCap) {
+        parts.push('в буфере ' + fmtNum(Math.floor(s.stored || 0)) + ' из ' +
+          fmtNum(s.extractCap));
+      }
+    } else if (type === 'storage' || type === 'estorage' || type === 'darkstorage') {
+      const res = type === 'storage' ? 'gold' : (type === 'estorage' ? 'elixir' : 'dark');
+      const acc = res === 'gold' ? 'руду' : (res === 'elixir' ? 'энергию' : 'плазму');
+      parts.push('Хранит ' + acc);
+      parts.push('лимит ' + fmtNum(rowCap(type, s.level)));
+      parts.push('вклад в общий ' + fmtNum(CC.Game.cap(res)));
     } else if (type === 'barracks') {
-      parts.push('Мест в армии +' + s.capacity);
+      parts.push('Мест в армии +' + fmtNum(s.capacity || rowCap(type, s.level)));
       parts.push('тренирует параллельно');
+    } else if (type === 'train' || type === 'darktrain') {
+      parts.push(type === 'darktrain' ? 'Тренирует тёмные войска' : 'Тренирует войска');
+      parts.push('очередь общая');
     } else if (type === 'lab') {
-      parts.push('Исследования −5%/ур.');
+      parts.push('Один слот исследования');
+      parts.push('войска и заклинания');
     } else if (type === 'herohall') {
-      parts.push('Прокачка героя −5%/ур.');
+      parts.push('6 героев');
+      parts.push('у каждого свой уровень');
+    } else if (type === 'pethouse') {
+      parts.push('12 питомцев');
+      parts.push('один питомец на героя');
+    } else if (type === 'workshop') {
+      parts.push('9 осадных машин');
+      parts.push('едут с армией');
+    } else if (type === 'spellfactory' || type === 'darkspellfactory') {
+      parts.push('Заклинания');
+      parts.push('свои слоты, места армии не занимают');
+    } else if (type === 'blacksmith') {
+      parts.push('Снаряжение героев');
+      parts.push('в разработке');
     }
 
     // Ловушки: понятная подпись вместо «прочности 1». Уровень уже стоит
@@ -3905,13 +4175,15 @@ CC.UI = (function () {
         parts.push('Сработает при подходе');
         parts.push('Урон ' + s.dmg);
         parts.push('Радиус ' + s.radius);
-        parts.push(type === 'mine' ? 'только земля' : 'только воздух');
+        const kind = s.trapKind || (type === 'airmine' || type === 'seekingair'
+          ? 'air' : 'ground');
+        parts.push(kind === 'air' ? 'только воздух' : 'только земля');
       }
     } else {
-      if (s.dmg) parts.push('Урон ' + s.dmg);
+      if (s.dmg) parts.push('Урон ' + fmtNum(s.dmg));
       if (s.range) parts.push('Дальность ' + s.range);
       if (s.minRange) parts.push('Мин. дальность ' + s.minRange);
-      parts.push('Прочность ' + s.hp);
+      parts.push('Прочность ' + fmtNum(s.hp));
     }
 
     if (type === 'ambush') {
@@ -3937,6 +4209,7 @@ CC.UI = (function () {
     const parts = [];
     if (cost.gold) parts.push('🔩 ' + cost.gold);
     if (cost.elixir) parts.push('⚡ ' + cost.elixir);
+    if (cost.dark) parts.push('🛢️ ' + cost.dark);
     if (cost.time > 0) parts.push('· ' + formatTime(cost.time));
     else parts.push('· мгновенно');
     return parts.join(' ');
@@ -4087,7 +4360,7 @@ CC.UI = (function () {
       if (gotoStorage) {
         selGotoStorage.textContent = storageRes === 'elixir'
           ? 'К складу энергии'
-          : 'К складу руды';
+          : (storageRes === 'dark' ? 'К складу плазмы' : 'К складу руды');
         selGotoStorage.dataset.res = storageRes;
       }
     }
@@ -4122,6 +4395,181 @@ CC.UI = (function () {
     }
   }
 
+  /* ---------- компактные списки в панели постройки ---------- */
+
+  // Типы, которым мало строки характеристик: питомник, фабрики, мастерская,
+  // казармы, кузница и станция. Полные списки — в окне «Инфо».
+  const EXTRA_PANEL_TYPES = {
+    pethouse: 1, workshop: 1, spellfactory: 1, darkspellfactory: 1,
+    blacksmith: 1, train: 1, darktrain: 1, clancastle: 1, squadbarracks: 1,
+    goldmine: 1, elixir: 1, darkdrill: 1,
+    storage: 1, estorage: 1, darkstorage: 1
+  };
+
+  function extraRow(icon, name, sub, meta, locked) {
+    return '<div class="exrow' + (locked ? ' is-locked' : '') + '">' +
+      '<span class="exrow__icon" aria-hidden="true">' + icon + '</span>' +
+      '<span class="exrow__body"><b>' + escHtml(name) + '</b>' +
+        '<i>' + escHtml(sub || '') + '</i></span>' +
+      '<span class="exrow__meta">' + escHtml(meta || '') + '</span>' +
+      '</div>';
+  }
+
+  function syncBuildingExtra(it) {
+    if (!selExtra) return;
+    const type = it.type;
+    const th = CC.Game.townhallLevel();
+    let title = '';
+    let rows = '';
+    const maxRows = 14;
+
+    if (CC.PRODUCTION[type]) {
+      const ex = CC.Game.extract ? CC.Game.extract(it.id) : null;
+      const amount = ex ? Math.floor(ex.amount || 0) : 0;
+      const cap = ex ? Math.round(ex.cap || 0) : 0;
+      const pct = cap > 0 ? Math.min(100, amount / cap * 100) : 0;
+      const res = CC.BUILDINGS[type].produce;
+      title = 'Буфер · ' + resWord(res);
+      rows = '<div class="info-fill"><span><b>' + fmtNum(amount) + '</b> из ' +
+        fmtNum(cap) + '</span><i class="info-fill__bar"><b style="width:' +
+        pct.toFixed(0) + '%"></b></i></div>' +
+        '<button class="info-gather" type="button" data-panel-collect="' +
+        escHtml(it.id) + '"' + (amount > 0 ? '' : ' disabled') +
+        '>Собрать</button>';
+    } else if (type === 'storage' || type === 'estorage' || type === 'darkstorage') {
+      const res = type === 'storage' ? 'gold' : (type === 'estorage' ? 'elixir' : 'dark');
+      const cap = Math.max(1, CC.Game.cap(res));
+      const held = res === 'gold' ? CC.Game.gold()
+        : (res === 'elixir' ? CC.Game.elixir() : CC.Game.dark());
+      const pct = Math.min(100, held / cap * 100);
+      title = 'Заполненность · ' + resWord(res);
+      rows = '<div class="info-fill"><span><b>' + fmtNum(held) + '</b> из ' +
+        fmtNum(cap) + '</span><i class="info-fill__bar"><b style="width:' +
+        pct.toFixed(0) + '%"></b></i></div>';
+    } else if (type === 'pethouse') {
+      const ids = Object.keys(CC.PETS || {});
+      const up = CC.Game.petUpInfo ? CC.Game.petUpInfo() : null;
+      const speed = up && CC.Game.petSpeedCost ? CC.Game.petSpeedCost() : null;
+      const gems = CC.Game.gems();
+      title = 'Питомцы · ' + ids.length + ' · один на героя' +
+        (up ? ' · идёт прокачка' : '');
+      rows = ids.slice(0, maxRows).map(function (id) {
+        const p = CC.PETS[id];
+        const lvl = CC.Game.petLevel ? CC.Game.petLevel(id) : 1;
+        const max = CC.Game.petMaxLevelFor
+          ? CC.Game.petMaxLevelFor(id) : 1;
+        const active = !!(up && up.id === id);
+        const check = active ? null : (CC.Game.canUpgradePet
+          ? CC.Game.canUpgradePet(id) : { ok: false });
+        const cost = active || !CC.Game.petUpgradeCost
+          ? null : CC.Game.petUpgradeCost(id);
+        let action = '';
+        let meta = '';
+        let sub = p.role + ' · ' + petHeroName(id);
+        let rowsActionBar = 0;
+
+        if (active) {
+          meta = formatTime(up.left);
+          sub = 'Ур. ' + lvl + ' → ' + up.to;
+          if (speed) {
+            const ok = gems >= speed.gems;
+            action = '<button class="exrow__btn exrow__btn_speed" type="button"' +
+              ' data-pet-speed="1"' + (ok ? '' : ' disabled') +
+              ' title="' + (ok ? 'Завершить прокачку мгновенно'
+                : 'Нужно ещё ' + platText(speed.gems - gems)) + '">' +
+              '<span class="ico ico-platinum" aria-hidden="true"></span> ' +
+              speed.gems + '</button>';
+          }
+          rowsActionBar = Math.round((up.progress || 0) * 100);
+        } else {
+          meta = 'ур. ' + lvl + ' / ' + Math.max(1, max);
+          if (cost) {
+            sub += ' · ' + fmtNum(cost.dark || cost.elixir || cost.gold) +
+              ' ' + resWord(cost.currency) + ' · ' + formatTime(cost.time);
+          }
+          if (check && check.ok) {
+            action = '<button class="exrow__btn" type="button" data-pet-up="' +
+              escHtml(id) + '">Улучшить</button>';
+          } else {
+            let label = 'Улучшить';
+            if (check && check.busy) label = 'Занято';
+            else if (check && check.needPetHouse) label = 'Нет питомника';
+            else if (check && check.reason === 'Максимальный уровень') label = 'Макс.';
+            else if (check && check.missing) {
+              label = check.missing.dark ? 'Нет плазмы' : 'Нет энергии';
+            } else if (check && check.needStorage) label = 'Склад мал';
+            action = '<button class="exrow__btn" type="button" disabled title="' +
+              escHtml((check && check.reason) || '') + '">' + label + '</button>';
+          }
+          rowsActionBar = 0;
+        }
+
+        return '<div class="exrow exrow_pet' + (active ? ' is-run' : '') +
+          (max <= 0 ? ' is-locked' : '') + '">' +
+          '<span class="exrow__icon" aria-hidden="true">' + petIcon(id) + '</span>' +
+          '<span class="exrow__body"><b>' + escHtml(p.name) + '</b>' +
+            '<i>' + escHtml(sub) + '</i>' +
+            (active
+              ? '<i class="exrow__bar"><b style="width:' + rowsActionBar +
+                '%"></b></i>'
+              : '') +
+          '</span>' +
+          '<span class="exrow__meta">' + escHtml(meta) + '</span>' +
+          action +
+          '</div>';
+      }).join('');
+    } else if (type === 'workshop') {
+      const ids = Object.keys(CC.SIEGE || {});
+      title = 'Осадные машины · ' + ids.length;
+      rows = ids.slice(0, maxRows).map(function (id) {
+        const s = CC.SIEGE[id];
+        const locked = (s.minTh || 0) > th;
+        return extraRow(siegeIcon(id), s.name, s.role,
+          locked ? 'с центра ' + s.minTh : 'готова', locked);
+      }).join('');
+    } else if (type === 'spellfactory' || type === 'darkspellfactory') {
+      const dark = type === 'darkspellfactory';
+      const ids = Object.keys(CC.SPELLS || {}).filter(function (id) {
+        const cur = CC.SPELLS[id].currency || 'elixir';
+        return dark ? cur === 'dark' : cur !== 'dark';
+      });
+      title = (dark ? 'Тёмные заклинания' : 'Заклинания') + ' · ' + ids.length;
+      rows = ids.slice(0, maxRows).map(function (id) {
+        const s = CC.SPELLS[id];
+        const lvl = CC.Game.spellLevel ? CC.Game.spellLevel(id) : 1;
+        const max = CC.Game.spellMaxLevelFor
+          ? CC.Game.spellMaxLevelFor(id) : (CC.spellMaxLevel
+            ? CC.spellMaxLevel(id, th) : 1);
+        return extraRow(spellIcon(id), s.name, s.role,
+          'ур. ' + lvl + ' / ' + Math.max(1, max), max <= 0);
+      }).join('');
+    } else if (type === 'train' || type === 'darktrain') {
+      const qs = CC.Game.queueStats();
+      const queue = CC.Game.queueInfo();
+      title = 'Очередь · ' + qs.queued + ' из ' + qs.slots;
+      rows = queue.length ? queue.slice(0, maxRows).map(function (q) {
+        const d = CC.TROOPS[q.type] || {};
+        return extraRow(d.icon || '🪖', d.name || q.type,
+          q.active ? 'тренируется' : 'ждёт', formatTime(q.left), false);
+      }).join('') : '<p class="selextra__hint">Очередь пуста</p>';
+    } else if (type === 'blacksmith') {
+      title = 'Оружейная';
+      rows = '<p class="selextra__hint">Снаряжение героев появится позже. ' +
+        'Данные здания готовы.</p>';
+    } else if (type === 'clancastle' || type === 'squadbarracks') {
+      title = CC.BUILDINGS[type].name;
+      rows = '<p class="selextra__hint">Резерв и режим отрядов — в разработке.</p>';
+    }
+
+    const sig = type + '|' + title + '|' + rows;
+    if (cache.extraSig === sig) return;
+    cache.extraSig = sig;
+
+    selExtra.innerHTML = '<div class="selextra__head"><span>' + escHtml(title) +
+      '</span><span class="selextra__tag">данные CoC</span></div>' +
+      '<div class="selextra__list">' + rows + '</div>';
+  }
+
   function syncSelbar() {
     const id = state.selected;
     if (!id) {
@@ -4136,13 +4584,28 @@ CC.UI = (function () {
     }
 
     selbar.classList.remove('hidden');
+    const def = CC.BUILDINGS[it.type];
+    if (!def) {
+      // Старый сейв с неизвестным типом: не роняем страницу, объясняем.
+      selbar.classList.add('hidden');
+      state.selected = null;
+      toast('Неизвестный модуль: ' + it.type + ' — пропущен');
+      return;
+    }
     const prevType = selbar.dataset.type;
     selbar.dataset.type = it.type;
     // Новая постройка открывается с верха панели, а не с чужой прокрутки.
     if (prevType !== it.type) {
       selbar.scrollTop = 0;
     }
-    const wide = it.type === 'barracks' || it.type === 'lab' || it.type === 'herohall';
+    const wide = it.type === 'barracks' || it.type === 'lab' ||
+      it.type === 'herohall' || it.type === 'pethouse' ||
+      it.type === 'workshop' || it.type === 'spellfactory' ||
+      it.type === 'darkspellfactory' || it.type === 'train' ||
+      it.type === 'darktrain' || it.type === 'goldmine' ||
+      it.type === 'elixir' || it.type === 'darkdrill' ||
+      it.type === 'storage' || it.type === 'estorage' ||
+      it.type === 'darkstorage';
     selbar.classList.toggle('is-strip', !wide);
     // Подробности живут в отдельном #info, кнопка всегда называется «Инфо».
     if (selInfo) {
@@ -4157,17 +4620,19 @@ CC.UI = (function () {
       }
     }
 
-    selName.textContent = CC.BUILDINGS[it.type].name;
+    selName.textContent = def.name || it.type;
     selLevel.classList.remove('hidden');
     selStats.classList.remove('hidden');
     selUp.classList.remove('hidden');
     selArmy.classList.add('hidden');
     if (labUp) labUp.classList.add('hidden');
     if (selHero) selHero.classList.add('hidden');
+    if (selExtra) selExtra.classList.add('hidden');
 
     const s = CC.Game.stats(id);
     if (s) {
-      const lvl = 'Ур. ' + s.level;
+      const maxLvl = CC.Game.maxLevel ? CC.Game.maxLevel(it.type) : (s.max || 0);
+      const lvl = 'Ур. ' + s.level + (maxLvl ? ' / ' + maxLvl : '');
       if (cache.selLevel !== lvl) {
         selLevel.textContent = lvl;
         cache.selLevel = lvl;
@@ -4195,18 +4660,28 @@ CC.UI = (function () {
     } else if (it.type === 'herohall') {
       if (selHero) selHero.classList.remove('hidden');
       syncHeroCard();
+    } else if (EXTRA_PANEL_TYPES[it.type]) {
+      if (selExtra) selExtra.classList.remove('hidden');
+      syncBuildingExtra(it);
     } else {
       cache.trainSig = null;
       cache.queueSig = null;
       cache.troopSig = null;
       cache.heroSig = null;
+      cache.extraSig = null;
     }
   }
 
   /* ---------- окно «Информация» о постройке ---------- */
 
   function resWord(res) {
+    if (res === 'dark') return 'плазмы';
     return res === 'elixir' ? 'энергии' : 'руды';
+  }
+
+  // Родительный падеж для цен и подписей: «руды», «энергии», «плазмы».
+  function resShort(res) {
+    return res === 'dark' ? 'плазма' : (res === 'elixir' ? 'энергия' : 'руда');
   }
 
   function capText(text) {
@@ -4221,38 +4696,73 @@ CC.UI = (function () {
       if (value === null || value === undefined || value === '') return;
       rows.push({ label: label, value: String(value) });
     };
+    const d = CC.BUILDINGS[type] || {};
 
     if (s.hp) add('Прочность', fmtNum(s.hp));
-    if (s.dmg) add('Урон', fmtNum(s.dmg));
+    if (s.dps) add('Урон (DPS)', fmtNum(s.dps));
+    else if (s.dmg) add('Урон', fmtNum(s.dmg));
     if (s.range) add('Дальность', s.range + ' кл.');
     if (s.minRange) add('Мин. дальность', s.minRange + ' кл.');
     if (s.rate) add('Скорость', s.rate.toFixed(2) + '/с');
     if (s.splash) add('Площадь', s.splash + ' кл.');
+
+    // Добыча — в час, как в таблице CoC.
     if (s.production) {
-      add('Производство', s.production + ' ' + resWord(s.res) + '/с');
+      add('Добыча в час', fmtNum(Math.round(s.production * 3600)) + ' ' +
+        resWord(s.res));
     }
     if (s.extractCap) {
-      add('Накопитель', fmtNum(Math.floor(s.stored || 0)) + ' из ' +
+      add('Буфер', fmtNum(Math.floor(s.stored || 0)) + ' из ' +
         fmtNum(s.extractCap));
     }
-    if (s.capGold) add('Ёмкость склада', fmtNum(s.capGold));
-    if (s.capElixir) add('Ёмкость склада', fmtNum(s.capElixir));
-    if (s.capacity) add('Мест в армии', '+' + fmtNum(s.capacity));
-    if (s.trainSlots) add('Слотов тренировки', String(s.trainSlots));
+
+    // Склады: своя ёмкость строки, вклад и заполненность.
+    if (type === 'storage' || type === 'estorage' || type === 'darkstorage') {
+      const res = type === 'storage' ? 'gold' : (type === 'estorage' ? 'elixir' : 'dark');
+      const cap = rowCap(type, s.level);
+      const held = res === 'gold' ? CC.Game.gold()
+        : (res === 'elixir' ? CC.Game.elixir() : CC.Game.dark());
+      add('Ёмкость склада', fmtNum(cap));
+      add('Сейчас на складе', fmtNum(held) + ' / ' + fmtNum(CC.Game.cap(res)));
+      add('Вклад модуля', fmtNum(cap) + ' в лимит ' + resWord(res));
+    }
+
+    if (type === 'barracks') {
+      add('Мест в армии', '+' + fmtNum(s.capacity || rowCap(type, s.level)));
+    }
+    if (type === 'train' || type === 'darktrain') {
+      add('Слотов тренировки', String(s.trainSlots || 1));
+      add('Очередь', CC.Game.queueStats().queued + ' из ' + CC.Game.queueStats().slots);
+    }
+    if (type === 'lab') add('Слот исследования', CC.Game.troopUpInfo() ? 'занят' : 'свободен');
+    if (type === 'herohall') add('Героев', String((CC.HEROES || []).length));
+    if (type === 'pethouse') add('Питомцев', String(Object.keys(CC.PETS || {}).length));
+    if (type === 'workshop') add('Осадных машин', String(Object.keys(CC.SIEGE || {}).length));
+    if (type === 'spellfactory' || type === 'darkspellfactory') {
+      add('Заклинаний', String(Object.keys(CC.SPELLS || {}).length));
+    }
 
     if (s.trap) {
       if (type === 'spring') {
         add('Эффект', 'подбрасывает');
         if (s.capacity) add('Поднимает', s.capacity + ' веса');
+      } else if (type === 'tornado') {
+        add('Эффект', 'затягивает');
+      } else if (type === 'skeletontrap') {
+        add('Эффект', 'выпускает дронов');
+        if (s.capacity) add('Дронов', String(s.capacity));
       } else {
-        add('Эффект', type === 'airmine' ? 'взрыв по воздуху' : 'взрыв по земле');
+        add('Эффект', (s.trapKind === 'air' ? 'взрыв по воздуху'
+          : 'взрыв по земле'));
       }
       if (s.radius) add('Радиус', s.radius + ' кл.');
     }
     if (s.hidden) add('Скрытность', 'до ' + (s.revealRange || 2.5) + ' кл.');
     if (s.beam) add('Разгон луча', 'до ×' + (s.rampMax || 3));
     if (s.onlyGround) add('Цели', 'только земля');
+    else if (s.airOnly) add('Цели', 'только воздух');
     else if (s.targetsAir && s.dmg) add('Цели', 'земля и воздух');
+    else if (s.dmg && !s.trap) add('Цели', 'все');
 
     return rows;
   }
@@ -4261,29 +4771,50 @@ CC.UI = (function () {
   function infoGives(type, s) {
     const d = CC.BUILDINGS[type] || {};
     const out = [];
+    const cap = rowCap(type, s.level);
+    const perHour = s.production ? Math.round(s.production * 3600) : 0;
 
     if (type === 'townhall') {
       out.push('Открывает постройки и новые уровни');
-      out.push('Предел базы: ур. ' + (s.max || 10));
-    } else if (type === 'goldmine' || type === 'elixir') {
-      out.push('Добывает ' + resWord(s.res) + ': ' + s.production + '/с');
-      if (s.extractCap) out.push('Накопитель: ' + fmtNum(s.extractCap));
-    } else if (type === 'storage' || type === 'estorage') {
-      const cap = type === 'storage' ? s.capGold : s.capElixir;
-      out.push('Ёмкость склада ' + resWord(type === 'storage' ? 'gold' : 'elixir') +
-        ': ' + fmtNum(cap));
-      out.push('Сейчас на складе: ' +
-        fmtNum(type === 'storage' ? CC.Game.gold() : CC.Game.elixir()));
+      out.push('Предел базы: ур. ' + (s.max || CC.MAX_TH));
+    } else if (type === 'goldmine' || type === 'elixir' || type === 'darkdrill') {
+      out.push('Добывает ' + resWord(s.res) + ': ' + fmtNum(perHour) + '/ч');
+      if (s.extractCap) out.push('Буфер: ' + fmtNum(s.extractCap));
+      out.push('Собирай тапом по иконке над буром');
+    } else if (type === 'storage' || type === 'estorage' || type === 'darkstorage') {
+      const res = type === 'storage' ? 'gold' : (type === 'estorage' ? 'elixir' : 'dark');
+      out.push('Ёмкость склада ' + resWord(res) + ': ' + fmtNum(cap));
+      out.push('Сейчас на складе: ' + fmtNum(
+        res === 'gold' ? CC.Game.gold()
+          : (res === 'elixir' ? CC.Game.elixir() : CC.Game.dark())));
+      out.push('Лимит всей базы: ' + fmtNum(CC.Game.cap(res)));
     } else if (type === 'barracks') {
-      out.push('Мест в армии: +' + fmtNum(s.capacity));
+      out.push('Мест в армии: +' + fmtNum(s.capacity || cap));
       out.push('Слотов тренировки: ' + (s.trainSlots || 1));
       out.push('Открывает найм войск');
+    } else if (type === 'train' || type === 'darktrain') {
+      out.push(type === 'darktrain' ? 'Тренирует войска за плазму' : 'Тренирует войска');
+      out.push('Очередь: ' + CC.Game.queueStats().queued + ' из ' +
+        CC.Game.queueStats().slots);
+      out.push('Найм — в окне Армии');
     } else if (type === 'lab') {
-      out.push('Исследования войск');
-      out.push('Скидка на исследования: 5% за уровень');
+      out.push('Исследования войск и заклинаний');
+      out.push('Один слот: ' + (CC.Game.troopUpInfo() ? 'занят' : 'свободен'));
     } else if (type === 'herohall') {
-      out.push('Прокачка Сержанта');
-      out.push('Скидка на прокачку: 5% за уровень');
+      out.push('Академия: ' + (CC.HEROES || []).length + ' героев');
+      out.push('У каждого героя свой уровень и цена');
+    } else if (type === 'pethouse') {
+      out.push('Питомник: ' + Object.keys(CC.PETS || {}).length + ' питомцев');
+      out.push('Один питомец на героя');
+    } else if (type === 'workshop') {
+      out.push('Мастерская: ' + Object.keys(CC.SIEGE || {}).length + ' осад');
+      out.push('Осадные машины едут с армией');
+    } else if (type === 'spellfactory' || type === 'darkspellfactory') {
+      out.push('Заклинания: ' + Object.keys(CC.SPELLS || {}).length + ' типов');
+      out.push('Свои слоты, места армии не занимают');
+    } else if (type === 'blacksmith') {
+      out.push('Снаряжение героев');
+      out.push('В разработке');
     } else if (type === 'wall') {
       out.push('Задерживает врага');
       out.push('Не пропускает проход');
@@ -4318,34 +4849,35 @@ CC.UI = (function () {
     };
 
     if (next.hp && next.hp !== s.hp) add('Прочность', fmtNum(s.hp), fmtNum(next.hp));
-    if (next.dmg && next.dmg !== s.dmg) add('Урон', fmtNum(s.dmg), fmtNum(next.dmg));
+    if (next.dps && next.dps !== s.dps) add('DPS', fmtNum(s.dps), fmtNum(next.dps));
+    else if (next.dmg && next.dmg !== s.dmg) {
+      add('Урон', fmtNum(s.dmg), fmtNum(next.dmg));
+    }
     if (next.range && next.range !== s.range) {
       add('Дальность', s.range + ' кл.', next.range + ' кл.');
     }
 
     if (CC.PRODUCTION[type]) {
-      const p0 = s.production || 0;
-      const p1 = CC.Game.produceAt ? CC.Game.produceAt(type, s.level + 1) : p0;
+      const p0 = Math.round((s.production || 0) * 3600);
+      const p1 = Math.round((CC.productionAt(type, s.level + 1) || 0) * 3600);
       if (p1 !== p0) {
-        add('Производство', p0 + ' ' + resWord(s.res) + '/с',
-          p1 + ' ' + resWord(s.res) + '/с');
+        add('Добыча в час', fmtNum(p0) + ' ' + resWord(s.res),
+          fmtNum(p1) + ' ' + resWord(s.res));
       }
       const b0 = s.extractCap || 0;
       const b1 = CC.extractCap ? CC.extractCap(type, s.level + 1) : 0;
-      if (b1 !== b0) add('Накопитель', fmtNum(b0), fmtNum(b1));
+      if (b1 !== b0) add('Буфер', fmtNum(b0), fmtNum(b1));
     }
 
-    if (type === 'storage' || type === 'estorage') {
-      const key = type === 'storage' ? 'gold' : 'elixir';
-      const base = (CC.ECONOMY.storageCap || {})[key] || 0;
-      const c0 = type === 'storage' ? s.capGold : s.capElixir;
-      const c1 = Math.round(base * Math.pow(2, s.level));
+    if (type === 'storage' || type === 'estorage' || type === 'darkstorage') {
+      const c0 = rowCap(type, s.level);
+      const c1 = rowCap(type, s.level + 1);
       if (c1 !== c0) add('Ёмкость склада', fmtNum(c0), fmtNum(c1));
     }
 
     if (type === 'barracks') {
-      const c0 = s.capacity || 0;
-      const c1 = (CC.ARMY.capacityPerBarracks || 20) * (s.level + 1);
+      const c0 = s.capacity || rowCap(type, s.level);
+      const c1 = rowCap(type, s.level + 1);
       if (c1 !== c0) add('Мест в армии', '+' + fmtNum(c0), '+' + fmtNum(c1));
     }
 
@@ -4405,6 +4937,216 @@ CC.UI = (function () {
     };
   }
 
+  // Связанный герой питомца: сначала реальное назначение из набора,
+  // иначе стабильная подсказка «по порядку» для карточек данных.
+  function petHeroName(id) {
+    const assigned = petHeroOf(id);
+    if (assigned) return petHeroNameSafe(assigned);
+    const ids = Object.keys(CC.PETS || {});
+    const i = Math.max(0, ids.indexOf(id));
+    const list = CC.HEROES || [];
+    if (!list.length) return '—';
+    return list[i % list.length].name;
+  }
+
+  // Списки питомника, фабрик и мастерской: карточки данных без механик P2.
+  function infoPetListHtml() {
+    const ids = Object.keys(CC.PETS || {});
+    if (!ids.length) return '';
+    const rows = ids.map(function (id) {
+      const p = CC.PETS[id];
+      const st = CC.petStats ? CC.petStats(id, 1) : null;
+      const max = CC.petMaxLevel ? CC.petMaxLevel(id, CC.Game.townhallLevel()) : 0;
+      return '<div class="info-line" data-pet="' + escHtml(id) + '">' +
+        '<span class="info-line__icon">' + petIcon(id) + '</span>' +
+        '<span class="info-line__body">' +
+          '<b>' + escHtml(p.name) + '</b>' +
+          '<i>' + escHtml(p.role) + ' · ' + escHtml(petHeroName(id)) + '</i>' +
+        '</span>' +
+        '<span class="info-line__meta">Ур. 1 / ' + (max || (st ? 1 : 1)) + '</span>' +
+        '<button class="info-line__btn" type="button" data-info-army="pets" ' +
+          'title="Назначить питомца герою в окне Армии">В Армии</button>' +
+      '</div>';
+    }).join('');
+    return '<div class="info-block">' +
+      '<h3 class="info-block__title">Питомцы · ' + ids.length + ' · один на героя</h3>' +
+      '<div class="info-mini-list">' + rows + '</div></div>';
+  }
+
+  function infoSpellListHtml(darkOnly) {
+    const ids = Object.keys(CC.SPELLS || {}).filter(function (id) {
+      const cur = CC.SPELLS[id].currency || 'elixir';
+      return darkOnly ? cur === 'dark' : cur !== 'dark';
+    });
+    if (!ids.length) return '';
+    const rows = ids.map(function (id) {
+      const sp = CC.SPELLS[id];
+      const st = CC.spellStats ? CC.spellStats(id, 1) : null;
+      const max = CC.spellMaxLevel ? CC.spellMaxLevel(id, CC.Game.townhallLevel()) : 1;
+      const price = st && st.cost ? fmtNum(st.cost) + ' ' + resWord(st.currency) : '—';
+      return '<div class="info-line" data-spell="' + escHtml(id) + '">' +
+        '<span class="info-line__icon">' + spellIcon(id) + '</span>' +
+        '<span class="info-line__body">' +
+          '<b>' + escHtml(sp.name) + '</b>' +
+          '<i>' + escHtml(sp.role) + '</i>' +
+        '</span>' +
+        '<span class="info-line__meta">Ур. 1 / ' + Math.max(1, max) + '</span>' +
+        '<span class="info-line__price">' + price + '</span>' +
+        '<button class="info-line__btn" type="button" data-info-army="spells" ' +
+          'title="Добавить заклинание в набор в окне Армии">В Армии</button>' +
+      '</div>';
+    }).join('');
+    return '<div class="info-block">' +
+      '<h3 class="info-block__title">' + (darkOnly ? 'Тёмные заклинания' : 'Заклинания') +
+      ' · ' + ids.length + '</h3>' +
+      '<div class="info-mini-list">' + rows + '</div></div>';
+  }
+
+  function infoSiegeListHtml() {
+    const ids = Object.keys(CC.SIEGE || {});
+    if (!ids.length) return '';
+    const th = CC.Game.townhallLevel();
+    const rows = ids.map(function (id) {
+      const s = CC.SIEGE[id];
+      const locked = (s.minTh || 0) > th;
+      return '<div class="info-line' + (locked ? ' is-locked' : '') +
+        '" data-siege="' + escHtml(id) + '">' +
+        '<span class="info-line__icon">' + siegeIcon(id) + '</span>' +
+        '<span class="info-line__body">' +
+          '<b>' + escHtml(s.name) + '</b>' +
+          '<i>' + escHtml(s.role) + '</i>' +
+        '</span>' +
+        '<span class="info-line__meta">' +
+          (locked ? 'С центра ' + s.minTh : 'Готова') + '</span>' +
+        '<button class="info-line__btn" type="button" data-info-army="siege" ' +
+          'title="Выбрать осадную машину в окне Армии">В Армии</button>' +
+      '</div>';
+    }).join('');
+    return '<div class="info-block">' +
+      '<h3 class="info-block__title">Осадные машины · ' + ids.length + '</h3>' +
+      '<div class="info-mini-list">' + rows + '</div></div>';
+  }
+
+  function infoHeroListHtml() {
+    const th = CC.Game.townhallLevel();
+    const list = CC.Game.heroList ? CC.Game.heroList() : [];
+    if (!list.length) return '';
+    const rows = list.map(function (h) {
+      const open = !!h.unlocked;
+      const cost = CC.Game.heroUpgradeCost ? CC.Game.heroUpgradeCost(h.id) : null;
+      const price = cost
+        ? fmtNum(cost.dark || cost.elixir || cost.gold) + ' ' +
+          resWord(cost.currency) + ' · ' + formatTime(cost.time)
+        : (open ? 'Максимум' : 'С центра ' + h.minTh);
+      return '<div class="info-line' + (open ? '' : ' is-locked') +
+        '" data-hero="' + escHtml(h.id) + '">' +
+        '<span class="info-line__icon">★</span>' +
+        '<span class="info-line__body">' +
+          '<b>' + escHtml(h.name) + '</b>' +
+          '<i>' + escHtml(h.role || '') + ' · HP ' + fmtNum(h.hp) + '</i>' +
+        '</span>' +
+        '<span class="info-line__meta">Ур. ' + (open ? h.level : 0) +
+          ' / ' + (h.max || 0) + '</span>' +
+        '<span class="info-line__price">' + price + '</span>' +
+      '</div>';
+    }).join('');
+    return '<div class="info-block">' +
+      '<h3 class="info-block__title">Академия · ' + list.length + ' героев</h3>' +
+      '<div class="info-mini-list">' + rows + '</div></div>';
+  }
+
+  function infoSpecialHtml(it, s) {
+    const type = it.type;
+    const id = it.id;
+    let html = '';
+
+    // Буры: буфер и «Собрать».
+    if (CC.PRODUCTION[type]) {
+      const stored = Math.floor(Number(s.stored) || 0);
+      const cap = s.extractCap || rowCap(type, s.level);
+      const pct = cap > 0 ? Math.min(100, stored / cap * 100) : 0;
+      html += '<div class="info-block info-block_gather">' +
+        '<h3 class="info-block__title">Буфер</h3>' +
+        '<div class="info-fill"><span>Собрано: <b>' + fmtNum(stored) + '</b> из ' +
+          fmtNum(cap) + ' ' + resWord(s.res) + '</span>' +
+          '<i class="info-fill__bar"><b style="width:' + pct.toFixed(0) + '%"></b></i>' +
+        '</div>' +
+        '<button class="info-gather" type="button" data-info-collect="' + id + '"' +
+          (stored > 0 ? '' : ' disabled') + '>Собрать</button>' +
+        '</div>';
+    }
+
+    // Склады: заполненность и вклад.
+    if (type === 'storage' || type === 'estorage' || type === 'darkstorage') {
+      const res = type === 'storage' ? 'gold' : (type === 'estorage' ? 'elixir' : 'dark');
+      const cap = Math.max(1, CC.Game.cap(res));
+      const held = res === 'gold' ? CC.Game.gold()
+        : (res === 'elixir' ? CC.Game.elixir() : CC.Game.dark());
+      const pct = Math.min(100, held / cap * 100);
+      html += '<div class="info-block info-block_fill">' +
+        '<h3 class="info-block__title">Заполненность</h3>' +
+        '<div class="info-fill"><span><b>' + fmtNum(held) + '</b> из ' +
+          fmtNum(cap) + ' ' + resWord(res) + '</span>' +
+          '<i class="info-fill__bar"><b style="width:' + pct.toFixed(0) + '%"></b></i>' +
+        '</div></div>';
+    }
+
+    if (type === 'barracks') {
+      const qs = CC.Game.queueStats();
+      html += '<div class="info-block"><h3 class="info-block__title">Армия</h3>' +
+        '<div class="info-fill"><span>Занято <b>' + CC.Game.armyUsed() + '</b> из ' +
+          CC.Game.capacity() + ' мест</span>' +
+          '<i class="info-fill__bar"><b style="width:' +
+          (CC.Game.capacity() > 0
+            ? Math.min(100, CC.Game.armyUsed() / CC.Game.capacity() * 100).toFixed(0)
+            : 0) + '%"></b></i></div>' +
+        '<p class="info-hint">Очередь: ' + qs.queued + ' · ' + qs.slots + ' ' +
+          slotWord(qs.slots) + '</p></div>';
+    }
+
+    if (type === 'train' || type === 'darktrain') {
+      const qs = CC.Game.queueStats();
+      const queue = CC.Game.queueInfo().slice(0, 6).map(function (q) {
+        return '<div class="info-line"><span class="info-line__icon">' +
+          (CC.TROOPS[q.type] || {}).icon + '</span>' +
+          '<span class="info-line__body"><b>' + escHtml(troopName(q.type)) +
+          '</b><i>' + (q.active ? 'тренируется' : 'ждёт') + '</i></span>' +
+          '<span class="info-line__meta">' + formatTime(q.left) + '</span></div>';
+      }).join('');
+      html += '<div class="info-block"><h3 class="info-block__title">Очередь · ' +
+        qs.queued + ' из ' + qs.slots + '</h3>' +
+        '<div class="info-mini-list">' + (queue ||
+          '<p class="info-hint">Очередь пуста</p>') + '</div></div>';
+    }
+
+    if (type === 'lab') {
+      const info = CC.Game.troopUpInfo();
+      html += '<div class="info-block"><h3 class="info-block__title">Слот исследования</h3>' +
+        '<p class="info-hint">' + (info
+          ? 'Идёт: ' + escHtml(troopName(info.type)) + ' → ур. ' + info.to +
+            ' · ' + formatTime(info.left)
+          : 'Свободен · войска и заклинания в панели') + '</p></div>';
+    }
+
+    if (type === 'herohall') html += infoHeroListHtml();
+    if (type === 'pethouse') html += infoPetListHtml();
+    if (type === 'workshop') html += infoSiegeListHtml();
+    if (type === 'spellfactory') html += infoSpellListHtml(false);
+    if (type === 'darkspellfactory') html += infoSpellListHtml(true);
+    if (type === 'blacksmith') {
+      html += '<div class="info-block"><h3 class="info-block__title">Оружейная</h3>' +
+        '<p class="info-hint">Снаряжение героев появится позже. Карточка ' +
+        'здания и данные готовы.</p></div>';
+    }
+    if (type === 'clancastle' || type === 'squadbarracks') {
+      html += '<div class="info-block"><h3 class="info-block__title">' +
+        escHtml(CC.BUILDINGS[type].name) + '</h3>' +
+        '<p class="info-hint">Режим отрядов и подкрепление — в разработке.</p></div>';
+    }
+
+    return html;
+  }
+
   function infoRowsHtml(rows) {
     return rows.map(function (r) {
       return '<div class="info-stat"><dt>' + escHtml(r.label) + '</dt>' +
@@ -4456,7 +5198,7 @@ CC.UI = (function () {
         '<aside class="info-card__hero">' +
           '<div class="info-card__art">' + (art || fallback) + '</div>' +
           '<b class="info-card__name">' + escHtml(d.name || type) + '</b>' +
-          '<span class="info-card__level">Ур. ' + s.level + '</span>' +
+          '<span class="info-card__level">Ур. ' + s.level + ' / ' + maxLvl + '</span>' +
           '<span class="info-card__role">' + escHtml(d.desc || '') + '</span>' +
         '</aside>' +
         '<section class="info-card__main">' +
@@ -4471,6 +5213,7 @@ CC.UI = (function () {
               return '<li>' + escHtml(g) + '</li>';
             }).join('') + '</ul>' +
           '</div>' +
+          infoSpecialHtml(it, s) +
           '<div class="info-block info-block_next">' +
             '<h3 class="info-block__title">Следующий уровень</h3>' +
             nextHtml +
@@ -4492,10 +5235,18 @@ CC.UI = (function () {
 
     const up = infoUpgradeState(id);
     const maxLvl = CC.Game.maxLevel ? CC.Game.maxLevel(it.type) : (s.max || 10);
+    // Буфер бура меняется каждую секунду — включаем его в подпись, чтобы
+    // кнопка «Собрать» и полоска были честными.
+    const ex = CC.Game.extract ? CC.Game.extract(id) : null;
     const sig = [
       id, it.type, s.level, maxLvl, up.block, up.label, up.reason, up.price,
-      up.timer || '', CC.Game.gold(), CC.Game.elixir(), CC.Game.gems(),
-      Math.round(CC.Game.cap('gold')), Math.round(CC.Game.cap('elixir'))
+      up.timer || '', CC.Game.gold(), CC.Game.elixir(), CC.Game.dark(),
+      CC.Game.gems(),
+      Math.round(CC.Game.cap('gold')), Math.round(CC.Game.cap('elixir')),
+      Math.round(CC.Game.cap('dark')),
+      ex ? Math.floor(ex.amount || 0) : 0,
+      CC.Game.troopUpInfo() ? 1 : 0,
+      CC.Game.heroLevel ? CC.Game.heroLevel() : 0
     ].join('|');
     if (cache.infoSig === sig) return;
     cache.infoSig = sig;
@@ -4539,6 +5290,33 @@ CC.UI = (function () {
     if (infoEl) {
       infoEl.addEventListener('click', function (e) {
         if (e.target === infoEl) { closeInfo(); sync(); }
+      });
+    }
+    // «Собрать» в окне бура: та же операция, что иконка над зданием.
+    if (infoBody) {
+      infoBody.addEventListener('click', function (e) {
+        const armyBtn = e.target.closest ? e.target.closest('[data-info-army]') : null;
+        if (armyBtn) {
+          const tab = armyBtn.dataset.infoArmy;
+          closeInfo();
+          openRecruit();
+          openRecruitTab(tab);
+          sync();
+          return;
+        }
+        const btn = e.target.closest ? e.target.closest('[data-info-collect]') : null;
+        if (!btn || btn.disabled) return;
+        const res = CC.Game.collect(btn.dataset.infoCollect);
+        if (res.error) {
+          toast(res.error);
+        } else {
+          const name = res.res === 'gold' ? 'руды'
+            : (res.res === 'dark' ? 'плазмы' : 'энергии');
+          toast('+' + fmtNum(res.got || 0) + ' ' + name);
+          if (CC.Sound) CC.Sound.play('collect');
+        }
+        cache.infoSig = null;
+        sync();
       });
     }
   }
@@ -4603,6 +5381,7 @@ CC.UI = (function () {
     const check = CC.Game.canUpgradeTroop(type);
     const cost = check.cost || CC.Game.troopUpgradeCost(type);
     const up = CC.Game.troopUpInfo();
+    const spellUp = CC.Game.spellUpInfo ? CC.Game.spellUpInfo() : null;
     let label = 'Исследовать';
     let reason = '';
 
@@ -4611,7 +5390,11 @@ CC.UI = (function () {
       reason = '';
     } else if (check.busy) {
       label = 'Идёт исследование';
-      if (up && up.type !== type) {
+      if (spellUp && !up) {
+        label = 'Лаборатория занята';
+        reason = 'Сначала завершится: ' + (spellUp.name || spellUp.id) +
+          ' · осталось ' + formatTime(spellUp.left);
+      } else if (up && up.type !== type) {
         reason = 'Сначала завершится: ' + (up.name || troopName(up.type)) +
           ' ' + up.level + ' → ' + up.to + ' · осталось ' + formatTime(up.left);
       } else if (up) {
@@ -4680,7 +5463,9 @@ CC.UI = (function () {
 
   function researchLabHtml(lab, state) {
     const up = state.up;
-    const speed = up ? CC.Game.troopSpeedCost() : null;
+    const speed = up
+      ? (state.speed !== undefined ? state.speed : CC.Game.troopSpeedCost())
+      : null;
     const gems = CC.Game.gems();
     const factor = lab > 1 ? Math.pow(0.95, lab - 1) : 1;
     const pct = Math.round((1 - factor) * 100);
@@ -4758,34 +5543,172 @@ CC.UI = (function () {
     '</div>';
   }
 
-  function syncResearch() {
+  /* ---------- исследование заклинаний (тот же лабораторный слот) ---------- */
+
+  function spellResearchState(id) {
+    const check = CC.Game.canUpgradeSpell
+      ? CC.Game.canUpgradeSpell(id)
+      : { ok: false, error: 'Недоступно', reason: 'Исследование недоступно' };
+    const cost = check.cost || (CC.Game.spellUpgradeCost
+      ? CC.Game.spellUpgradeCost(id) : null);
+    const up = CC.Game.spellUpInfo ? CC.Game.spellUpInfo() : null;
+    const speed = up && CC.Game.spellSpeedCost
+      ? CC.Game.spellSpeedCost() : null;
+    const troopUp = CC.Game.troopUpInfo ? CC.Game.troopUpInfo() : null;
+    let label = 'Исследовать';
+    let reason = '';
+
+    if (check.ok) {
+      label = 'Исследовать';
+    } else if (check.busy) {
+      label = troopUp ? 'Лаборатория занята' : 'Идёт исследование';
+      if (troopUp) {
+        reason = 'Сначала завершится: ' + (troopUp.name || troopName(troopUp.type)) +
+          ' ' + troopUp.level + ' → ' + troopUp.to +
+          ' · осталось ' + formatTime(troopUp.left);
+      } else if (up && up.id !== id) {
+        reason = 'Сначала завершится: ' + (up.name || id) +
+          ' · осталось ' + formatTime(up.left);
+      } else if (up) {
+        reason = 'Это заклинание уже исследуется · осталось ' +
+          formatTime(up.left);
+      } else {
+        reason = check.reason || 'Лаборатория занята';
+      }
+    } else if (check.needLab) {
+      label = 'Нет лаборатории';
+      reason = 'Построй исследовательский центр';
+    } else if (check.reason === 'Максимальный уровень') {
+      label = 'Максимальный уровень';
+      reason = 'Достигнут максимальный уровень';
+    } else if (check.missing) {
+      label = check.missing.dark ? 'Нет плазмы' : 'Нет энергии';
+      reason = check.reason || 'Не хватает ресурсов';
+    } else if (check.needStorage) {
+      label = 'Склад мал';
+      reason = check.reason || 'Склад мал';
+    } else {
+      reason = check.reason || 'Исследование недоступно';
+    }
+
+    return {
+      check: check, cost: cost, up: up, speed: speed,
+      label: label, reason: reason, disabled: !check.ok
+    };
+  }
+
+  function spellResearchNextHtml(id, level, max, state) {
+    if (level >= max) {
+      return '<div class="info-max"><b>Максимальный уровень</b>' +
+        '<span>' + level + ' / ' + max +
+        ' — дальше исследовать нечего.</span></div>';
+    }
+    const cur = CC.spellStats ? CC.spellStats(id, level) : {};
+    const next = CC.spellStats ? CC.spellStats(id, level + 1) : {};
+    const cost = state.cost;
+    const rows = [];
+    const add = function (label, a, b) {
+      if (a === b || b === undefined || b === null) return;
+      rows.push('<div class="info-next__row"><span>' + label + '</span><b>' +
+        fmtNum(a || 0) + '</b><i>→</i><b class="info-next__up">' +
+        fmtNum(b) + '</b></div>');
+    };
+    add('Урон', cur.dmg, next.dmg);
+    add('Радиус', cur.radius, next.radius);
+    add('Секунды', cur.dur, next.dur);
+    return '<div class="info-next">' +
+      '<span class="info-next__tag">Ур. ' + level + ' → ' + (level + 1) + '</span>' +
+      (rows.length ? '<div class="info-next__rows">' + rows.join('') + '</div>'
+        : '<p class="info-hint">Уровень повышает эффект заклинания.</p>') +
+      (cost ? '<p class="info-next__price">' + priceText(cost) + '</p>' : '') +
+      '</div>';
+  }
+
+  function spellResearchBodyHtml(id, state) {
+    const sp = CC.SPELLS[id] || {};
+    const level = CC.Game.spellLevel ? CC.Game.spellLevel(id) : 1;
+    const max = CC.Game.spellMaxLevelFor
+      ? CC.Game.spellMaxLevelFor(id) : level;
+    const st = CC.spellStats ? CC.spellStats(id, level) : {};
+    const lab = CC.Game.labLevel();
+    return '<div class="research-grid">' +
+      '<aside class="research-hero">' +
+        '<div class="research-hero__portrait">' +
+          '<span class="research-spell-icon" data-spell="' + escHtml(id) + '">' +
+            spellIcon(id) + '</span>' +
+        '</div>' +
+        '<b class="research-hero__name">' + escHtml(sp.name || id) + '</b>' +
+        '<span class="research-hero__role">' + escHtml(sp.role || '') + '</span>' +
+        '<span class="research-hero__level">Ур. ' + level + ' / ' +
+          Math.max(1, max) + '</span>' +
+        '<span class="research-hero__space">Тип: заклинание · лаборатория</span>' +
+      '</aside>' +
+      '<section class="research-main">' +
+        '<div class="info-block">' +
+          '<h3 class="info-block__title">Сейчас</h3>' +
+          '<div class="research-stats">' +
+            '<span class="research-stat"><b>' + fmtNum(st.dmg || 0) +
+              '</b><i>Урон</i></span>' +
+            '<span class="research-stat"><b>' + (st.radius || 0) +
+              '</b><i>Радиус</i></span>' +
+            '<span class="research-stat"><b>' + (st.dur || 0) +
+              '</b><i>Сек</i></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="info-block">' +
+          '<h3 class="info-block__title">Следующий уровень</h3>' +
+          spellResearchNextHtml(id, level, Math.max(1, max), state) +
+        '</div>' +
+      '</section>' +
+      researchLabHtml(lab, state) +
+    '</div>';
+  }  function syncResearch() {
     if (!researchOpen) return;
 
     const type = researchType;
-    if (!type || !CC.TROOPS[type]) {
-      closeResearch();
-      return;
+    const isSpell = !!(type && CC.SPELLS[type] && !CC.TROOPS[type]);
+    researchKind = isSpell ? 'spell' : 'troop';
+
+    let state;
+    let sig;
+
+    if (isSpell) {
+      const level = CC.Game.spellLevel ? CC.Game.spellLevel(type) : 1;
+      state = spellResearchState(type);
+      const up = state.up;
+      sig = ['spell', type, level, Math.round(CC.Game.elixir()),
+        Math.round(CC.Game.dark()), CC.Game.gems(), CC.Game.labLevel(),
+        state.label, state.reason,
+        state.cost ? (state.cost.elixir || state.cost.dark) + ':' +
+          state.cost.time : 'max',
+        up ? up.id + ':' + up.to + ':' + Math.ceil(up.left) + ':' +
+          Math.round((up.progress || 0) * 100) : 'idle'
+      ].join('|');
+      if (cache.researchSig === sig) return;
+      cache.researchSig = sig;
+      if (researchBody) researchBody.innerHTML = spellResearchBodyHtml(type, state);
+    } else {
+      if (!type || !CC.TROOPS[type]) {
+        closeResearch();
+        return;
+      }
+      const st = CC.Game.troopStats(type);
+      if (!st) {
+        closeResearch();
+        return;
+      }
+      state = researchState(type);
+      const up = state.up;
+      sig = ['troop', type, st.level, Math.round(CC.Game.elixir()),
+        CC.Game.gems(), CC.Game.labLevel(), state.label, state.reason,
+        state.cost ? state.cost.elixir + ':' + state.cost.time : 'max',
+        up ? up.type + ':' + up.to + ':' + Math.ceil(up.left) + ':' +
+          Math.round((up.progress || 0) * 100) : 'idle'
+      ].join('|');
+      if (cache.researchSig === sig) return;
+      cache.researchSig = sig;
+      if (researchBody) researchBody.innerHTML = researchBodyHtml(type, st, state);
     }
-
-    const st = CC.Game.troopStats(type);
-    if (!st) {
-      closeResearch();
-      return;
-    }
-
-    const state = researchState(type);
-    const up = state.up;
-    const sig = [
-      type, st.level, Math.round(CC.Game.elixir()), CC.Game.gems(),
-      CC.Game.labLevel(), state.label, state.reason,
-      state.cost ? state.cost.elixir + ':' + state.cost.time : 'max',
-      up ? up.type + ':' + up.to + ':' + Math.ceil(up.left) + ':' +
-        Math.round((up.progress || 0) * 100) : 'idle'
-    ].join('|');
-    if (cache.researchSig === sig) return;
-    cache.researchSig = sig;
-
-    if (researchBody) researchBody.innerHTML = researchBodyHtml(type, st, state);
 
     if (researchGo) {
       researchGo.disabled = !!state.disabled;
@@ -4828,20 +5751,25 @@ CC.UI = (function () {
   }
 
   function openResearch(type) {
-    if (!type || !CC.TROOPS[type]) {
+    const isSpell = !!(type && CC.SPELLS[type] && !CC.TROOPS[type]);
+    if (!isSpell && (!type || !CC.TROOPS[type])) {
       return { ok: false, error: 'Неизвестное войско' };
+    }
+    if (isSpell && !CC.Game.spellLevel) {
+      return { ok: false, error: 'Заклинания недоступны' };
     }
 
     closeInfo();
     bindResearch();
     researchOpen = true;
     researchType = type;
+    researchKind = isSpell ? 'spell' : 'troop';
     cache.researchSig = null;
     if (researchEl) researchEl.classList.remove('hidden');
     if (sergeantEl) sergeantEl.classList.add('hidden');
     hideTip();
     syncResearch();
-    return { ok: true, type: type };
+    return { ok: true, type: type, kind: researchKind };
   }
 
   function closeResearch() {
@@ -4855,16 +5783,21 @@ CC.UI = (function () {
 
   function startResearch() {
     const type = researchType;
-    if (!type) return { error: 'Войско не выбрано' };
+    if (!type) return { error: 'Исследование не выбрано' };
 
-    const res = CC.Game.startTroopUpgrade(type);
+    const isSpell = researchKind === 'spell';
+    const res = isSpell
+      ? CC.Game.startSpellUpgrade(type)
+      : CC.Game.startTroopUpgrade(type);
     if (res.error) {
       toast(res.error);
       return res;
     }
 
     if (CC.Sound) CC.Sound.play('upgrade');
-    const name = troopName(type);
+    const name = isSpell
+      ? ((CC.SPELLS[type] || {}).name || 'Заклинание')
+      : troopName(type);
     toast(name + ': исследование до ур. ' + res.to);
     invalidate();
     sync();
@@ -4872,14 +5805,21 @@ CC.UI = (function () {
   }
 
   function speedResearch() {
-    const res = CC.Game.speedUpTroop();
+    const isSpell = researchKind === 'spell';
+    const res = isSpell
+      ? CC.Game.speedUpSpell()
+      : CC.Game.speedUpTroop();
     if (res.error) {
       toast(res.error);
       return res;
     }
 
     if (CC.Sound) CC.Sound.play('upgradeDone');
-    toast(troopName(res.type) + ' — ур. ' + res.level);
+    const name = isSpell
+      ? ((CC.SPELLS[res.id] || {}).name || 'Заклинание')
+      : troopName(res.type);
+    if (isSpell) spellWatch = null;
+    toast(name + ' — ур. ' + res.level);
     invalidate();
     sync();
     return res;
@@ -4991,109 +5931,121 @@ CC.UI = (function () {
       '</span>';
   }
 
-  // Академия героев: пять карточек с общим уровнем и одна общая прокачка.
-  // Старая одиночная карточка Сержанта больше не выводится.
+  // Академия героев: шесть карточек с личными уровнями. Прокачка одна
+  // на всех (общий слот), поэтому у занятого героя виден прогресс и
+  // ускорение, у остальных — «Занято».
   function heroCardHtml(th) {
-    const H = CC.HERO || { minTh: 2, ability: {} };
-    const minTh = H.minTh || 2;
-    const lvl = CC.Game.heroLevel();
-    const max = CC.Game.heroMaxLevel ? CC.Game.heroMaxLevel() : 0;
+    const H = CC.HERO || { ability: {} };
+    const heroes = CC.Game.heroList ? CC.Game.heroList() : [];
+    const up = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
+    const speed = up && CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
+    const gems = CC.Game.gems();
     const ability = (H.ability && H.ability.hint) ||
       'Щит 3 с на союзников · 1 раз за бой';
-    const heroes = CC.Game.heroList ? CC.Game.heroList(lvl) : [];
 
     let cards = '';
     for (let i = 0; i < heroes.length; i++) {
       const h = heroes[i];
       const open = !!h.unlocked;
-      const artLvl = open ? Math.max(1, lvl) : 1;
+      const max = h.max || (CC.Game.heroMaxLevel
+        ? CC.Game.heroMaxLevel(undefined, h.id) : 0);
+      const lvl = Math.max(0, h.level || 0);
       const role = h.role || ((CC.TROOPS[h.base] || {}).name || '');
-      const line = open
-        ? 'HP ' + fmtNum(h.hp) + ' · урон ' + fmtNum(h.dmg)
-        : 'HP и урон — по общему уровню';
+      const running = !!up && up.kind === h.id;
+      const cost = open && CC.Game.heroUpgradeCost
+        ? CC.Game.heroUpgradeCost(h.id) : null;
+      const check = open && CC.Game.canUpgradeHero
+        ? CC.Game.canUpgradeHero(undefined, h.id) : { ok: false };
+
+      let action = '';
+      if (!open) {
+        action = '<span class="hero-card__lock">🔒 С центра ' + h.minTh + '</span>';
+      } else if (running) {
+        action = '<span class="hero-card__lvl">Ур. ' + lvl + ' → ' + up.to +
+          ' · ' + formatTime(up.left) + '</span>' +
+          '<i class="hero-card__bar"><b style="width:' +
+          Math.round(up.progress * 100) + '%"></b></i>' +
+          '<button class="tcard__hire" disabled>Идёт</button>' +
+          (speed
+            ? '<button class="tcard__hire tcard__speed" data-hero-speed="1"' +
+              (gems >= speed.gems ? '' : ' disabled') +
+              ' title="' + (gems >= speed.gems
+                ? 'Завершить прокачку мгновенно'
+                : 'Нужно ещё ' + platText(speed.gems - gems)) + '">' +
+              '<span class="ico ico-platinum" aria-hidden="true"></span>' +
+              ' Ускорить за ' + speed.gems + '</button>'
+            : '');
+      } else {
+        const price = cost
+          ? currencyPrice(cost) + ' · ' + formatTime(cost.time)
+          : 'Максимум';
+        let btn;
+        if (check && check.ok) {
+          btn = '<button class="tcard__hire" data-hero-up="' + escHtml(h.id) +
+            '">Улучшить</button>';
+        } else {
+          let label = 'Улучшить';
+          if (up) label = 'Занято';
+          else if (check && check.needTh) label = 'Центр ' + check.needTh;
+          else if (check && check.reason === 'Максимальный уровень') label = 'Макс.';
+          else if (check && check.missing) label = 'Нет плазмы';
+          btn = '<button class="tcard__hire" disabled title="' +
+            escHtml((check && check.reason) || '') + '">' + label + '</button>';
+        }
+        action = '<span class="hero-card__stats">' + price + '</span>' +
+          '<span class="tcard__actions">' + btn + '</span>';
+      }
+
       cards += '<div class="tcard tcard_hero hero-card' +
-        (open ? '' : ' is-locked') + '" data-hero="' + escHtml(h.id) + '"' +
+        (open ? '' : ' is-locked') + (running ? ' is-run' : '') +
+        '" data-hero="' + escHtml(h.id) + '"' +
         (open ? '' : ' data-hero-locked="1" aria-disabled="true"') +
         ' title="' + escHtml(h.name + ' · ' + role +
-          (open ? ' · ур. ' + lvl : ' · с центра ' + h.minTh)) + '">' +
-        heroPortraitHtml(h, 84, artLvl, 'hero-card__portrait') +
+          (open ? ' · ур. ' + lvl + ' / ' + max : ' · с центра ' + h.minTh)) + '">' +
+        heroPortraitHtml(h, 84, open ? Math.max(1, lvl) : 1,
+          'hero-card__portrait') +
         '<span class="hero-card__body">' +
           '<span class="tcard__name">' + escHtml(h.name) +
             (open ? ' · ур. ' + lvl : '') + '</span>' +
           '<span class="hero-card__role">' + escHtml(role) + '</span>' +
-          '<span class="hero-card__stats">' + line + '</span>' +
-          (open
-            ? '<span class="hero-card__lvl">Ур. ' + lvl + '</span>'
-            : '<span class="hero-card__lock">🔒 С центра ' + h.minTh + '</span>') +
+          '<span class="hero-card__stats">' + (open
+            ? 'HP ' + fmtNum(h.hp) + ' · урон ' + fmtNum(h.dmg)
+            : 'HP и урон — по уровню героя') + '</span>' +
+          (open ? '<span class="hero-card__lvl">Ур. ' + lvl + ' / ' +
+            (max || 0) + '</span>' : '') +
+          action +
         '</span>' +
         '</div>';
     }
 
-    const up = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
-    const cost = CC.Game.heroUpgradeCost ? CC.Game.heroUpgradeCost() : null;
-    const check = CC.Game.canUpgradeHero ? CC.Game.canUpgradeHero() : null;
+    const total = heroes.reduce(function (n, h) {
+      return n + (h.unlocked ? (h.level || 0) : 0);
+    }, 0);
+    const head = up
+      ? 'Идёт: ' + escHtml(up.name) + ' · ур. ' + up.level + ' → ' + up.to +
+        ' · ' + formatTime(up.left)
+      : 'Готовы к прокачке: ' + heroes.filter(function (h) { return h.unlocked; }).length +
+        ' · сумма уровней ' + total;
 
-    let action;
-    if (th < minTh || lvl < 1) {
-      action = '<span class="tcard__meta">Герои откроются с центра ' +
-        minTh + '</span>' +
-        '<span class="tcard__actions"><button class="tcard__hire" disabled' +
-        ' title="Сначала построй и улучши командный центр">С центра ' +
-        minTh + '</button></span>';
-    } else if (up) {
-      // Кнопка ускорения показывает цену с учётом потолка (не больше 80).
-      const speed = CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
-      const gems = CC.Game.gems();
-      const gemsOk = !speed || gems >= speed.gems;
-      const speedBtn = speed
-        ? '<button class="tcard__hire tcard__speed" data-hero-speed="1"' +
-          (gemsOk ? '' : ' disabled') +
-          ' title="' + (gemsOk
-            ? 'Завершить прокачку мгновенно'
-            : 'Нужно ещё ' + platText(speed.gems - gems)) + '">' +
-          '<span class="ico ico-platinum" aria-hidden="true"></span>' +
-          ' Ускорить за ' + speed.gems + '</button>'
-        : '';
-      action = '<span class="tcard__meta">Ур. ' + lvl + ' → ' + up.to +
-        ' · ' + formatTime(up.left) + '</span>' +
-        '<i class="hero-card__bar"><b style="width:' +
-        Math.round(up.progress * 100) + '%"></b></i>' +
-        '<span class="tcard__actions">' +
-        '<button class="tcard__hire" disabled title="Идёт прокачка">Идёт</button>' +
-        speedBtn +
-        '</span>';
-    } else {
-      const price = cost
-        ? '🪙 ' + fmtNum(cost.gold) + ' руды · ' + formatTime(cost.time)
-        : 'Максимальный уровень';
-      let btn;
-      if (check && check.ok) {
-        btn = '<button class="tcard__hire" data-hero-up="1">Улучшить</button>';
-      } else {
-        let label = 'Улучшить';
-        if (check && check.busy) label = 'Занято';
-        else if (check && check.needTh) label = 'Центр ' + check.needTh;
-        else if (check && check.needHeroHall) label = 'Нет академии';
-        else if (check && check.reason === 'Максимальный уровень') label = 'Макс.';
-        else if (check && check.missing) label = 'Нет руды';
-        btn = '<button class="tcard__hire" disabled title="' +
-          ((check && check.reason) || '') + '">' + label + '</button>';
-      }
-      action = '<span class="tcard__meta">' + price + '</span>' +
-        '<span class="tcard__actions">' + btn + '</span>';
-    }
-
-    return '<div class="hero-academy" data-hero-level="' + lvl + '">' +
+    return '<div class="hero-academy" data-hero-level="' +
+      (CC.Game.heroLevel ? CC.Game.heroLevel() : 0) + '">' +
       '<div class="hero-roster">' + cards + '</div>' +
       '<div class="hero-common">' +
         '<div class="hero-common__head">' +
-          '<span>Общий уровень героев</span>' +
-          '<b>Ур. ' + lvl + ' / ' + (max || 0) + '</b>' +
+          '<span>Академия · 6 героев</span>' +
+          '<b>' + escHtml(head) + '</b>' +
         '</div>' +
         '<span class="hero-common__hint">' + ability + '</span>' +
-        action +
       '</div>' +
       '</div>';
+  }
+
+  // Цена героя/войска в валюте его таблицы: «10 000 плазмы».
+  function currencyPrice(cost) {
+    if (!cost) return '—';
+    const cur = cost.currency || 'gold';
+    const amount = cost.dark || cost.elixir || cost.gold || 0;
+    return fmtNum(amount) + ' ' + resWord(cur);
   }
 
   function syncTraining() {
@@ -5166,8 +6118,332 @@ CC.UI = (function () {
     }
   }
 
+  /* ---------- боевой набор: заклинания, питомцы, осада ----------
+     P2 принимает снимок армии с ключами spells/pets/siege. Загрузка
+     хранится в localStorage (ключ версии), чтобы выбор пережил перезагрузку.
+     Если P2-API нет, бой получает пустой набор и работает как раньше. */
+
+  const LOADOUT_KEY = 'clash-loadout-v1';
+  const KIT_SPELL_CAP = 10;
+
+  const SPELL_ICONS = {
+    lightning: '⚡', healing: '➕', rage: '🔥', jump: '🦘', freeze: '❄️',
+    clone: '👥', invisibility: '👻', recall: '↩️', revive: '✚',
+    totem: '🗿', heroic: '★', angry: '😡', poison: '☠️',
+    earthquake: '💥', haste: '💨', skeleton: '💀', bat: '🦇',
+    overgrowth: '🌿', iceblock: '🧊'
+  };
+
+  // Питомцы и осада: PNG-портретов для них нет, поэтому у каждой карточки
+  // своя эмодзи-иконка. Карта локальная — UI не зависит от P4-арта.
+  const PET_ICONS = {
+    lassi: '🐕', yak: '🐂', owl: '🦉', unicorn: '🦄', frosty: '❄️',
+    diggy: '⛏️', lizard: '🦎', phoenix: '🔥', fox: '🦊', jelly: '🪼',
+    sneezy: '🤧', raven: '🐦'
+  };
+
+  const SIEGE_ICONS = {
+    wallwrecker: '🪓', battleblimp: '🎈', stoneslammer: '🪨',
+    siegebarracks: '🏰', loglauncher: '🪵', flameflinger: '🔥',
+    battledrill: '⛏️', trooplauncher: '🚀', skywagon: '🛸'
+  };
+
+  let loadout = null;
+
+  function storageGet(key) {
+    try {
+      return (typeof localStorage !== 'undefined' && localStorage)
+        ? localStorage.getItem(key) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(key, value);
+      }
+    } catch (e) { /* приватный режим — выбор живёт до перезагрузки */ }
+  }
+
+  function readyBuildings(type) {
+    if (!CC.Base || !CC.Base.list) return 0;
+    let n = 0;
+    const list = CC.Base.list();
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].type !== type) continue;
+      if (CC.Game.isBuilding && CC.Game.isBuilding(list[i].id)) continue;
+      n++;
+    }
+    return n;
+  }
+
+  // Слоты заклинаний: один базовый, по два с каждого готового генератора
+  // аномалий (и резонатора плазмы). Потолок — 10, чтобы панель не росла.
+  function spellSlots() {
+    const n = 1 + 2 * readyBuildings('spellfactory') +
+      2 * readyBuildings('darkspellfactory');
+    return Math.max(1, Math.min(KIT_SPELL_CAP, n));
+  }
+
+  function loadoutData() {
+    if (loadout) return loadout;
+
+    let raw = null;
+    try {
+      const text = storageGet(LOADOUT_KEY);
+      raw = text ? JSON.parse(text) : null;
+    } catch (e) {
+      raw = null;
+    }
+
+    const out = { spells: {}, pets: {}, siege: null };
+    if (raw && typeof raw === 'object') {
+      if (raw.spells && typeof raw.spells === 'object') {
+        for (const id in raw.spells) {
+          if (!CC.SPELLS || !CC.SPELLS[id]) continue;
+          const c = Math.max(0, Math.floor(Number(raw.spells[id]) || 0));
+          if (c > 0) out.spells[id] = c;
+        }
+      }
+      if (raw.pets && typeof raw.pets === 'object') {
+        for (const hero in raw.pets) {
+          const pet = raw.pets[hero];
+          if (!CC.PETS || !CC.PETS[pet]) continue;
+          const def = CC.heroDef ? CC.heroDef(hero) : null;
+          if (!def || def.id !== hero) continue;
+          out.pets[hero] = pet;
+        }
+      }
+      if (raw.siege && CC.SIEGE && CC.SIEGE[raw.siege]) out.siege = raw.siege;
+    }
+
+    loadout = out;
+    trimLoadout();
+    return loadout;
+  }
+
+  // Обрезаем заряды до текущего числа слотов (могли снести генератор).
+  function trimLoadout() {
+    const ld = loadout;
+    if (!ld) return;
+    let cap = spellSlots();
+    let used = 0;
+    Object.keys(ld.spells).forEach(function (id) {
+      if (!CC.SPELLS || !CC.SPELLS[id]) { delete ld.spells[id]; return; }
+      const take = Math.min(ld.spells[id], Math.max(0, cap - used));
+      if (take <= 0) delete ld.spells[id];
+      else { ld.spells[id] = take; used += take; }
+    });
+    // Один питомец — один герой; чужие/закрытые герои вычищаются.
+    const seen = {};
+    Object.keys(ld.pets).forEach(function (hero) {
+      const pet = ld.pets[hero];
+      if (!CC.PETS || !CC.PETS[pet] || seen[pet]) { delete ld.pets[hero]; return; }
+      if (!petUnlocked(pet)) { delete ld.pets[hero]; return; }
+      const def = CC.heroDef ? CC.heroDef(hero) : null;
+      if (!def || def.id !== hero) { delete ld.pets[hero]; return; }
+      seen[pet] = 1;
+    });
+    if (ld.siege && !siegeUnlocked(ld.siege)) ld.siege = null;
+  }
+
+  function saveLoadout() {
+    const ld = loadoutData();
+    trimLoadout();
+    storageSet(LOADOUT_KEY, JSON.stringify(ld));
+    cache.recruitSig = null;
+    cache.kitSig = null;
+    return ld;
+  }
+
+  function spellUnlocked(id) {
+    if (!CC.SPELLS || !CC.SPELLS[id]) return false;
+    if (CC.Game.spellMaxLevelFor) {
+      return CC.Game.spellMaxLevelFor(id, CC.Game.townhallLevel()) > 0;
+    }
+    if (CC.spellMaxLevel) {
+      return CC.spellMaxLevel(id, CC.Game.townhallLevel()) > 0;
+    }
+    return true;
+  }
+
+  function spellUsed() {
+    const ld = loadoutData();
+    let n = 0;
+    Object.keys(ld.spells).forEach(function (id) { n += ld.spells[id] || 0; });
+    return n;
+  }
+
+  function spellCount(id) {
+    const ld = loadoutData();
+    return Math.max(0, Math.floor(ld.spells[id] || 0));
+  }
+
+  function spellLoadoutMap() {
+    const ld = loadoutData();
+    trimLoadout();
+    const out = {};
+    Object.keys(ld.spells).forEach(function (id) {
+      if (spellUnlocked(id)) out[id] = ld.spells[id];
+    });
+    return out;
+  }
+
+  function spellAdd(id) {
+    if (!CC.SPELLS[id]) return { error: 'Неизвестное заклинание' };
+    if (!spellUnlocked(id)) {
+      return { error: 'Заклинание ещё не открыто' };
+    }
+    const ld = loadoutData();
+    if (spellUsed() >= spellSlots()) {
+      return { error: 'Слоты заняты · улучши генератор аномалий', full: true };
+    }
+    ld.spells[id] = (ld.spells[id] || 0) + 1;
+    saveLoadout();
+    return { ok: true, id: id, count: ld.spells[id], used: spellUsed(), slots: spellSlots() };
+  }
+
+  function spellRemove(id) {
+    const ld = loadoutData();
+    if (!ld.spells[id]) return { error: 'Зарядов нет', id: id };
+    ld.spells[id] -= 1;
+    if (ld.spells[id] <= 0) delete ld.spells[id];
+    saveLoadout();
+    return { ok: true, id: id, count: ld.spells[id] || 0, used: spellUsed() };
+  }
+
+  function petUnlocked(id) {
+    if (!CC.PETS || !CC.PETS[id]) return false;
+    if (CC.Game.petMaxLevelFor) {
+      return CC.Game.petMaxLevelFor(id, CC.Game.townhallLevel()) > 0;
+    }
+    if (CC.petMaxLevel) return CC.petMaxLevel(id, CC.Game.townhallLevel()) > 0;
+    return true;
+  }
+
+  function heroUnlockedKind(id) {
+    const list = CC.Game.heroList ? CC.Game.heroList() : [];
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].id === id) return !!list[i].unlocked;
+    }
+    return false;
+  }
+
+  function petHeroOf(petId) {
+    const ld = loadoutData();
+    for (const hero in ld.pets) if (ld.pets[hero] === petId) return hero;
+    return null;
+  }
+
+  function petHeroNameSafe(heroKind) {
+    if (!heroKind) return '';
+    const def = CC.heroDef ? CC.heroDef(heroKind) : null;
+    return def ? def.name : heroKind;
+  }
+
+  // Назначение питомца герою. Повторный клик по той же паре — снять.
+  function assignPetHero(heroKind, petId) {
+    if (!CC.PETS[petId]) return { error: 'Неизвестный питомец' };
+    if (!petUnlocked(petId)) return { error: 'Питомец ещё не открыт' };
+    if (!heroUnlockedKind(heroKind)) return { error: 'Герой ещё не открыт' };
+    const ld = loadoutData();
+    const was = ld.pets[heroKind];
+    if (was === petId) {
+      delete ld.pets[heroKind];
+      saveLoadout();
+      return { ok: true, heroKind: heroKind, id: null, cleared: true };
+    }
+    for (const hero in ld.pets) {
+      if (hero !== heroKind && ld.pets[hero] === petId) delete ld.pets[hero];
+    }
+    ld.pets[heroKind] = petId;
+    saveLoadout();
+    return { ok: true, heroKind: heroKind, id: petId };
+  }
+
+  function clearPet(petId) {
+    const ld = loadoutData();
+    let n = 0;
+    for (const hero in ld.pets) {
+      if (ld.pets[hero] === petId) { delete ld.pets[hero]; n++; }
+    }
+    if (n) saveLoadout();
+    return { ok: n > 0, id: petId, cleared: n };
+  }
+
+  function siegeUnlocked(id) {
+    const s = CC.SIEGE && CC.SIEGE[id];
+    if (!s) return false;
+    return (s.minTh || 0) <= CC.Game.townhallLevel();
+  }
+
+  function pickSiege(id) {
+    if (!CC.SIEGE[id]) return { error: 'Неизвестная осадная машина' };
+    if (!siegeUnlocked(id)) {
+      return { error: 'Осадная машина откроется с центра ' + (CC.SIEGE[id].minTh || 0) };
+    }
+    const ld = loadoutData();
+    if (ld.siege === id) {
+      ld.siege = null;
+      saveLoadout();
+      return { ok: true, id: null, cleared: true };
+    }
+    ld.siege = id;
+    saveLoadout();
+    return { ok: true, id: id };
+  }
+
+  function petBattleMap() {
+    const ld = loadoutData();
+    const out = {};
+    Object.keys(ld.pets).forEach(function (hero) {
+      if (petUnlocked(ld.pets[hero]) && heroUnlockedKind(hero)) {
+        out[hero] = ld.pets[hero];
+      }
+    });
+    return out;
+  }
+
+  function siegeBattleValue() {
+    const ld = loadoutData();
+    return ld.siege && siegeUnlocked(ld.siege) ? [ld.siege] : null;
+  }
+
+  // Если P1/P2 ещё не добавили снимки набора — отдаём их сами. Пустой
+  // набор ничего не меняет в старом бою.
+  function installLoadoutHooks() {
+    if (!CC.Game) return;
+    if (typeof CC.Game.spellBattleArmy !== 'function') {
+      CC.Game.spellBattleArmy = function () { return spellLoadoutMap(); };
+    }
+    if (typeof CC.Game.petBattleArmy !== 'function') {
+      CC.Game.petBattleArmy = function () { return petBattleMap(); };
+    }
+    if (typeof CC.Game.siegeBattleArmy !== 'function') {
+      CC.Game.siegeBattleArmy = function () { return siegeBattleValue(); };
+    }
+  }
+
+  // Снимок армии для Арены: Pvp.attack переносит spells/pets/siege как есть.
+  function battleArmyWithKit() {
+    installLoadoutHooks();
+    const snap = CC.Game.armySnapshot ? CC.Game.armySnapshot() : {};
+    const spells = spellLoadoutMap();
+    const pets = petBattleMap();
+    const siege = siegeBattleValue();
+    if (Object.keys(spells).length) snap.spells = spells;
+    if (Object.keys(pets).length) snap.pets = pets;
+    if (siege && siege.length) snap.siege = siege;
+    return snap;
+  }
+
   /* ---------- окно найма ---------- */
 
+  /* Портреты карточек: assets/portraits/<id>.png, иначе canvas-арт
+     CC.Render.troopArt, иначе эмодзи. Файлы новых войск рисует P4,
+     поэтому UI-проверки новых портретов — TODO(P4); логика не падает. */
   function troopPortrait(type, size, level, cls) {
     const d = CC.TROOPS[type] || {};
     const art = cardArt('troop', type, size, level, cls + '__art');
@@ -5188,12 +6464,27 @@ CC.UI = (function () {
       '</span>';
   }
 
+  // Иконка для заклинаний, питомцев и осад. PNG-портретов у них нет,
+  // поэтому <img> не создаём вообще — только эмодзи из карты выше.
+  // В консоли не будет 404 на assets/portraits/<id>.png.
+  function genericPortrait(id, icon, size, cls) {
+    // Для войск CC.Render.troopArt умеет рисовать canvas; для заклинаний,
+    // питомцев и осад он вернёт null, и останется эмодзи.
+    const art = CC.TROOPS && CC.TROOPS[id]
+      ? cardArt('troop', id, size, 1, cls + '__art') : null;
+    return '<span class="' + cls + '">' +
+      '<span class="' + cls + '__icon cc-icon" data-fallback="1">' +
+        (art || icon || '❔') + '</span>' +
+      '</span>';
+  }
+
   function recruitCardHtml(type) {
     const d = CC.TROOPS[type];
     const th = CC.Game.townhallLevel();
     const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
     const locked = th < need;
     const lvl = locked ? 1 : CC.Game.troopLevel(type);
+    const max = locked ? 1 : (CC.troopMaxLevel(type, th) || lvl);
     const bad = locked ? null : CC.Game.canTrain(type).error;
     const space = d.space || 1;
     const selected = state.trainSel === type ? ' is-selected' : '';
@@ -5206,7 +6497,7 @@ CC.UI = (function () {
       troopPortrait(type, 84, lvl, 'recruit-card__portrait') +
       '<span class="recruit-card__body">' +
         '<b class="recruit-card__name">' + escHtml(d.name) + '</b>' +
-        '<span class="recruit-card__lvl">Ур. ' + lvl + '</span>' +
+        '<span class="recruit-card__lvl">Ур. ' + lvl + ' / ' + Math.max(1, max) + '</span>' +
         '<span class="recruit-card__meta">⚡' + fmtNum(d.cost) + ' · ' +
           space + ' ' + spaceWord(space) + ' · ' + d.time + 'с</span>' +
       '</span>' +
@@ -5248,8 +6539,375 @@ CC.UI = (function () {
     }
   }
 
+  /* ---------- вкладки окна армии ----------
+     Войска тренируются в Казарме, тёмные — в Казарме плазмы. Заклинания,
+     питомцы и осадные машины в P2 ещё без механик: показываем полные
+     карточки данных и честную кнопку «В разработке». */
+
+  const RECRUIT_TABS = ['troops', 'spells', 'pets', 'siege'];
+
+  function recruitTabIds(tab) {
+    if (tab === 'spells') return Object.keys(CC.SPELLS || {});
+    if (tab === 'pets') return Object.keys(CC.PETS || {});
+    if (tab === 'siege') return Object.keys(CC.SIEGE || {});
+    return CC.ARMY_ORDER.slice();
+  }
+
+  function recruitTabCount(tab) {
+    return recruitTabIds(tab).length;
+  }
+
+  function syncRecruitTabs() {
+    if (!recruitTabs) return;
+    const buttons = recruitTabs.querySelectorAll
+      ? recruitTabs.querySelectorAll('[data-recruit-tab]') : [];
+    for (let i = 0; i < buttons.length; i++) {
+      const btn = buttons[i];
+      const on = btn.dataset && btn.dataset.recruitTab === recruitTab;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+  }
+
+  function spellCardHtml(id) {
+    const s = CC.SPELLS[id];
+    const th = CC.Game.townhallLevel();
+    const max = CC.spellMaxLevel ? CC.spellMaxLevel(id, th) : 1;
+    const sel = recruitSel === 's:' + id ? ' is-selected' : '';
+    const count = spellCount(id);
+    const locked = !spellUnlocked(id);
+    const cur = s.currency === 'dark' ? '🛢️' : '⚡';
+    return '<button class="recruit-card recruit-card_spell' + sel +
+      (count > 0 ? ' is-picked' : '') + (locked ? ' is-locked' : '') +
+      '" type="button" data-recruit-spell="' + escHtml(id) + '"' +
+      ' title="' + escHtml(s.name + ' · ' + s.role +
+        (locked ? ' · пока не открыто' : ' · в наборе ' + count)) + '">' +
+      genericPortrait(id, spellIcon(id), 84, 'recruit-card__portrait') +
+      '<span class="recruit-card__body">' +
+        '<b class="recruit-card__name">' + escHtml(s.name) + '</b>' +
+        '<span class="recruit-card__lvl">Ур. 1 / ' + Math.max(1, max) + '</span>' +
+        '<span class="recruit-card__meta">' + cur + ' ' + escHtml(s.role) + '</span>' +
+      '</span>' +
+      (locked
+        ? '<span class="recruit-card__lock">🔒 Нужна лаборатория</span>'
+        : '<span class="recruit-card__off' + (count > 0 ? ' is-on' : '') + '">' +
+          (count > 0 ? '×' + count + ' в наборе' : 'Выбрать') + '</span>') +
+      '</button>';
+  }
+
+  function petCardHtml(id) {
+    const p = CC.PETS[id];
+    const th = CC.Game.townhallLevel();
+    const lvl = CC.Game.petLevel ? CC.Game.petLevel(id) : 1;
+    const max = CC.Game.petMaxLevelFor
+      ? CC.Game.petMaxLevelFor(id, th)
+      : (CC.petMaxLevel ? CC.petMaxLevel(id, th) : 1);
+    const sel = recruitSel === 'p:' + id ? ' is-selected' : '';
+    const locked = !petUnlocked(id);
+    const hero = petHeroOf(id);
+    const up = CC.Game.petUpInfo ? CC.Game.petUpInfo() : null;
+    const active = !!(up && up.id === id);
+    return '<button class="recruit-card recruit-card_pet' + sel +
+      (hero ? ' is-picked' : '') + (locked ? ' is-locked' : '') +
+      (active ? ' is-run' : '') +
+      '" type="button" data-recruit-pet="' + escHtml(id) + '"' +
+      ' title="' + escHtml(p.name + ' · ' + p.role +
+        (hero ? ' · герой ' + petHeroNameSafe(hero) : '')) + '">' +
+      genericPortrait(id, petIcon(id), 84, 'recruit-card__portrait') +
+      '<span class="recruit-card__body">' +
+        '<b class="recruit-card__name">' + escHtml(p.name) + '</b>' +
+        '<span class="recruit-card__lvl">Ур. ' + lvl + ' / ' +
+          Math.max(1, max) + '</span>' +
+        '<span class="recruit-card__meta">' + (active
+          ? 'идёт → ур. ' + up.to + ' · ' + formatTime(up.left)
+          : (hero ? 'Герой: ' + escHtml(petHeroNameSafe(hero))
+            : 'Не назначен')) + '</span>' +
+      '</span>' +
+      (locked
+        ? '<span class="recruit-card__lock">🔒 Нужен питомник</span>'
+        : '<span class="recruit-card__off' + (hero ? ' is-on' : '') + '">' +
+          (active ? 'Прокачка' : (hero ? '✓ на герое' : 'Выбрать героя')) +
+          '</span>') +
+      '</button>';
+  }
+
+  function siegeCardHtml(id) {
+    const s = CC.SIEGE[id];
+    const th = CC.Game.townhallLevel();
+    const locked = !siegeUnlocked(id);
+    const sel = recruitSel === 'g:' + id ? ' is-selected' : '';
+    const picked = loadoutData().siege === id;
+    return '<button class="recruit-card recruit-card_siege' + sel +
+      (picked ? ' is-picked' : '') + (locked ? ' is-locked' : '') +
+      '" type="button" data-recruit-siege="' + escHtml(id) + '"' +
+      ' title="' + escHtml(s.name + ' · ' + s.role +
+        (locked ? ' · с центра ' + (s.minTh || 0) : '')) + '">' +
+      genericPortrait(id, siegeIcon(id), 84, 'recruit-card__portrait') +
+      '<span class="recruit-card__body">' +
+        '<b class="recruit-card__name">' + escHtml(s.name) + '</b>' +
+        '<span class="recruit-card__lvl">' + escHtml(s.role) + '</span>' +
+        '<span class="recruit-card__meta">' + (locked
+          ? 'С центра ' + s.minTh
+          : (picked ? 'В наборе' : 'Открыта')) + '</span>' +
+      '</span>' +
+      (locked
+        ? '<span class="recruit-card__lock">🔒 С центра ' + s.minTh + '</span>'
+        : '<span class="recruit-card__off' + (picked ? ' is-on' : '') + '">' +
+          (picked ? '✓ выбрана' : 'Выбрать') + '</span>') +
+      '</button>';
+  }
+
+  function recruitTabGridHtml() {
+    if (recruitTab === 'spells') {
+      return Object.keys(CC.SPELLS || {}).map(spellCardHtml).join('');
+    }
+    if (recruitTab === 'pets') {
+      return Object.keys(CC.PETS || {}).map(petCardHtml).join('');
+    }
+    if (recruitTab === 'siege') {
+      return Object.keys(CC.SIEGE || {}).map(siegeCardHtml).join('');
+    }
+    return CC.ARMY_ORDER.map(recruitCardHtml).join('');
+  }
+
+  function recruitSideSpecialHtml() {
+    const th = CC.Game.townhallLevel();
+
+    if (recruitTab === 'spells') {
+      const ids = Object.keys(CC.SPELLS || {});
+      const id = ids.indexOf(String(recruitSel).slice(2)) !== -1
+        ? String(recruitSel).slice(2) : ids[0];
+      if (!id) return '';
+      const s = CC.SPELLS[id];
+      const lvl = CC.Game.spellLevel ? CC.Game.spellLevel(id) : 1;
+      const st = CC.spellStats ? CC.spellStats(id, lvl) : {};
+      const max = CC.Game.spellMaxLevelFor
+        ? CC.Game.spellMaxLevelFor(id, th)
+        : (CC.spellMaxLevel ? CC.spellMaxLevel(id, th) : 1);
+      const price = st.cost ? fmtNum(st.cost) + ' ' + resWord(st.currency) : '—';
+      const count = spellCount(id);
+      const used = spellUsed();
+      const slots = spellSlots();
+      const locked = !spellUnlocked(id);
+      const full = used >= slots;
+      let addBtn;
+      if (locked) {
+        addBtn = '<button class="recruit-hire" type="button" disabled ' +
+          'title="Заклинание откроется с лабораторией">Не открыто</button>';
+      } else if (full) {
+        addBtn = '<button class="recruit-hire" type="button" disabled ' +
+          'title="Все слоты заняты">Слоты заняты</button>';
+      } else {
+        addBtn = '<button class="recruit-hire" type="button" data-spell-add="' +
+          escHtml(id) + '">В набор</button>';
+      }
+      return '<div class="recruit-hero"><div class="recruit-hero__who">' +
+          '<b class="recruit-hero__name">' + escHtml(s.name) + '</b>' +
+          '<span class="recruit-hero__role">' + escHtml(s.role) + '</span>' +
+          '<span class="recruit-hero__lvl">Ур. ' + lvl + ' / ' +
+            Math.max(1, max) + '</span>' +
+        '</div></div>' +
+        '<div class="recruit-stats">' +
+          '<span class="recruit-stat"><b>' + fmtNum(st.dmg || 0) + '</b><i>Урон</i></span>' +
+          '<span class="recruit-stat"><b>' + (st.radius || 0) + '</b><i>Радиус</i></span>' +
+          '<span class="recruit-stat"><b>' + (st.dur || 0) + '</b><i>Сек</i></span>' +
+        '</div>' +
+        '<p class="recruit-price">' + price + ' · слоты <b>' + used + ' / ' +
+          slots + '</b></p>' +
+        '<div class="recruit-kitbar"><span>В наборе: <b>' + count + '</b></span>' +
+          '<span>Осталось слотов: <b>' + Math.max(0, slots - used) + '</b></span></div>' +
+        '<div class="recruit-actions">' + addBtn +
+          (count > 0
+            ? '<button class="recruit-batch" type="button" data-spell-clear="' +
+              escHtml(id) + '" title="Убрать один заряд">−1</button>'
+            : '') +
+        '</div>' +
+        '<p class="recruit-hint">Заряды уходят в бой. Там выбери заклинание ' +
+          'в нижней панели и тапни по полю.</p>';
+    }
+
+    if (recruitTab === 'pets') {
+      const ids = Object.keys(CC.PETS || {});
+      const id = ids.indexOf(String(recruitSel).slice(2)) !== -1
+        ? String(recruitSel).slice(2) : ids[0];
+      if (!id) return '';
+      const p = CC.PETS[id];
+      const lvl = CC.Game.petLevel ? CC.Game.petLevel(id) : 1;
+      const st = CC.petStats ? CC.petStats(id, lvl) : {};
+      const max = CC.Game.petMaxLevelFor
+        ? CC.Game.petMaxLevelFor(id, th)
+        : (CC.petMaxLevel ? CC.petMaxLevel(id, th) : 1);
+      const locked = !petUnlocked(id);
+      const up = CC.Game.petUpInfo ? CC.Game.petUpInfo() : null;
+      const active = !!(up && up.id === id);
+      const speed = active && CC.Game.petSpeedCost
+        ? CC.Game.petSpeedCost() : null;
+      const gems = CC.Game.gems();
+      const cost = active || !CC.Game.petUpgradeCost
+        ? null : CC.Game.petUpgradeCost(id);
+      const check = active ? null : (CC.Game.canUpgradePet
+        ? CC.Game.canUpgradePet(id) : { ok: false });
+      const heroes = CC.Game.heroList ? CC.Game.heroList() : [];
+      const assigned = petHeroOf(id);
+      let chips = '';
+      for (let i = 0; i < heroes.length; i++) {
+        const h = heroes[i];
+        if (!h.unlocked) continue;
+        const on = assigned === h.id;
+        const other = loadoutData().pets[h.id];
+        chips += '<button class="recruit-hero-chip' + (on ? ' is-active' : '') +
+          '" type="button" data-pet-hero="' + escHtml(h.id) + '"' +
+          ' data-pet-id="' + escHtml(id) + '"' +
+          ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
+          ' title="' + escHtml(on
+            ? 'Снять питомца с героя ' + h.name
+            : 'Отдать питомца герою ' + h.name +
+              (other ? ' (сейчас там ' + (CC.PETS[other] || {}).name + ')' : '')) + '">' +
+          escHtml(h.name) + (on ? ' ✓' : '') + '</button>';
+      }
+
+      let upBlock;
+      if (active) {
+        const pct = Math.round((up.progress || 0) * 100);
+        const gemsOk = !speed || gems >= speed.gems;
+        upBlock = '<p class="recruit-price">Ур. ' + lvl + ' → ' + up.to +
+          ' · осталось ' + formatTime(up.left) + '</p>' +
+          '<i class="recruit-limit__bar"><b style="width:' + pct + '%"></b></i>' +
+          (speed
+            ? '<div class="recruit-actions"><button class="recruit-batch" ' +
+              'type="button" data-pet-speed="1"' + (gemsOk ? '' : ' disabled') +
+              ' title="' + (gemsOk ? 'Завершить прокачку мгновенно'
+                : 'Нужно ещё ' + platText(speed.gems - gems)) + '">' +
+              '<span class="ico ico-platinum" aria-hidden="true"></span> ' +
+              speed.gems + '</button></div>'
+            : '');
+      } else {
+        const price = cost
+          ? fmtNum(cost.dark || cost.elixir || cost.gold) + ' ' +
+            resWord(cost.currency) + ' · ' + formatTime(cost.time)
+          : 'Максимальный уровень';
+        let btn;
+        if (check && check.ok) {
+          btn = '<button class="recruit-hire" type="button" data-pet-up="' +
+            escHtml(id) + '">Улучшить</button>';
+        } else {
+          let label = 'Улучшить';
+          if (check && check.busy) label = 'Занято';
+          else if (check && check.needPetHouse) label = 'Нет питомника';
+          else if (check && check.reason === 'Максимальный уровень') label = 'Макс.';
+          else if (check && check.missing) {
+            label = check.missing.dark ? 'Нет плазмы' : 'Нет энергии';
+          } else if (check && check.needStorage) label = 'Склад мал';
+          btn = '<button class="recruit-hire" type="button" disabled title="' +
+            escHtml((check && check.reason) || '') + '">' + label + '</button>';
+        }
+        upBlock = '<p class="recruit-price">' + price + '</p>' +
+          '<div class="recruit-actions">' + btn + '</div>';
+      }
+
+      return '<div class="recruit-hero"><div class="recruit-hero__who">' +
+          '<b class="recruit-hero__name">' + escHtml(p.name) + '</b>' +
+          '<span class="recruit-hero__role">' + escHtml(p.role) + '</span>' +
+          '<span class="recruit-hero__lvl">Ур. ' + lvl + ' / ' +
+            Math.max(1, max) + '</span>' +
+        '</div></div>' +
+        '<div class="recruit-stats">' +
+          '<span class="recruit-stat"><b>' + fmtNum(st.hp || 0) + '</b><i>HP</i></span>' +
+          '<span class="recruit-stat"><b>' + fmtNum(st.dps || 0) + '</b><i>Урон</i></span>' +
+          '<span class="recruit-stat"><b>' + (p.speed || 0) + '</b><i>Скорость</i></span>' +
+        '</div>' +
+        upBlock +
+        '<p class="recruit-hint">Питомец идёт рядом со своим героем. Один ' +
+          'питомец — один герой.</p>' +
+        (locked
+          ? '<div class="recruit-actions"><button class="recruit-hire" type="button" disabled>' +
+            'Нужен питомник</button></div>'
+          : (heroes.some(function (h) { return h.unlocked; })
+            ? '<div class="recruit-heroes">' + chips + '</div>' +
+              (assigned
+                ? '<div class="recruit-actions"><button class="recruit-batch" type="button" ' +
+                  'data-pet-clear="' + escHtml(id) + '">Снять с героя</button></div>'
+                : '')
+            : '<p class="recruit-hint">Сначала открой героя на нужном центре.</p>'));
+    }
+
+    if (recruitTab === 'siege') {
+      const ids = Object.keys(CC.SIEGE || {});
+      const id = ids.indexOf(String(recruitSel).slice(2)) !== -1
+        ? String(recruitSel).slice(2) : ids[0];
+      if (!id) return '';
+      const s = CC.SIEGE[id];
+      const locked = !siegeUnlocked(id);
+      const picked = loadoutData().siege === id;
+      return '<div class="recruit-hero' + (locked ? ' is-locked' : '') + '">' +
+          '<div class="recruit-hero__who">' +
+          '<b class="recruit-hero__name">' + escHtml(s.name) + '</b>' +
+          '<span class="recruit-hero__role">' + escHtml(s.role) + '</span>' +
+          '<span class="recruit-hero__lvl">' + (locked ? 'С центра ' + s.minTh
+            : (picked ? 'Выбрана' : 'Открыта')) + '</span>' +
+        '</div></div>' +
+        '<p class="recruit-hint">Одна машина на бой. Выезжает с первым ' +
+          'десантом и занимает свой слот мастерской.</p>' +
+        '<div class="recruit-actions">' + (locked
+          ? '<button class="recruit-hire" type="button" disabled>С центра ' +
+            s.minTh + '</button>'
+          : '<button class="recruit-hire" type="button" data-siege-pick="' +
+            escHtml(id) + '">' + (picked ? 'Убрать' : 'Выбрать') + '</button>') +
+        '</div>';
+    }
+
+    return '';
+  }
+
   function syncRecruit() {
     if (!recruitOpen || !recruitGrid || !recruitSide) return;
+
+    if (RECRUIT_TABS.indexOf(recruitTab) === -1) recruitTab = 'troops';
+    syncRecruitTabs();
+
+    if (recruitTab !== 'troops') {
+      const ids = recruitTabIds(recruitTab);
+      const prefix = recruitTab === 'spells' ? 's:'
+        : (recruitTab === 'pets' ? 'p:' : 'g:');
+      if (!recruitSel || String(recruitSel).slice(0, 2) !== prefix ||
+          ids.indexOf(String(recruitSel).slice(2)) === -1) {
+        recruitSel = ids.length ? prefix + ids[0] : null;
+      }
+      installLoadoutHooks();
+      const ld = loadoutData();
+      const petUp = CC.Game.petUpInfo ? CC.Game.petUpInfo() : null;
+      const spellUp = CC.Game.spellUpInfo ? CC.Game.spellUpInfo() : null;
+      const sig = recruitTab + '|' + ids.length + '|' + recruitSel + '|th' +
+        CC.Game.townhallLevel() + '|' + JSON.stringify(ld) + '|' +
+        spellSlots() + '|pl:' + Object.keys(CC.PETS || {}).map(function (id) {
+          return id + ':' + (CC.Game.petLevel ? CC.Game.petLevel(id) : 1);
+        }).join(',') + '|pu:' + (petUp
+          ? petUp.id + ':' + petUp.to + ':' + Math.ceil(petUp.left) : '-') +
+        '|sl:' + Object.keys(CC.SPELLS || {}).map(function (id) {
+          return id + ':' + (CC.Game.spellLevel ? CC.Game.spellLevel(id) : 1);
+        }).join(',') + '|su:' + (spellUp
+          ? spellUp.id + ':' + spellUp.to + ':' + Math.ceil(spellUp.left) : '-');
+      if (cache.recruitSig === sig) return;
+      cache.recruitSig = sig;
+      if (recruitSub) {
+        let line = 'Армия ' + CC.Game.armyUsed() + '/' + CC.Game.capacity();
+        if (recruitTab === 'spells') {
+          line += ' · слоты ' + spellUsed() + '/' + spellSlots();
+        } else if (recruitTab === 'pets') {
+          line += ' · питомцев в наборе: ' + Object.keys(ld.pets).length +
+            (petUp ? ' · идёт прокачка' : '');
+        } else {
+          const picked = ld.siege && CC.SIEGE[ld.siege];
+          line += ' · осада: ' + (picked ? picked.name : 'не выбрана');
+        }
+        recruitSub.textContent = line;
+      }
+      recruitGrid.innerHTML = recruitTabGridHtml();
+      recruitSide.innerHTML = recruitSideSpecialHtml();
+      bindRecruitPortraits(recruitGrid);
+      bindRecruitPortraits(recruitSide);
+      return;
+    }
 
     const th = CC.Game.townhallLevel();
     const queue = CC.Game.queueInfo();
@@ -5346,6 +7004,9 @@ CC.UI = (function () {
         '<div class="recruit-train-line">Тренируется <b id="recruit-training">' +
           training + '</b> · свободно <b id="recruit-free">' +
           Math.max(0, cap - used - (stats.space || 0)) + '</b></div>' +
+        '<p class="recruit-hint">Очередь: Казарма ×' +
+          CC.Base.count('train') + ' · плазма: Казарма плазмы ×' +
+          CC.Base.count('darktrain') + '</p>' +
       '</div>' +
       '<p class="recruit-price">' + price + '</p>' +
       '<div class="recruit-actions">' + action + batch + '</div>' +
@@ -5371,6 +7032,9 @@ CC.UI = (function () {
         }) || CC.ARMY_ORDER[0]));
     state.trainSel = pick;
     recruitOpen = true;
+    recruitTab = 'troops';
+    recruitSel = null;
+    installLoadoutHooks();
     cache.recruitSig = null;
     if (recruitEl) recruitEl.classList.remove('hidden');
     // Окно найма перекрывает низ экрана: Сержант не должен выглядывать.
@@ -5381,7 +7045,7 @@ CC.UI = (function () {
         ' · ' + qs.queued + ' в очереди · ' + qs.slots + ' ' + slotWord(qs.slots);
     }
     syncRecruit();
-    return { ok: true, selected: pick };
+    return { ok: true, selected: pick, tab: recruitTab };
   }
 
   function closeRecruit() {
@@ -5390,7 +7054,136 @@ CC.UI = (function () {
     if (recruitEl) recruitEl.classList.add('hidden');
   }
 
+  // Переключить вкладку окна армии из кода (тесты, Сержант, клавиатура).
+  function openRecruitTab(tab) {
+    if (RECRUIT_TABS.indexOf(tab) === -1) {
+      return { error: 'Неизвестная вкладка', tab: tab };
+    }
+    recruitTab = tab;
+    recruitSel = null;
+    cache.recruitSig = null;
+    if (recruitOpen) syncRecruit();
+    return { ok: true, tab: tab, count: recruitTabCount(tab) };
+  }
+
   function onRecruitClick(e) {
+    const tabBtn = e.target.closest('[data-recruit-tab]');
+    if (tabBtn) {
+      const tab = tabBtn.dataset.recruitTab;
+      if (RECRUIT_TABS.indexOf(tab) !== -1) {
+        recruitTab = tab;
+        recruitSel = null;
+        cache.recruitSig = null;
+        syncRecruit();
+      }
+      return;
+    }
+
+    const spellAddBtn = e.target.closest('[data-spell-add]');
+    if (spellAddBtn) {
+      const res = spellAddBtn.dataset.spellAdd;
+      const out = spellAdd(res);
+      if (out.error) toast(out.error);
+      else toast('В набор: ' + (CC.SPELLS[res] || {}).name + ' ×' + out.count);
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+
+    const spellClear = e.target.closest('[data-spell-clear]');
+    if (spellClear) {
+      const res = spellClear.dataset.spellClear;
+      const out = spellRemove(res);
+      if (out.error) toast(out.error);
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+
+    const petUpBtn = e.target.closest('[data-pet-up]');
+    if (petUpBtn) {
+      const id = petUpBtn.dataset.petUp;
+      const out = CC.Game.startPetUpgrade(id);
+      if (out.error) toast(out.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgrade');
+        const name = (CC.PETS[id] || {}).name || 'Питомец';
+        toast(name + ': прокачка до ур. ' + out.to);
+      }
+      invalidate();
+      sync();
+      return;
+    }
+
+    const petSpeed = e.target.closest('[data-pet-speed]');
+    if (petSpeed) {
+      const out = CC.Game.speedUpPet();
+      if (out.error) toast(out.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgradeDone');
+        const name = (CC.PETS[out.id] || {}).name || 'Питомец';
+        toast(name + ' — ур. ' + out.level);
+      }
+      petWatch = null;
+      invalidate();
+      sync();
+      return;
+    }
+
+    const petHero = e.target.closest('[data-pet-hero]');
+    if (petHero) {
+      const heroKind = petHero.dataset.petHero;
+      const petId = petHero.dataset.petId || String(recruitSel || '').slice(2);
+      const out = assignPetHero(heroKind, petId);
+      if (out.error) toast(out.error);
+      else if (out.cleared) toast('Питомец снят с ' + petHeroNameSafe(heroKind));
+      else toast((CC.PETS[petId] || {}).name + ' → ' + petHeroNameSafe(heroKind));
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+
+    const petClear = e.target.closest('[data-pet-clear]');
+    if (petClear) {
+      clearPet(petClear.dataset.petClear);
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+
+    const siegePick = e.target.closest('[data-siege-pick]');
+    if (siegePick) {
+      const out = pickSiege(siegePick.dataset.siegePick);
+      if (out.error) toast(out.error);
+      else toast(out.cleared ? 'Осада снята'
+        : 'Осада: ' + (CC.SIEGE[out.id] || {}).name);
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+
+    const spell = e.target.closest('[data-recruit-spell]');
+    if (spell) {
+      recruitSel = 's:' + spell.dataset.recruitSpell;
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+    const pet = e.target.closest('[data-recruit-pet]');
+    if (pet) {
+      recruitSel = 'p:' + pet.dataset.recruitPet;
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+    const siege = e.target.closest('[data-recruit-siege]');
+    if (siege) {
+      recruitSel = 'g:' + siege.dataset.recruitSiege;
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+
     const card = e.target.closest('[data-recruit]');
     if (card) {
       state.trainSel = card.dataset.recruit;
@@ -5444,20 +7237,18 @@ CC.UI = (function () {
     if (!heroList) return;
 
     const th = CC.Game.townhallLevel();
-    const lvl = CC.Game.heroLevel();
-    const heroes = CC.Game.heroList ? CC.Game.heroList(lvl) : [];
+    const heroes = CC.Game.heroList ? CC.Game.heroList() : [];
     const up = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
-    const cost = CC.Game.heroUpgradeCost ? CC.Game.heroUpgradeCost() : null;
-    const check = CC.Game.canUpgradeHero ? CC.Game.canUpgradeHero() : null;
     const speed = up && CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
-    const sig = 'hero:' + th + ':' + lvl + ':' +
-      heroes.map(function (h) { return h.id + (h.unlocked ? '+' : '-'); }).join(',') + ':' +
-      (up ? up.to + ':' + Math.ceil(up.left) : 'idle') + ':' +
-      (speed ? speed.gems : 0) + ':' + CC.Game.gems() + ':' +
-      (cost ? JSON.stringify(cost) : 'max') + ':' +
-      (check ? JSON.stringify({ ok: check.ok, reason: check.reason,
-        needTh: check.needTh, busy: check.busy, missing: check.missing,
-        needHeroHall: check.needHeroHall }) : '');
+    const sig = 'hero:' + th + ':' +
+      heroes.map(function (h) {
+        const c = h.unlocked && CC.Game.heroUpgradeCost
+          ? CC.Game.heroUpgradeCost(h.id) : null;
+        return h.id + (h.unlocked ? '+' : '-') + ':' + h.level + '/' + h.max +
+          ':' + (c ? c.dark + '.' + c.elixir + '.' + c.gold + '.' + c.time : 'max');
+      }).join(',') + ':' +
+      (up ? up.kind + ':' + up.to + ':' + Math.ceil(up.left) : 'idle') + ':' +
+      (speed ? speed.gems : 0) + ':' + CC.Game.gems();
 
     if (cache.heroSig === sig) return;
     cache.heroSig = sig;
@@ -5473,7 +7264,10 @@ CC.UI = (function () {
 
     const th = CC.Game.townhallLevel();
     const info = CC.Game.troopUpInfo();
+    const spellInfo = CC.Game.spellUpInfo ? CC.Game.spellUpInfo() : null;
     const speed = info ? CC.Game.troopSpeedCost() : null;
+    const spellSpeed = spellInfo && CC.Game.spellSpeedCost
+      ? CC.Game.spellSpeedCost() : null;
     const gems = CC.Game.gems();
     const elixir = CC.Game.elixir();
 
@@ -5491,12 +7285,23 @@ CC.UI = (function () {
         ':' + (CC.Game.canUpgradeTroop(t).ok ? 1 : 0);
     }).join(',') + '|' + elixir + '|' +
       (info ? info.type + ':' + info.to + ':' + Math.ceil(info.left) + ':' +
-        (speed ? speed.gems : 0) : 'idle') + '|g' + gems + '|th' + th;
+        (speed ? speed.gems : 0) : 'idle') + '|g' + gems + '|th' + th + '|s:' +
+      Object.keys(CC.SPELLS || {}).map(function (id) {
+        const c = CC.Game.spellUpgradeCost ? CC.Game.spellUpgradeCost(id) : null;
+        return id + ':' + (CC.Game.spellLevel ? CC.Game.spellLevel(id) : 1) +
+          ':' + (c ? (c.elixir || c.dark) + ':' + c.time : 'max');
+      }).join(',') + '|' +
+      (spellInfo ? spellInfo.id + ':' + spellInfo.to + ':' +
+        Math.ceil(spellInfo.left) + ':' +
+        (spellSpeed ? spellSpeed.gems : 0) : 'idle');
 
     if (cache.troopSig === sig) return;
     cache.troopSig = sig;
 
-    if (troopUpHint) troopUpHint.textContent = info ? 'идёт' : 'свободен';
+    if (troopUpHint) {
+      troopUpHint.textContent = info ? 'идёт'
+        : (spellInfo ? 'заклинание' : 'свободен');
+    }
 
     let html = '';
 
@@ -5541,14 +7346,16 @@ CC.UI = (function () {
         btn = '<button class="tup__btn" data-troop-up="' + type + '">Улучшить</button>';
       } else {
         let label = 'Улучшить';
-        if (check.busy) label = 'Занято';
+        if (spellInfo && !info) label = 'Лаборатория занята';
+        else if (check.busy) label = 'Занято';
         else if (check.needTh) label = 'Центр ' + check.needTh;
         else if (check.needLab) label = 'Нет лаборатории';
         else if (check.reason === 'Максимальный уровень') label = 'Макс.';
         else if (check.missing) label = 'Нет энергии';
         else if (check.needStorage) label = 'Склад мал';
         btn = '<button class="tup__btn" disabled title="' +
-          (check.reason || '') + '">' + label + '</button>';
+          (spellInfo && !info ? 'Лаборатория занята заклинанием' :
+            (check.reason || '')) + '">' + label + '</button>';
       }
 
       const price = cost
@@ -5561,17 +7368,110 @@ CC.UI = (function () {
         icon +
         '<span class="tup__text">' +
           '<b class="tup__name">' + d.name + '</b>' +
-          '<span class="tup__lvl">Ур. ' + st.level + '</span>' +
+          '<span class="tup__lvl">Ур. ' + st.level + ' / ' +
+            Math.max(1, CC.Game.troopMaxLevel(type) || st.level) + '</span>' +
         '</span>' +
         '<span class="tup__cost">' + price + '</span>' +
         btn +
         '</div>';
     }
 
+    // Заклинания: 19 типов, общий лабораторный слот с войсками.
+    const labLvl = CC.Game.labLevel ? CC.Game.labLevel() : 0;
+    const spellIds = Object.keys(CC.SPELLS || {});
+    if (spellIds.length) {
+      const busyLine = spellInfo
+        ? 'Заклинания · идёт ' + (spellInfo.name || spellInfo.id)
+        : (info ? 'Заклинания · лаборатория занята войсками'
+          : 'Заклинания · слот свободен');
+      html += '<div class="tup-head tup-head_spells">' + escHtml(busyLine) +
+        '</div>';
+      for (let i = 0; i < spellIds.length; i++) {
+        const id = spellIds[i];
+        const sp = CC.SPELLS[id];
+        const level = CC.Game.spellLevel ? CC.Game.spellLevel(id) : 1;
+        const max = CC.Game.spellMaxLevelFor
+          ? CC.Game.spellMaxLevelFor(id) : 1;
+        const cost = CC.Game.spellUpgradeCost
+          ? CC.Game.spellUpgradeCost(id) : null;
+        const active = !!(spellInfo && spellInfo.id === id);
+
+        if (active) {
+          const pct = Math.round((spellInfo.progress || 0) * 100);
+          const gemsOk = !spellSpeed || gems >= spellSpeed.gems;
+          html += '<div class="tup tup_spell is-run" data-spell="' +
+            escHtml(id) + '" data-spell-open="' + escHtml(id) + '"' +
+            ' role="button" tabindex="0" title="Подробнее о заклинании">' +
+            '<span class="tup__icon tup__icon_spell" aria-hidden="true">' +
+              spellIcon(id) + '</span>' +
+            '<span class="tup__text">' +
+              '<b class="tup__name">' + escHtml(sp.name) + '</b>' +
+              '<span class="tup__lvl">Ур. ' + level + ' → ' +
+                spellInfo.to + '</span>' +
+            '</span>' +
+            '<span class="tup__time">' + formatTime(spellInfo.left) + '</span>' +
+            (spellSpeed
+              ? '<button class="tup__btn tup__btn_speed" data-act="speed-spell"' +
+                (gemsOk ? '' : ' disabled') +
+                ' title="' + (gemsOk
+                  ? 'Завершить улучшение мгновенно'
+                  : 'Нужно ещё ' + platText(spellSpeed.gems - gems)) + '">' +
+                '<span class="ico ico-platinum" aria-hidden="true"></span>' +
+                spellSpeed.gems + '</button>'
+              : '') +
+            '<i class="tup__bar"><b style="width:' + pct + '%"></b></i>' +
+            '</div>';
+          continue;
+        }
+
+        const check = CC.Game.canUpgradeSpell
+          ? CC.Game.canUpgradeSpell(id) : { ok: false };
+        let btn;
+        if (check.ok) {
+          btn = '<button class="tup__btn" data-spell-up="' + escHtml(id) +
+            '">Улучшить</button>';
+        } else {
+          let label = 'Улучшить';
+          if (info || spellInfo) label = 'Лаборатория занята';
+          else if (check.needLab) label = 'Нет лаборатории';
+          else if (!max) label = 'Лаба ' + (labLvl ? labLvl : 1);
+          else if (check.reason === 'Максимальный уровень') label = 'Макс.';
+          else if (check.missing) {
+            label = check.missing.dark ? 'Нет плазмы' : 'Нет энергии';
+          } else if (check.needStorage) label = 'Склад мал';
+          btn = '<button class="tup__btn" disabled title="' +
+            escHtml(check.reason || 'Улучшение недоступно') + '">' +
+            label + '</button>';
+        }
+
+        const price = cost ? priceText(cost) : '—';
+        html += '<div class="tup tup_spell' + (max ? '' : ' is-locked') +
+          '" data-spell="' + escHtml(id) + '" data-spell-open="' +
+          escHtml(id) + '" role="button" tabindex="0"' +
+          ' title="' + escHtml(sp.name + ' · ' + sp.role) + '">' +
+          '<span class="tup__icon tup__icon_spell" aria-hidden="true">' +
+            spellIcon(id) + '</span>' +
+          '<span class="tup__text">' +
+            '<b class="tup__name">' + escHtml(sp.name) + '</b>' +
+            '<span class="tup__lvl">Ур. ' + level + ' / ' +
+              Math.max(1, max) + ' · ' + escHtml(sp.role) + '</span>' +
+          '</span>' +
+          '<span class="tup__cost">' + price + '</span>' +
+          btn +
+          '</div>';
+      }
+    }
+
     troopUpList.innerHTML = html;
   }
 
   function onSelbarClick(e) {
+    const collectBtn = e.target.closest('[data-panel-collect]');
+    if (collectBtn) {
+      collectBuilding(collectBtn.dataset.panelCollect);
+      return;
+    }
+
     const infoBtn = e.target.closest('[data-act="info"]');
     if (infoBtn) {
       openInfo();
@@ -5585,21 +7485,28 @@ CC.UI = (function () {
       if (res.error) toast(res.error);
       else {
         if (CC.Sound) CC.Sound.play('upgradeDone');
-        toast('Герои — ур. ' + res.level);
+        const name = (CC.heroDef && res.kind
+          ? CC.heroDef(res.kind).name : 'Герой');
+        toast(name + ' — ур. ' + res.level);
       }
       invalidate();
       sync();
       return;
     }
 
-    // Прокачка героя: отдельная кнопка в его карточке ангара.
+    // Прокачка героя: отдельная кнопка в его карточке академии.
     const heroUpBtn = e.target.closest('[data-hero-up]');
     if (heroUpBtn) {
-      const res = CC.Game.startHeroUpgrade();
+      const kind = heroUpBtn.dataset.heroUp;
+      const res = (kind && kind !== '1')
+        ? CC.Game.startHeroUpgrade(kind)
+        : CC.Game.startHeroUpgrade();
       if (res.error) toast(res.error);
       else {
         if (CC.Sound) CC.Sound.play('upgrade');
-        toast('Герои: улучшение до ур. ' + res.to);
+        const name = (CC.heroDef && res.kind
+          ? CC.heroDef(res.kind).name : 'Герой');
+        toast(name + ': улучшение до ур. ' + res.to);
       }
       invalidate();
       sync();
@@ -5617,6 +7524,76 @@ CC.UI = (function () {
         const name = (CC.TROOPS[type] || {}).name || 'Войско';
         toast(name + ': улучшение до ур. ' + res.to);
       }
+      invalidate();
+      sync();
+      return;
+    }
+
+    // Улучшение заклинания: кнопка в строке лаборатории.
+    const spellUpBtn = e.target.closest('[data-spell-up]');
+    if (spellUpBtn) {
+      const id = spellUpBtn.dataset.spellUp;
+      const res = CC.Game.startSpellUpgrade(id);
+      if (res.error) toast(res.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgrade');
+        const name = (CC.SPELLS[id] || {}).name || 'Заклинание';
+        toast(name + ': улучшение до ур. ' + res.to);
+      }
+      invalidate();
+      sync();
+      return;
+    }
+
+    const spellSpeedBtn = e.target.closest('[data-act="speed-spell"]');
+    if (spellSpeedBtn) {
+      const res = CC.Game.speedUpSpell();
+      if (res.error) toast(res.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgradeDone');
+        const name = (CC.SPELLS[res.id] || {}).name || 'Заклинание';
+        toast(name + ' — ур. ' + res.level);
+      }
+      spellWatch = null;
+      invalidate();
+      sync();
+      return;
+    }
+
+    // Клик по строке заклинания открывает подробное окно исследования.
+    const spellRow = e.target.closest('[data-spell-open]');
+    if (spellRow) {
+      if (e.target.closest('[data-spell-up]') ||
+          e.target.closest('[data-act="speed-spell"]')) return;
+      openResearch(spellRow.dataset.spellOpen);
+      return;
+    }
+
+    const petUpBtn = e.target.closest('[data-pet-up]');
+    if (petUpBtn) {
+      const id = petUpBtn.dataset.petUp;
+      const res = CC.Game.startPetUpgrade(id);
+      if (res.error) toast(res.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgrade');
+        const name = (CC.PETS[id] || {}).name || 'Питомец';
+        toast(name + ': прокачка до ур. ' + res.to);
+      }
+      invalidate();
+      sync();
+      return;
+    }
+
+    const petSpeedBtn = e.target.closest('[data-pet-speed]');
+    if (petSpeedBtn) {
+      const res = CC.Game.speedUpPet();
+      if (res.error) toast(res.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgradeDone');
+        const name = (CC.PETS[res.id] || {}).name || 'Питомец';
+        toast(name + ' — ур. ' + res.level);
+      }
+      petWatch = null;
       invalidate();
       sync();
       return;
@@ -5739,10 +7716,12 @@ CC.UI = (function () {
     if (act === 'goto-storage') {
       const want = selGotoStorage && selGotoStorage.dataset
         ? selGotoStorage.dataset.res : '';
-      const type = want === 'elixir' ? 'estorage' : 'storage';
+      const type = want === 'elixir' ? 'estorage'
+        : (want === 'dark' ? 'darkstorage' : 'storage');
       const st = CC.Base.list().find(function (b) { return b.type === type; }) ||
         CC.Base.list().find(function (b) {
-          return b.type === 'storage' || b.type === 'estorage';
+          return b.type === 'storage' || b.type === 'estorage' ||
+            b.type === 'darkstorage';
         });
       if (st) {
         state.selected = st.id;
@@ -5800,10 +7779,12 @@ CC.UI = (function () {
         if (CC.Sound) CC.Sound.play('upgrade');
         // Автосбор перед стройкой: показываем, сколько ушло на склад.
         const auto = res.auto;
-        if (auto && (auto.gold > 0 || auto.elixir > 0 || auto.left > 1)) {
+        if (auto && (auto.gold > 0 || auto.elixir > 0 || auto.dark > 0 ||
+            auto.left > 1)) {
           const parts = [];
           if (auto.gold > 0) parts.push('+' + fmtNum(auto.gold) + ' руды');
           if (auto.elixir > 0) parts.push('+' + fmtNum(auto.elixir) + ' энергии');
+          if (auto.dark > 0) parts.push('+' + fmtNum(auto.dark) + ' плазмы');
           let text = 'Автосбор: ' + (parts.length ? parts.join(', ') : '0');
           if (auto.left > 1) text += ' · осталось ' + fmtNum(auto.left);
           text += ' · улучшение началось';
@@ -6123,7 +8104,11 @@ CC.UI = (function () {
     if (CC.App.mode === 'base') return !CC.Base.itemAt(x, y);
 
     const S = CC.Battle.state;
-    return !S || !S.deployable[y * CC.GRID + x];
+    if (!S) return true;
+    // С выбранным заклинанием тап не считается «пустым»: двойной тап
+    // не должен сбрасывать камеру вместо второго каста.
+    if (S.selectedSpell) return false;
+    return !S.deployable[y * CC.GRID + x];
   }
 
   function handleTap(e) {
@@ -6132,8 +8117,10 @@ CC.UI = (function () {
     const empty = isTapEmpty(e);
 
     // в режиме установки быстрые тапы подряд — это постройка, а не
-    // двойной тап «вернуть всё поле»
-    if (!state.armed && lastTap && empty && now - lastTap.t < 320 &&
+    // двойной тап «вернуть всё поле». С выбранным заклинанием — это каст.
+    const spellMode = !!(CC.App.mode === 'battle' && CC.Battle.state &&
+      CC.Battle.state.selectedSpell);
+    if (!state.armed && !spellMode && lastTap && empty && now - lastTap.t < 320 &&
         Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 40) {
       camTouched();
       CC.CamMath.reset(CC.Cam);
@@ -6243,6 +8230,13 @@ CC.UI = (function () {
     // Просмотр повтора идёт сам: касания поля ничего не высаживают.
     if (CC.Battle.state && CC.Battle.state.kind === 'replay') return;
     const g = gridAt(e);
+    // Выбранное заклинание важнее войск: тап тратит заряд в точку.
+    if (castSpellAt(Math.floor(g.x), Math.floor(g.y))) {
+      dismissBattleIntro();
+      hideTip();
+      sync();
+      return;
+    }
     const res = CC.Battle.deploy(g.x, g.y);
 
     if (res.error) {
@@ -6262,6 +8256,8 @@ CC.UI = (function () {
     if (CC.App.mode !== 'battle' || !CC.Battle || !CC.Battle.state) return false;
     const S = CC.Battle.state;
     if (S.over || S.kind === 'replay' || S.viewReplay) return false;
+    // Заклинание высаживается тапом, а не «кистью».
+    if (S.selectedSpell) return false;
 
     const type = S.selected;
     if (!type || !CC.TROOPS[type]) return false;
@@ -6394,6 +8390,7 @@ CC.UI = (function () {
           return;
         }
         CC.Battle.select('hero', h.id);
+        if (CC.Battle.state) CC.Battle.state.selectedSpell = null;
         sync();
       });
 
@@ -6426,6 +8423,7 @@ CC.UI = (function () {
           return;
         }
         CC.Battle.select(type);
+        if (CC.Battle.state) CC.Battle.state.selectedSpell = null;
         sync();
       });
 
@@ -6653,6 +8651,155 @@ CC.UI = (function () {
       else if (S.kind === 'pvp') showPvpResult(S);
       else showOverlay(S.result);
     }
+
+    syncBattleKit();
+  }
+
+  /* ---------- боевой набор в HUD ---------- */
+
+  function spellIcon(id) {
+    return SPELL_ICONS[id] || '✨';
+  }
+
+  function petIcon(id) {
+    return PET_ICONS[id] || '🐾';
+  }
+
+  function siegeIcon(id) {
+    return SIEGE_ICONS[id] || '🛠️';
+  }
+
+  function battleList(name) {
+    const B = CC.Battle;
+    if (!B || typeof B[name] !== 'function') return [];
+    try {
+      const list = B[name]();
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function syncBattleKit() {
+    if (!battleKit) return;
+
+    const B = CC.Battle;
+    const S = B && B.state;
+    if (CC.App.mode !== 'battle' || !S) {
+      battleKit.classList.add('hidden');
+      cache.kitSig = null;
+      return;
+    }
+
+    const hasSpells = typeof B.spellList === 'function';
+    const spells = hasSpells ? battleList('spellList').filter(function (s) {
+      return s && s.ready && s.left > 0;
+    }) : [];
+
+    const pets = battleList('petList').filter(function (p) {
+      return p && (p.deployed || p.heroKind);
+    });
+    const sieges = battleList('siegeList').filter(function (s) {
+      return s && s.selected;
+    });
+
+    const show = !S.over && (spells.length > 0 || pets.length > 0 || sieges.length > 0);
+    battleKit.classList.toggle('hidden', !show);
+    if (!show) {
+      cache.kitSig = null;
+      return;
+    }
+
+    const sig = spells.map(function (s) {
+      return s.id + ':' + s.left + ':' + (s.selected ? 1 : 0);
+    }).join(',') + '|' + pets.map(function (p) {
+      return p.id + ':' + (p.heroKind || '') + ':' + (p.deployed ? 1 : 0);
+    }).join(',') + '|' + sieges.map(function (s) {
+      return s.id + ':' + (s.deployed ? 1 : 0);
+    }).join(',');
+    if (cache.kitSig === sig) return;
+    cache.kitSig = sig;
+
+    if (battleSpells) {
+      battleSpells.innerHTML = spells.map(function (s) {
+        return '<button class="bspell' + (s.selected ? ' is-selected' : '') +
+          '" type="button" data-battle-spell="' + escHtml(s.id) + '"' +
+          ' aria-pressed="' + (s.selected ? 'true' : 'false') + '"' +
+          ' title="' + escHtml(s.name + ' · ' + s.role + ' · осталось ' + s.left) + '">' +
+          '<span class="bspell__icon" aria-hidden="true">' +
+            spellIcon(s.id) + '</span>' +
+          '<span class="bspell__left">' + s.left + '</span>' +
+          '</button>';
+      }).join('');
+    }
+
+    if (battleSupport) {
+      const chips = [];
+      for (let i = 0; i < pets.length && i < 3; i++) {
+        const p = pets[i];
+        chips.push('<span class="bkit-chip bkit-chip_pet" title="' +
+          escHtml(p.name + ' · ' + p.role +
+            (p.heroKind ? ' · с ' + petHeroNameSafe(p.heroKind) : '')) + '">' +
+          '<b aria-hidden="true">' + petIcon(p.id) + '</b>' + escHtml(p.name) +
+          (p.deployed ? ' <i>в бою</i>' : '') + '</span>');
+      }
+      for (let i = 0; i < sieges.length; i++) {
+        const s = sieges[i];
+        chips.push('<span class="bkit-chip bkit-chip_siege" title="' +
+          escHtml(s.name + ' · ' + s.role) + '">' +
+          '<b aria-hidden="true">' + siegeIcon(s.id) + '</b>' + escHtml(s.name) +
+          ' <i>' + (s.deployed ? 'в бою' : 'с десантом') + '</i></span>');
+      }
+      battleSupport.innerHTML = chips.join('');
+      battleSupport.classList.toggle('hidden', !chips.length);
+    }
+
+    if (battleSpells) {
+      battleSpells.classList.toggle('hidden', !spells.length);
+    }
+  }
+
+  function onBattleKitClick(e) {
+    const chip = e.target.closest ? e.target.closest('[data-battle-spell]') : null;
+    if (!chip) return;
+    const id = chip.dataset.battleSpell;
+    const B = CC.Battle;
+    const S = B && B.state;
+    if (!S || !id) return;
+    if (typeof B.selectSpell !== 'function') return;
+
+    if (S.selectedSpell === id) {
+      S.selectedSpell = null;
+    } else {
+      const res = B.selectSpell(id);
+      if (res && res.error) toast(res.error);
+      else {
+        const row = (B.spellList ? B.spellList() : []).find(function (s) {
+          return s && s.id === id;
+        });
+        toast((row ? row.name : 'Заклинание') + ': тапни по полю');
+      }
+    }
+    cache.kitSig = null;
+    sync();
+  }
+
+  // Тап по полю с выбранным заклинанием: применяем эффект в точку.
+  // Возвращает true, если тап обработан (даже с ошибкой), чтобы войско
+  // не высадилось в ту же клетку.
+  function castSpellAt(gx, gy) {
+    const B = CC.Battle;
+    const S = B && B.state;
+    if (!S || !S.selectedSpell) return false;
+    if (typeof B.deploySpell !== 'function') return false;
+
+    const res = B.deploySpell(S.selectedSpell, gx, gy);
+    if (res.error) toast(res.error);
+    else if (!(S.spells && S.spells[S.selectedSpell] > 0)) {
+      S.selectedSpell = null;
+    }
+    cache.kitSig = null;
+    return true;
   }
 
   /* ---------- подготовка к бою ---------- */
@@ -7118,8 +9265,8 @@ CC.UI = (function () {
     placeElixir: 'Терминал → «Реактор» → поставь рядом с буром',
     placeStorage: 'Терминал → «Склад руды» → поставь рядом с центром',
     placeEstorage: 'Терминал → «Склад энергии» → поставь рядом с центром',
-    placeBarracks: 'Терминал → «Ангар» → поставь на свободную клетку',
-    train5: 'Открой ангар, выбери штурмовика и жми «Нанять» или «×5»',
+    placeBarracks: 'Терминал → «Ангар» → поставь; войска тренирует Казарма',
+    train5: 'Открой армию, выбери штурмовика и жми «Нанять» или «×5»',
     battle: 'Жми «В БОЙ» внизу, выбери войско и тапни по свободной клетке',
     level1: 'Победи в первом секторе: 50% построек или снос центра',
     th2: 'Тапни по командному центру и нажми «Улучшить до ур. 2»',
@@ -7462,8 +9609,8 @@ CC.UI = (function () {
           '<b class="arena-card__name">' + escHtml(g.name) + '</b>' +
           '<span class="arena-card__rating">🏆 ' + g.rating + '</span>' +
         '</div>' +
-        '<div class="arena-card__meta">Центр ' + g.th + ' · оборона ' + g.defenses +
-          note + '</div>' +
+        '<div class="arena-card__meta">Центр ' + g.th + ' · TH ' + g.th +
+          ' · оборона ' + g.defenses + note + '</div>' +
         '<div class="arena-card__loot">' +
           '<span>🔩 ' + info.gold + '</span>' +
           '<span>⚡ ' + info.elixir + '</span>' +
@@ -7615,7 +9762,7 @@ CC.UI = (function () {
     overlayEl.classList.add('hidden');
     if (arenaResult) arenaResult.classList.add('hidden');
 
-    CC.Battle.start(CC.Pvp.attack(ghost, CC.Game.armySnapshot()));
+    CC.Battle.start(CC.Pvp.attack(ghost, battleArmyWithKit()));
     retryReadyAt = Date.now() + 2000;
     cache.pct = cache.time = cache.level = null;
     Object.keys(cache).forEach(function (k) {
@@ -7991,8 +10138,46 @@ CC.UI = (function () {
     if (h > 0) applyCompact(h);
   }
 
+  // Завершение прокачки заклинаний/питомцев: P1 не отдаёт отдельного
+  // события, поэтому сравниваем предыдущее состояние слота с текущим.
+  function syncUpgradeWatchers() {
+    if (!CC.Game) return;
+
+    let changed = false;
+    const spell = CC.Game.spellUpInfo ? CC.Game.spellUpInfo() : null;
+    if (spell) {
+      spellWatch = { id: spell.id, to: spell.to,
+        name: spell.name || (CC.SPELLS[spell.id] || {}).name || 'Заклинание' };
+    } else if (spellWatch) {
+      const id = spellWatch.id;
+      const name = spellWatch.name;
+      const lvl = CC.Game.spellLevel ? CC.Game.spellLevel(id) : spellWatch.to;
+      toast(name + ' — ур. ' + lvl);
+      if (CC.Sound) CC.Sound.play('upgradeDone');
+      spellWatch = null;
+      changed = true;
+    }
+
+    const pet = CC.Game.petUpInfo ? CC.Game.petUpInfo() : null;
+    if (pet) {
+      petWatch = { id: pet.id, to: pet.to,
+        name: pet.name || (CC.PETS[pet.id] || {}).name || 'Питомец' };
+    } else if (petWatch) {
+      const id = petWatch.id;
+      const name = petWatch.name;
+      const lvl = CC.Game.petLevel ? CC.Game.petLevel(id) : petWatch.to;
+      toast(name + ' — ур. ' + lvl);
+      if (CC.Sound) CC.Sound.play('upgradeDone');
+      petWatch = null;
+      changed = true;
+    }
+
+    if (changed) invalidate();
+  }
+
   function sync() {
     syncCompact();
+    syncUpgradeWatchers();
     syncRaid();
     syncOffline();
     syncSound();
@@ -8075,6 +10260,7 @@ CC.UI = (function () {
       syncBaseTip();
       syncSergeant();
       updateGhost();
+      if (battleKit) battleKit.classList.add('hidden');
     } else {
       syncRes();
       syncQuests();
@@ -8098,6 +10284,7 @@ CC.UI = (function () {
     const parts = [];
     if (map.gold) parts.push(map.gold + ' руды');
     if (map.elixir) parts.push(map.elixir + ' энергии');
+    if (map.dark) parts.push(map.dark + ' плазмы');
     return parts.length ? parts.join(', ') : '0';
   }
 
@@ -8174,10 +10361,11 @@ CC.UI = (function () {
 
     // Добыча — отдельными чипами: руда / энергия / платина. Значения
     // берём из фактически снесённых зданий, без «нарисованных» чисел.
-    const actual = res.loot || { gold: 0, elixir: 0 };
+    const actual = res.loot || { gold: 0, elixir: 0, dark: 0 };
     const offered = res.lootOffered || actual;
-    const lost = res.lootLost || { gold: 0, elixir: 0 };
-    const hasOffered = (offered.gold || 0) + (offered.elixir || 0) > 0;
+    const lost = res.lootLost || { gold: 0, elixir: 0, dark: 0 };
+    const hasOffered = (offered.gold || 0) + (offered.elixir || 0) +
+      (offered.dark || 0) > 0;
     const emptyLoot = Array.isArray(res.emptyLoot) && res.emptyLoot.length > 0;
 
     if (overlayLoot) {
@@ -8189,6 +10377,10 @@ CC.UI = (function () {
       if (offered.elixir > 0) {
         chips.push('<span class="loot-chip loot-chip_elixir">⚡ <b>' +
           fmtNum(offered.elixir) + '</b> энергии</span>');
+      }
+      if (offered.dark > 0) {
+        chips.push('<span class="loot-chip loot-chip_dark">🛢️ <b>' +
+          fmtNum(offered.dark) + '</b> плазмы</span>');
       }
       if (res.gems) {
         chips.push('<span class="loot-chip loot-chip_gems">' +
@@ -8207,6 +10399,7 @@ CC.UI = (function () {
     const lostParts = [];
     if (lost.gold > 0) lostParts.push(lost.gold + ' руды');
     if (lost.elixir > 0) lostParts.push(lost.elixir + ' энергии');
+    if (lost.dark > 0) lostParts.push(lost.dark + ' плазмы');
 
     // Высаженные войска списываются всегда, даже если выжили.
     if (overlayArmy) {
@@ -8372,6 +10565,7 @@ CC.UI = (function () {
 
     // Перезапускаем выбранный уровень. После победы над новым уровнем
     // выбор равен ему же, поэтому «Ещё раз» не уводит с карты.
+    installLoadoutHooks();
     CC.Battle.reset(chosenLevel());
     retryReadyAt = Date.now() + 2000;
     cache.pct = cache.time = cache.level = null;
@@ -8626,6 +10820,19 @@ CC.UI = (function () {
     openHangar: openHangar,
     openRecruit: openRecruit,
     closeRecruit: closeRecruit,
+    openRecruitTab: openRecruitTab,
+    recruitTab: function () { return recruitTab; },
+    spellSlots: spellSlots,
+    spellLoadout: spellLoadoutMap,
+    spellAdd: spellAdd,
+    spellRemove: spellRemove,
+    petAssign: assignPetHero,
+    petClear: clearPet,
+    siegePick: pickSiege,
+    loadout: function () {
+      const ld = loadoutData();
+      return { spells: spellLoadoutMap(), pets: petBattleMap(), siege: loadoutData().siege };
+    },
     syncRecruit: syncRecruit,
     syncSectorBadge: syncSectorBadge,
     isRecruitOpen: function () { return recruitOpen; },
@@ -8679,7 +10886,7 @@ CC.UI = (function () {
     isShopOpen: function () { return shopOpen; },
     setShopCategory: function (id) {
       const found = SHOP_CATS.find(function (c) { return c.id === id; });
-      shopCat = found ? found.id : 'all';
+      shopCat = found ? found.id : (id === WALLS_CAT.id ? WALLS_CAT.id : 'all');
       cache.shopSig = null;
       resetShopScroll();
       if (shopOpen) syncShop();

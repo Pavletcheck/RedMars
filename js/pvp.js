@@ -15,9 +15,21 @@ CC.Pvp = (function () {
   const RECENT_LIMIT = CFG.recentLimit || 6;
   const FIND_ATTEMPTS = CFG.findAttempts || 20;
 
-  const DEF_TYPES = ['cannon', 'archer', 'mortar', 'airdef', 'mage', 'ambush', 'beam'];
-  const RES_TYPES = ['goldmine', 'elixir', 'storage', 'estorage'];
-  const TRAP_TYPES = ['mine', 'spring', 'airmine'];
+  // Оборона всех эпох: генератор ставит только то, что разрешено лимитом
+  // конкретного TH. Порядок — от базовых турелей к поздним модулям.
+  const DEF_TYPES = [
+    'cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper', 'ambush',
+    'bombtower', 'xbow', 'beam', 'eagle', 'scattershot', 'monolith',
+    'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter'
+  ];
+  // Склад руды и склад энергии обязательны: на них держится добыча Арены.
+  const RES_TYPES = [
+    'storage', 'estorage', 'goldmine', 'elixir', 'darkdrill', 'darkstorage'
+  ];
+  const TRAP_TYPES = [
+    'mine', 'spring', 'airmine', 'giantbomb', 'seekingair',
+    'skeletontrap', 'tornado', 'gigabomb'
+  ];
 
   const NAME_A = [
     'Красный', 'Ржавый', 'Пыльный', 'Стальной', 'Ледяной',
@@ -66,10 +78,15 @@ CC.Pvp = (function () {
     return row[i] || 0;
   }
 
-  // Потолок уровня как в деревне: башня и ангар отстают от центра на 1.
+  // Потолок уровня: таблица maxlv по TH. Для старых вызовов оставлен
+  // запасной вариант «центр минус один» для отстающих башен.
   function maxLevel(type, th) {
     const t = clamp(Math.round(th) || 1, 1, MAX_TH);
-    if (type === 'townhall') return MAX_TH;
+    if (type === 'townhall') return t;
+    if (CC.maxLevelAt) {
+      const m = CC.maxLevelAt(type, t);
+      if (m > 0) return m;
+    }
     if (type === 'archer' || type === 'barracks') return clamp(t - 1, 1, MAX_TH);
     return t;
   }
@@ -172,12 +189,12 @@ CC.Pvp = (function () {
     return a + ' ' + b + ' ' + (index + 1);
   }
 
-  // Правдоподобная раскладка своего TH: центр в центре, кольцо барьеров
-  // по лимиту, внутри оборона и ресурсы. Всё детерминировано по rnd.
+  // Правдоподобная раскладка своего TH: центр в центре, кольца барьеров
+  // по лимиту, внутри оборона и ресурсы. Все типы и уровни — из таблиц
+  // CC.limitAt/CC.maxLevelAt, поэтому TH1–17 собираются одним кодом.
   function makeLayout(rnd, th) {
     const occ = new Uint8Array(G * G);
     const layout = [];
-    const slots = [];
 
     function mark(x, y, w, h) {
       for (let yy = y; yy < y + h; yy++) {
@@ -209,50 +226,46 @@ CC.Pvp = (function () {
 
     function levelFor(type) {
       const cap = maxLevel(type, th);
+      if (cap <= 0) return 0;
       let lvl = cap;
       if (cap > 1 && rnd() < 0.35) lvl = cap - 1;
       return clamp(lvl, 1, cap);
     }
 
-    // Центр всегда в центре поля, 2x2.
-    put('townhall', 17, 17, th);
+    // Центр в центре поля: 4×4, как в таблице.
+    const hallDef = DEFS.townhall || { w: 4, h: 4 };
+    const hallW = hallDef.w || 4;
+    const hallH = hallDef.h || 4;
+    let hx = Math.floor((G - hallW) / 2);
+    let hy = Math.floor((G - hallH) / 2);
+    if (!put('townhall', hx, hy, th)) put('townhall', 0, 0, th);
 
-    // Кольцо энергобарьеров. Сторона подбирается так, чтобы периметр
-    // не превышал лимит TH: на TH2 это 20 клеток, на TH10 — 140.
-    let inner = { x0: 11, y0: 11, x1: 24, y1: 24 };
+    // Кольца энергобарьеров. Одно кольцо на TH2–10, второе/третье —
+    // на поздних TH, чтобы использовать лимит до 325 сегментов.
     const wallLimit = limit('wall', th);
+    let inner = { x0: 3, y0: 3, x1: G - 4, y1: G - 4 };
+    let slotArea = null;
+    let walls = 0;
+    const wallLevel = levelFor('wall');
 
-    if (wallLimit >= 12) {
-      let side = Math.floor((wallLimit + 4) / 4);
-      side = clamp(side, 5, G);
-      const half = Math.floor((side - 1) / 2);
-      let x0 = 17 - half;
-      let y0 = 17 - half;
-      let x1 = x0 + side - 1;
-      let y1 = y0 + side - 1;
-
-      while (x0 < 0 || y0 < 0 || x1 >= G || y1 >= G) {
-        side -= 1;
-        const h2 = Math.floor((side - 1) / 2);
-        x0 = 17 - h2;
-        y0 = 17 - h2;
-        x1 = x0 + side - 1;
-        y1 = y0 + side - 1;
-        if (side <= 5) break;
-      }
-
-      // Два прохода в верхней стороне: без них отряд долго грызёт кольцо.
-      const gapX = 16 + Math.floor(rnd() * 2);
-      const wallLevel = levelFor('wall');
-      let walls = 0;
+    function addRing(pad) {
+      if (walls >= wallLimit) return;
+      let side = clamp(Math.ceil((wallLimit - walls) / 4) + 4, 7, G - pad * 2 - 2);
+      if (side < 7) return;
+      const x0 = pad + Math.floor((G - pad * 2 - side) / 2);
+      const y0 = pad + Math.floor((G - pad * 2 - side) / 2);
+      const x1 = x0 + side - 1;
+      const y1 = y0 + side - 1;
+      const gapW = 2;
+      const gapX = x0 + 1 + Math.floor(rnd() * Math.max(1, side - gapW - 2));
 
       function addWall(x, y) {
         if (walls >= wallLimit) return;
-        if (put('wall', x, y, wallLevel)) walls++;
+        if (put('wall', x, y, wallLevel || 1)) walls++;
       }
 
       for (let x = x0; x <= x1; x++) {
-        if (x === gapX || x === gapX + 1) continue;
+        if (x >= gapX && x < gapX + gapW) continue;
         addWall(x, y0);
         addWall(x, y1);
       }
@@ -260,64 +273,97 @@ CC.Pvp = (function () {
         addWall(x0, y);
         addWall(x1, y);
       }
-
       inner = { x0: x0 + 1, y0: y0 + 1, x1: x1 - 1, y1: y1 - 1 };
+      if (!slotArea) slotArea = { x0: x0 + 1, y0: y0 + 1, x1: x1 - 1, y1: y1 - 1 };
     }
 
-    for (let y = inner.y0; y <= inner.y1; y++) {
-      for (let x = inner.x0; x <= inner.x1; x++) {
+    if (wallLimit > 0) {
+      addRing(2);
+      let pad = 5;
+      while (walls + 40 < wallLimit && pad < 10) {
+        addRing(pad);
+        pad += 3;
+      }
+    }
+
+    // Свободные клетки внутри внешнего кольца: внутренние кольца поздних TH
+    // занимают часть площади, но промежутки между ними тоже застраиваем.
+    const area = slotArea || inner;
+    const slots = [];
+    for (let y = Math.max(0, area.y0); y <= Math.min(G - 1, area.y1); y++) {
+      for (let x = Math.max(0, area.x0); x <= Math.min(G - 1, area.x1); x++) {
         if (!occ[y * G + x]) slots.push({ x: x, y: y });
       }
     }
+    slots.sort(function (a, b) {
+      const da = Math.hypot(a.x + 0.5 - G / 2, a.y + 0.5 - G / 2);
+      const db = Math.hypot(b.x + 0.5 - G / 2, b.y + 0.5 - G / 2);
+      if (Math.abs(da - db) > 1) return da - db;
+      return a.y - b.y || a.x - b.x;
+    });
 
     let si = 0;
     function putInside(type) {
       const lvl = levelFor(type);
+      if (!lvl) return false;
       while (si < slots.length) {
         const s = slots[si++];
-        if (fits(type, s.x, s.y)) {
-          put(type, s.x, s.y, lvl);
-          return true;
-        }
+        if (fits(type, s.x, s.y) && put(type, s.x, s.y, lvl)) return true;
+      }
+      // Курсор исчерпан: второй проход с начала для крупных построек.
+      for (let i = 0; i < slots.length; i++) {
+        const s = slots[i];
+        if (fits(type, s.x, s.y) && put(type, s.x, s.y, lvl)) return true;
       }
       return false;
     }
 
     function countFor(type, max) {
       const lim = limit(type, th);
-      if (!lim) return 0;
+      if (!lim || maxLevel(type, th) <= 0) return 0;
       const n = Math.round(lim * (0.55 + rnd() * 0.45));
       return clamp(n, 1, Math.min(lim, max || lim));
     }
 
-    // Оборона: состав не выходит за лимиты текущего TH.
+    // Сначала обязательные склады: без них карточка Арены и добыча ломаются.
+    putInside('storage');
+    putInside('estorage');
+
+    // Оборона: состав не выходит за лимиты текущего TH. На поздних TH
+    // крупные башни (4×4) ставятся первыми, иначе двор занят мелочью.
     const defenseCounts = {};
     let defenses = 0;
-    DEF_TYPES.forEach(function (type) {
-      const n = countFor(type);
+    const defOrder = DEF_TYPES.slice().sort(function (a, b) {
+      const da = DEFS[a] || {};
+      const db = DEFS[b] || {};
+      return (db.w * db.h || 1) - (da.w * da.h || 1);
+    });
+    defOrder.forEach(function (type) {
+      const n = countFor(type, 8);
       let placed = 0;
       for (let i = 0; i < n; i++) {
         if (putInside(type)) placed++;
       }
-      defenseCounts[type] = placed;
+      if (placed) defenseCounts[type] = placed;
+      else if (defenseCounts[type] === undefined) defenseCounts[type] = 0;
       defenses += placed;
     });
 
     // Ресурсы и ангар — внутри кольца, как в настоящей базе.
     RES_TYPES.forEach(function (type) {
-      const n = countFor(type);
+      if (type === 'storage' || type === 'estorage') return;
+      const n = countFor(type, 6);
       for (let i = 0; i < n; i++) putInside(type);
     });
-    const barracksN = countFor('barracks');
+    const barracksN = countFor('barracks', 3);
     for (let i = 0; i < barracksN; i++) putInside('barracks');
 
-    // Ловушки — в тех же дворах, что ресурсы и оборона. Для Арены достаточно
-    // пары штук: они не входят в процент, но заставляют атакующего смотреть
-    // под ноги. Уровень не выше TH, как и у остальных построек.
+    // Ловушки — в тех же дворах, что ресурсы и оборона. Они не входят в
+    // процент, но заставляют атакующего смотреть под ноги.
     TRAP_TYPES.forEach(function (type) {
       const lim = limit(type, th);
       if (!lim) return;
-      const n = clamp(Math.round(lim * (0.5 + rnd() * 0.5)), 1, Math.min(lim, 2));
+      const n = clamp(Math.round(lim * (0.5 + rnd() * 0.5)), 1, Math.min(lim, 3));
       for (let i = 0; i < n; i++) putInside(type);
     });
 
@@ -331,6 +377,20 @@ CC.Pvp = (function () {
     const built = makeLayout(rnd, th);
     const rating = Math.round(700 + th * 55 + rnd() * 350);
 
+    // Герои, питомцы и осадные машины, открытые на этом TH. Раскладка
+    // обороны их не содержит (они принадлежат атакующему), но карточка
+    // Арены и будущий P3-P4 показывают состав по центру.
+    const heroes = (CC.heroesAt ? CC.heroesAt(th) : []).map(function (h) {
+      return h.id;
+    });
+    const pets = Object.keys(CC.PETS || {}).filter(function (id) {
+      return CC.petMaxLevel ? CC.petMaxLevel(id, th) > 0 : false;
+    });
+    const siege = Object.keys(CC.SIEGE || {}).filter(function (id) {
+      const s = CC.SIEGE[id];
+      return !!s && (s.minTh || 0) > 0 && (s.minTh || 0) <= th;
+    });
+
     return {
       id: 'g' + ghostSeed.toString(36),
       name: ghostName(rnd, index),
@@ -342,10 +402,16 @@ CC.Pvp = (function () {
       // соперников разными, но не выводит лут за пределы формулы.
       loot: {
         gold: Math.round((150 + th * 300) * (0.9 + rnd() * 0.2)),
-        elixir: Math.round((120 + th * 240) * (0.9 + rnd() * 0.2))
+        elixir: Math.round((120 + th * 240) * (0.9 + rnd() * 0.2)),
+        dark: th >= 7
+          ? Math.round((60 + th * 80) * (0.9 + rnd() * 0.2))
+          : 0
       },
       defenses: built.defenses,
       defenseCounts: built.defenseCounts,
+      heroes: heroes,
+      pets: pets,
+      siege: siege,
       seed: ghostSeed
     };
   }
@@ -523,7 +589,8 @@ CC.Pvp = (function () {
 
     const pool = {
       gold: Math.max(0, Math.floor(num(g.loot && g.loot.gold, 0))),
-      elixir: Math.max(0, Math.floor(num(g.loot && g.loot.elixir, 0)))
+      elixir: Math.max(0, Math.floor(num(g.loot && g.loot.elixir, 0))),
+      dark: Math.max(0, Math.floor(num(g.loot && g.loot.dark, 0)))
     };
     const plan = CC.Loot && CC.Loot.distribute ? CC.Loot.distribute(pool, rows) : {};
     const looted = ghostLooted(g.id);
@@ -532,11 +599,12 @@ CC.Pvp = (function () {
       const key = CC.lootKey
         ? CC.lootKey(rows[i].type, rows[i].x, rows[i].y)
         : rows[i].type + ':' + rows[i].x + ':' + rows[i].y;
-      const part = plan[key] || { gold: 0, elixir: 0 };
+      const part = plan[key] || { gold: 0, elixir: 0, dark: 0 };
       const empty = looted[key] === true;
       rows[i].key = key;
       rows[i].lootGold = empty ? 0 : part.gold;
       rows[i].lootElixir = empty ? 0 : part.elixir;
+      rows[i].lootDark = empty ? 0 : (part.dark || 0);
       rows[i].emptyLoot = empty;
     }
     return { rows: rows, pool: pool };
@@ -549,6 +617,7 @@ CC.Pvp = (function () {
     const id = ghost && ghost.id;
     let remainGold = 0;
     let remainElixir = 0;
+    let remainDark = 0;
     let left = 0;
     let lootedCount = 0;
 
@@ -558,6 +627,7 @@ CC.Pvp = (function () {
       else left++;
       remainGold += r.lootGold;
       remainElixir += r.lootElixir;
+      remainDark += r.lootDark || 0;
     }
 
     const first = isFirstGhost(id);
@@ -565,12 +635,13 @@ CC.Pvp = (function () {
     return {
       first: first,
       share: share,
-      empty: remainGold + remainElixir <= 0,
+      empty: remainGold + remainElixir + remainDark <= 0,
       left: left,
       looted: lootedCount,
-      remaining: { gold: remainGold, elixir: remainElixir },
+      remaining: { gold: remainGold, elixir: remainElixir, dark: remainDark },
       gold: Math.floor(remainGold * share),
-      elixir: Math.floor(remainElixir * share)
+      elixir: Math.floor(remainElixir * share),
+      dark: Math.floor(remainDark * share)
     };
   }
 
@@ -590,6 +661,13 @@ CC.Pvp = (function () {
     // Даже если снаружи пришёл полный снимок старого сейва, на арену идут
     // только войска, открытые на текущем уровне командного центра.
     const army = copyArmy(armySnapshot);
+    // Заклинания/питомцы/осада не входят в ARMY_ORDER, но если снимок их
+    // содержит, Арена передаёт их в бой как есть.
+    if (armySnapshot && typeof armySnapshot === 'object') {
+      ['spells', 'pets', 'siege'].forEach(function (k) {
+        if (armySnapshot[k]) army[k] = armySnapshot[k];
+      });
+    }
     if (CC.Game && CC.Game.townhallLevel && CC.troopUnlock) {
       const th = CC.Game.townhallLevel();
       (CC.ARMY_ORDER || []).forEach(function (type) {
@@ -621,7 +699,8 @@ CC.Pvp = (function () {
       army: army,
       loot: {
         gold: Math.max(0, Math.floor(num(g.loot && g.loot.gold, 0))),
-        elixir: Math.max(0, Math.floor(num(g.loot && g.loot.elixir, 0)))
+        elixir: Math.max(0, Math.floor(num(g.loot && g.loot.elixir, 0))),
+        dark: Math.max(0, Math.floor(num(g.loot && g.loot.dark, 0)))
       },
       limit: CFG.battleLimit || CC.TIME_LIMIT || 180,
       kind: 'pvp'
@@ -658,7 +737,7 @@ CC.Pvp = (function () {
     delta = nextRating - rating;
 
     const first = o.first !== undefined ? !!o.first : firstIn(p, g.id);
-    const poolLoot = g.loot || { gold: 0, elixir: 0 };
+    const poolLoot = g.loot || { gold: 0, elixir: 0, dark: 0 };
 
     // Новый движок боя отдаёт фактически снесённые здания. Причём в повторе
     // уже разграбленные в прошлый раз склады пришли с нулём: lootTaken —
@@ -672,7 +751,8 @@ CC.Pvp = (function () {
       share = first ? 1 : 0.75;
       offered = {
         gold: Math.max(0, Math.floor(num(taken.gold, 0) * share)),
-        elixir: Math.max(0, Math.floor(num(taken.elixir, 0) * share))
+        elixir: Math.max(0, Math.floor(num(taken.elixir, 0) * share)),
+        dark: Math.max(0, Math.floor(num(taken.dark, 0) * share))
       };
     } else {
       // Первое убийство призрака — весь пул. Повтор — доля по разрушениям:
@@ -683,17 +763,21 @@ CC.Pvp = (function () {
 
       offered = {
         gold: Math.max(0, Math.floor(num(poolLoot.gold, 0) * share)),
-        elixir: Math.max(0, Math.floor(num(poolLoot.elixir, 0) * share))
+        elixir: Math.max(0, Math.floor(num(poolLoot.elixir, 0) * share)),
+        dark: Math.max(0, Math.floor(num(poolLoot.dark, 0) * share))
       };
     }
 
     // Необязательный лимит склада: интерфейс передаёт свободное место,
     // чтобы добыча сразу считалась честно, а не «потерялась» в addLoot.
-    let loot = { gold: offered.gold, elixir: offered.elixir };
+    let loot = { gold: offered.gold, elixir: offered.elixir, dark: offered.dark };
     if (o.cap && typeof o.cap === 'object') {
       loot = {
         gold: Math.min(offered.gold, Math.max(0, Math.floor(num(o.cap.gold, 0)))),
-        elixir: Math.min(offered.elixir, Math.max(0, Math.floor(num(o.cap.elixir, 0))))
+        elixir: Math.min(offered.elixir, Math.max(0, Math.floor(num(o.cap.elixir, 0)))),
+        dark: (o.cap.dark === undefined
+          ? offered.dark
+          : Math.min(offered.dark, Math.max(0, Math.floor(num(o.cap.dark, 0)))))
       };
     }
 
@@ -710,7 +794,8 @@ CC.Pvp = (function () {
       offered: offered,
       lost: {
         gold: Math.max(0, offered.gold - loot.gold),
-        elixir: Math.max(0, offered.elixir - loot.elixir)
+        elixir: Math.max(0, offered.elixir - loot.elixir),
+        dark: Math.max(0, offered.dark - loot.dark)
       },
       xp: xp,
       first: first
@@ -730,7 +815,7 @@ CC.Pvp = (function () {
     for (let i = 0; i < buildings.length; i++) {
       const e = buildings[i];
       if (!e || !e.key || e.empty) continue;
-      if ((e.gold || 0) + (e.elixir || 0) <= 0) continue;
+      if ((e.gold || 0) + (e.elixir || 0) + (e.dark || 0) <= 0) continue;
       if (row[e.key] === true) continue;
       row[e.key] = true;
       n++;
@@ -749,7 +834,8 @@ CC.Pvp = (function () {
     const free = (CC.Game && CC.Game.cap)
       ? {
         gold: Math.max(0, CC.Game.cap('gold') - CC.Game.gold()),
-        elixir: Math.max(0, CC.Game.cap('elixir') - CC.Game.elixir())
+        elixir: Math.max(0, CC.Game.cap('elixir') - CC.Game.elixir()),
+        dark: Math.max(0, CC.Game.cap('dark') - CC.Game.dark())
       }
       : null;
 
@@ -771,11 +857,19 @@ CC.Pvp = (function () {
     else p.losses++;
     p.search = 0;
 
-    let added = { gold: reward.loot.gold, elixir: reward.loot.elixir };
+    let added = {
+      gold: reward.loot.gold,
+      elixir: reward.loot.elixir,
+      dark: reward.loot.dark || 0
+    };
     if (CC.Game && CC.Game.addLoot) {
       const got = CC.Game.addLoot(reward.loot);
-      added = { gold: got.gold, elixir: got.elixir };
-      reward.storageLost = got.lost || { gold: 0, elixir: 0 };
+      added = { gold: got.gold, elixir: got.elixir, dark: got.dark || 0 };
+      reward.storageLost = {
+        gold: (got.lost && got.lost.gold) || 0,
+        elixir: (got.lost && got.lost.elixir) || 0,
+        dark: (got.lost && got.lost.dark) || 0
+      };
     }
     reward.loot = added;
 
@@ -784,6 +878,7 @@ CC.Pvp = (function () {
       if (CC.Game.addStat) {
         if (reward.win) CC.Game.addStat('battleWins', 1);
         CC.Game.addStat('lootGold', added.gold);
+        CC.Game.addStat('lootDark', added.dark);
       }
     }
 

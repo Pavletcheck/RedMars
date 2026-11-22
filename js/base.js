@@ -2,43 +2,62 @@
 window.CC = window.CC || {};
 CC.App = CC.App || { mode: 'base' };
 
-/* Характеристики постройки с учётом уровня. Единая математика для деревни,
-   боя кампании и набегов. Модель «каждый уровень удваивает»:
-     HP       = база × 2^(уровень − 1)
-     урон     = база × 2^(уровень − 1)
-     дальность = база + 0.04 × (уровень − 1)   (не удваивается)
-     скорость стрельбы = база × (1 + rate × (уровень − 1)) — малый прирост.
-   Базы HP в config.js уже округлены до сотен, поэтому HP остаётся круглым. */
+/* Характеристики постройки с учётом уровня. Единая точка для деревни,
+   боя кампании и набегов. HP/DPS/цена/время — строго строка CC.COC,
+   никаких ×2. Дальность/скорость стрельбы — наша тайловая мета. */
 CC.BuildingStats = {
   at: function (type, level) {
     const d = CC.BUILDINGS[type] || {};
-    const u = CC.UPGRADES[type] || {};
-    const max = (CC.ECONOMY && CC.ECONOMY.maxLevel) || 5;
+    const max = CC.buildingMaxLevel ? CC.buildingMaxLevel(type) : 0;
 
     let lvl = Math.floor(Number(level) || 1);
     if (lvl < 1) lvl = 1;
-    if (lvl > max) lvl = max;
+    if (max && lvl > max) lvl = max;
 
-    const k = lvl - 1;
-    const mult = Math.pow(2, k);
+    const row = CC.buildingLevel ? CC.buildingLevel(type, lvl) : {};
+    if (row.lv) lvl = row.lv;
+
     const out = {
       level: lvl,
-      hp: Math.round((d.hp || 0) * mult)
+      hp: Math.max(0, Math.round(Number(row.hp) || 0)),
+      dps: Math.max(0, Number(row.dps) || 0)
     };
 
-    if (d.dmg) out.dmg = Math.round(d.dmg * mult);
-    if (d.range) out.range = +(d.range + (u.range || 0) * k).toFixed(2);
+    // У ловушек в таблице не DPS, а разовый Damage.
+    const dmg = row.dps != null ? Number(row.dps) : Number(row.dmg);
+    if (isFinite(dmg) && dmg > 0) {
+      out.dmg = dmg;
+      out.dps = dmg;
+    } else if (d.dmg) {
+      out.dmg = Number(d.dmg) || 0;
+      out.dps = out.dmg;
+    }
+
+    if (d.range) out.range = d.range;
     if (d.minRange) out.minRange = d.minRange;
-    if (d.rate) out.rate = +(d.rate * (1 + (u.rate || 0) * k)).toFixed(3);
+    if (d.rate) out.rate = d.rate;
     if (d.splash) out.splash = d.splash;
     if (d.resource) out.resource = true;
+    if (d.store) out.store = d.store;
+    if (d.produce) out.res = d.produce;
+
+    if (row.cap != null) {
+      out.cap = Math.max(0, Math.round(Number(row.cap) || 0));
+      if (d.produce) out.extractCap = out.cap;
+      if (d.store) out.capacity = out.cap;
+    }
+    if (row.prod != null) {
+      out.production = +((Number(row.prod) || 0) / 3600).toFixed(6);
+    }
+    if (row.radius != null && d.trap) out.radius = Number(row.radius) || d.radius;
+    if (row.spawn != null && d.trap) out.spawn = Number(row.spawn) || 0;
 
     // Специальные поля обороны и ловушек: бой и панель читают их из
     // статистики, а не из сырого CC.BUILDINGS, чтобы уровень учитывался.
     if (d.trap) {
       out.trap = true;
       out.trapKind = d.trapKind;
-      out.radius = d.radius;
+      out.radius = out.radius || d.radius;
       out.capacity = d.capacity;
       out.maxUnitSpace = d.maxUnitSpace;
     }
@@ -53,6 +72,8 @@ CC.BuildingStats = {
     }
     if (d.onlyGround) out.onlyGround = true;
     if (d.targetsAir) out.targetsAir = true;
+    if (d.airOnly) out.airOnly = true;
+    if (d.special) out.special = d.special;
 
     return out;
   }
@@ -84,6 +105,22 @@ CC.Base = (function () {
   function upgradeTime(type, toLevel) {
     if (!DEFS[type]) return 0;
     return CC.buildTime ? CC.buildTime(type, toLevel) : 0;
+  }
+
+  // Смета апгрейда: id постройки (как в CC.Game.upgradeCost) или
+  // тип + целевой уровень (как в CC.upgradeCost).
+  function upgradeCost(idOrType, toLevel) {
+    if (typeof idOrType === 'number' || /^\d+$/.test(String(idOrType))) {
+      if (CC.Game && CC.Game.upgradeCost) return CC.Game.upgradeCost(Number(idOrType));
+    }
+    if (typeof idOrType === 'string') {
+      return CC.upgradeCost(idOrType, toLevel || 2);
+    }
+    return null;
+  }
+
+  function upgradeSpent(id) {
+    return CC.Game && CC.Game.upgradeSpent ? CC.Game.upgradeSpent(id) : null;
   }
 
   function rebuild() {
@@ -167,8 +204,8 @@ CC.Base = (function () {
     const rescue = !lesson && CC.Game && CC.Game.storageRescue
       ? CC.Game.storageRescue(type) : false;
     const cost = (lesson || rescue)
-      ? { gold: 0, elixir: 0 }
-      : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0 });
+      ? { gold: 0, elixir: 0, dark: 0 }
+      : (CC.placeCost ? CC.placeCost(type) : { gold: 0, elixir: 0, dark: 0 });
     const time = lesson
       ? lesson.seconds
       : (CC.placeTime ? CC.placeTime(type) : 0);
@@ -183,6 +220,10 @@ CC.Base = (function () {
       if (st.elixir < cost.elixir) {
         const need = Math.ceil(cost.elixir - st.elixir);
         return { error: 'Не хватает ' + need + ' энергии', missing: { elixir: need }, cost: cost };
+      }
+      if ((cost.dark || 0) > 0 && (st.dark || 0) < cost.dark) {
+        const need = Math.ceil(cost.dark - (st.dark || 0));
+        return { error: 'Не хватает ' + need + ' плазмы', missing: { dark: need }, cost: cost };
       }
     }
 
@@ -209,6 +250,7 @@ CC.Base = (function () {
     if (st) {
       st.gold -= cost.gold;
       st.elixir -= cost.elixir;
+      st.dark -= cost.dark || 0;
     }
 
     // Таймер стройки живёт в прогрессе деревни (clash-village-v2).
@@ -233,7 +275,7 @@ CC.Base = (function () {
     return {
       ok: true,
       id: it.id,
-      spent: { gold: cost.gold, elixir: cost.elixir },
+      spent: { gold: cost.gold, elixir: cost.elixir, dark: cost.dark || 0 },
       lesson: !!lesson,
       rescue: !!rescue,
       build: build
@@ -333,9 +375,15 @@ CC.Base = (function () {
     const kept = [];
     let maxId = 0;
 
+    const unknown = {};
     for (let i = 0; i < data.items.length; i++) {
       const it = data.items[i];
-      if (!it || !DEFS[it.type]) continue;
+      if (!it) continue;
+      if (!DEFS[it.type]) {
+        // Не удаляем молча: старый/будущий тип просто не рисуем и говорим.
+        unknown[it.type] = (unknown[it.type] || 0) + 1;
+        continue;
+      }
       const s = size(it.type);
       const x = it.x | 0;
       const y = it.y | 0;
@@ -356,6 +404,12 @@ CC.Base = (function () {
       const id = (it.id | 0) || (kept.length + 1);
       if (id > maxId) maxId = id;
       kept.push({ id: id, type: it.type, x: x, y: y });
+    }
+
+    const unknownTypes = Object.keys(unknown);
+    if (unknownTypes.length && typeof console !== 'undefined' && console.warn) {
+      console.warn('CC.Base.load: пропущены неизвестные типы построек: ' +
+        unknownTypes.map(function (t) { return t + '×' + unknown[t]; }).join(', '));
     }
 
     if (!kept.length) {
@@ -382,7 +436,7 @@ CC.Base = (function () {
   // Постройки в том же виде, что и в бою, — рендер не различает базу и поле боя.
   function renderList() {
     return items.map(function (it) {
-      const d = DEFS[it.type];
+      const d = DEFS[it.type] || {};
       const p = preview && preview.id === it.id ? preview : it;
       const bi = buildInfo(it.id);
       return {
@@ -438,6 +492,8 @@ CC.Base = (function () {
     renderList: renderList,
     size: size,
     upgradeTime: upgradeTime,
+    upgradeCost: upgradeCost,
+    upgradeSpent: upgradeSpent,
     fits: fits,
     itemAt: itemAt,
     count: count,
@@ -468,7 +524,6 @@ CC.Game = (function () {
   const DEFS = CC.BUILDINGS;
   const TROOPS = CC.TROOPS;
   const ECON = CC.ECONOMY;
-  const UP = CC.UPGRADES;
   const LEVELS = CC.LEVELS || [];
   const BUILD = CC.BUILDERS || {
     start: 1, max: 4,
@@ -605,16 +660,9 @@ CC.Game = (function () {
   };
   // Прокачка войск: цены, рост и бонус за уровень. Константы в config.js,
   // здесь — резерв на случай старого конфига без поля.
-  const TROOP_LVL = CC.TROOP_LEVEL || {
-    max: 10, costFactor: 12,
-    timeFactor: 6, timeGrowth: 1.5,
-    hpPerLevel: 2, dmgPerLevel: 2
-  };
-  // Герой: открытие с TH2, HP/урон ×2 за уровень и отдельный слот прокачки.
+  // Герой: общий уровень в сейве, цены/время — строка таблицы.
   const HERO = CC.HERO || {
-    id: 'hero', minTh: 2, maxLevel: 10,
-    costBase: 1600, costGrowth: 2,
-    hpBase: 1000, dmgBase: 80, hpPerLevel: 2, dmgPerLevel: 2,
+    id: 'barb', minTh: 4, maxLevel: 1,
     speed: 2, range: 1.2,
     ability: { name: 'Щит', duration: 3, radius: 2.5, uses: 1 },
     costs: {}, times: {}
@@ -664,6 +712,28 @@ CC.Game = (function () {
     return out;
   }
 
+  // Индивидуальные уровни шести героев. Все стартуют с 1; закрытые
+  // (TH ниже minTh) heroLevel() отдаёт как 0, но запас в сейве не теряется.
+  function freshHeroLevels() {
+    const out = {};
+    const list = CC.HEROES || [];
+    for (let i = 0; i < list.length; i++) out[list[i].id] = 1;
+    return out;
+  }
+
+  // Уровни заклинаний и питомцев: новый/старый сейв — все по 1.
+  function freshSpellLevels() {
+    const out = {};
+    Object.keys(CC.SPELLS || {}).forEach(function (id) { out[id] = 1; });
+    return out;
+  }
+
+  function freshPetLevels() {
+    const out = {};
+    Object.keys(CC.PETS || {}).forEach(function (id) { out[id] = 1; });
+    return out;
+  }
+
   // Состояние обучения Сержанта. Новый сейв начинается с активным обучением,
   // старый — с done=true (см. load()). cargo — первый груз 800/800 уже выдан,
   // loreSeen — вступительный лор уже показан (на старых сейвах сразу true).
@@ -675,6 +745,7 @@ CC.Game = (function () {
     return {
       gold: ECON.startGold,
       elixir: ECON.startElixir,
+      dark: Math.max(0, Number(ECON.startDark) || 0),
       gems: GEMS.start,
       xp: 0,
       stats: {
@@ -707,8 +778,17 @@ CC.Game = (function () {
       // строителей не занимает; старый сейв получает все уровни по 1.
       troopLevels: freshTroopLevels(),
       troopUp: null,
+      // Заклинания делят лабораторный слот с войсками.
+      spellLevels: freshSpellLevels(),
+      spellUp: null,
+      // Питомцы качаются в Питомнике отдельным слотом.
+      petLevels: freshPetLevels(),
+      petUp: null,
       // Герой: 0 — ещё не открыт (TH ниже 2), 1..10 — уровень.
-      // heroUp — отдельный слот прокачки, не связанный с troopUp.
+      // heroUp — один слот прокачки на всех; в нём лежит kind.
+      // heroLevels — уровни каждого героя, heroLevel — старый общий
+      // читатель (уровень Сержанта) для совместимости сейвов и UI.
+      heroLevels: freshHeroLevels(),
       heroLevel: 0,
       heroUp: null,
       builders: BUILD.start,
@@ -759,9 +839,12 @@ CC.Game = (function () {
   }
 
   function level(id) {
-    const l = st.levels[id] | 0;
+    const it = item(id);
+    const max = it && CC.buildingMaxLevel ? CC.buildingMaxLevel(it.type) : MAX_TH;
+    let l = st.levels[id] | 0;
     if (l < 1) return 1;
-    return l > ECON.maxLevel ? ECON.maxLevel : l;
+    if (max > 0 && l > max) l = max;
+    return l;
   }
 
   function count(type) {
@@ -818,27 +901,22 @@ CC.Game = (function () {
   function hasLab() { return labLevel() > 0; }
   function hasHeroHall() { return heroHallLevel() > 0; }
 
-  // townhall — до MAX_TH, башня отстаёт на 1. Ангар теперь даёт места в
-  // армии, поэтому качается вместе с центром: на TH2 доступен L2 (40 мест),
-  // на TH10 — L10 (200 мест), как и прежняя кривая «20 за уровень центра».
+  // Потолок типа — строго CC.maxLevelAt (maxlv справочника).
   // thLevel можно передать явно (для тестов/индикаторов).
   function maxLevel(type, thLevel) {
     let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
     th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
-
-    if (type === 'townhall') return MAX_TH;
-    if (type === 'archer') {
-      const v = th - 1;
-      return v < 1 ? 1 : (v > MAX_TH ? MAX_TH : v);
-    }
-    return th;
+    return CC.maxLevelAt(type, th);
   }
 
-  // Какой уровень командного центра нужен, чтобы поднять постройку до targetLevel.
+  // Какой уровень центра нужен, чтобы поднять постройку до targetLevel.
   function needThFor(type, targetLevel) {
     if (type === 'townhall') return 1;
-    if (type === 'archer') return targetLevel + 1;
-    return targetLevel;
+    const target = Math.max(1, Math.floor(Number(targetLevel) || 1));
+    for (let t = 1; t <= MAX_TH; t++) {
+      if (CC.maxLevelAt(type, t) >= target) return t;
+    }
+    return MAX_TH;
   }
 
   function minTownhall(type) {
@@ -869,8 +947,7 @@ CC.Game = (function () {
   /* ---------- производство и хранилища ---------- */
 
   // Скорость добычи ресурса: все буры/реакторы со своим уровнем.
-  // Каждый уровень удваивает производство: 0.375 → 0.75 → 1.5 …
-  // Стройплощадка ещё не даёт производства.
+  // Доход — строка prod / 3600; стройплощадка ещё не даёт производства.
   function rate(res) {
     const list = CC.Base.list();
     let sum = 0;
@@ -879,7 +956,7 @@ CC.Game = (function () {
       if (isBuilding(list[i].id)) continue;
       const p = CC.PRODUCTION[list[i].type];
       if (!p || p.res !== res) continue;
-      sum += p.rate * Math.pow(2, level(list[i].id) - 1);
+      sum += produceAt(list[i].type, level(list[i].id));
     }
     return sum;
   }
@@ -901,10 +978,10 @@ CC.Game = (function () {
   // Суммарно в накопителях — для окна оффлайна и подсказок.
   function bufferTotals() {
     const list = CC.Base.list();
-    let gold = 0;
-    let elixir = 0;
-    let capGold = 0;
-    let capElixir = 0;
+    const out = {
+      gold: 0, elixir: 0, dark: 0,
+      capGold: 0, capElixir: 0, capDark: 0
+    };
 
     for (let i = 0; i < list.length; i++) {
       const p = CC.PRODUCTION[list[i].type];
@@ -912,18 +989,18 @@ CC.Game = (function () {
       const n = stored(list[i].id);
       const c = extractCapOf(list[i]);
       if (p.res === 'gold') {
-        gold += n;
-        capGold += c;
+        out.gold += n;
+        out.capGold += c;
+      } else if (p.res === 'dark') {
+        out.dark += n;
+        out.capDark += c;
       } else {
-        elixir += n;
-        capElixir += c;
+        out.elixir += n;
+        out.capElixir += c;
       }
     }
 
-    return {
-      gold: gold, elixir: elixir,
-      capGold: capGold, capElixir: capElixir
-    };
+    return out;
   }
 
   // Описание накопителя для панели и иконки сбора.
@@ -976,11 +1053,14 @@ CC.Game = (function () {
 
     const amount = stored(id);
     if (amount <= 0) {
-      return { ok: true, res: p.res, gold: 0, elixir: 0, got: 0, left: 0, empty: true };
+      return {
+        ok: true, res: p.res, gold: 0, elixir: 0, dark: 0,
+        got: 0, left: 0, empty: true
+      };
     }
 
     const res = p.res;
-    const held = res === 'gold' ? st.gold : st.elixir;
+    const held = res === 'gold' ? st.gold : (res === 'dark' ? (st.dark || 0) : st.elixir);
     const free = Math.max(0, cap(res) - held);
 
     if (free <= 0) {
@@ -994,11 +1074,13 @@ CC.Game = (function () {
     }
 
     const take = Math.min(amount, free);
-    const got = res === 'gold' ? credit(take, 0) : credit(0, take);
+    const got = res === 'gold' ? credit(take, 0, 0)
+      : (res === 'dark' ? credit(0, 0, take) : credit(0, take, 0));
 
     // Из-за дробной арифметики credit может принять чуть меньше —
     // остаток возвращаем в накопитель, чтобы ничего не пропало.
-    const gotAmount = res === 'gold' ? got.gold : got.elixir;
+    const gotAmount = res === 'gold' ? got.gold
+      : (res === 'dark' ? got.dark : got.elixir);
     const left = Math.max(0, amount - gotAmount);
 
     if (left > 1e-6) st.extract[id] = left;
@@ -1010,6 +1092,7 @@ CC.Game = (function () {
       res: res,
       gold: got.gold,
       elixir: got.elixir,
+      dark: got.dark,
       got: gotAmount,
       left: left > 1e-6 ? left : 0,
       full: extractCapOf(it) > 0 && stored(id) >= extractCapOf(it) - 1e-6
@@ -1024,6 +1107,7 @@ CC.Game = (function () {
       ok: false,
       gold: 0,
       elixir: 0,
+      dark: 0,
       got: 0,
       left: 0,
       count: 0,
@@ -1046,11 +1130,12 @@ CC.Game = (function () {
       }
       out.gold += res.gold || 0;
       out.elixir += res.elixir || 0;
+      out.dark += res.dark || 0;
       out.left += res.left || 0;
       out.count++;
     }
 
-    out.got = out.gold + out.elixir;
+    out.got = out.gold + out.elixir + out.dark;
     out.ok = out.count > 0;
     if (!out.ok) out.error = 'Склад полон — некуда девать';
     return out;
@@ -1065,16 +1150,11 @@ CC.Game = (function () {
     capCache = null;
   }
 
-  // Ёмкость одного склада по его типу и уровню. Ровно та же формула, что
-  // в caps(): база CC.ECONOMY.storageCap (1000) × 2^(уровень − 1). Ранец
-  // набега списывает ресурсы по фактическим складам.
+  // Ёмкость одного склада по его типу и уровню — cap строки таблицы.
   function storageCapOf(type, lvl) {
-    const l = Math.max(1, Math.floor(num(lvl, 1)));
-    let base = 0;
-    if (type === 'storage') base = (ECON.storageCap || {}).gold || 0;
-    else if (type === 'estorage') base = (ECON.storageCap || {}).elixir || 0;
-    else return 0;
-    return base * Math.pow(2, l - 1);
+    if (type !== 'storage' && type !== 'estorage' && type !== 'darkstorage') return 0;
+    const row = CC.buildingLevel(type, Math.max(1, Math.floor(num(lvl, 1))));
+    return Math.max(0, Number(row.cap) || 0);
   }
 
   // Все готовые склады: суммарная ёмкость и количество по ресурсам.
@@ -1083,14 +1163,17 @@ CC.Game = (function () {
     const list = CC.Base.list();
     const out = {
       gold: { cap: 0, count: 0 },
-      elixir: { cap: 0, count: 0 }
+      elixir: { cap: 0, count: 0 },
+      dark: { cap: 0, count: 0 }
     };
 
     for (let i = 0; i < list.length; i++) {
       const it = list[i];
       if (isBuilding(it.id)) continue;
-      if (it.type !== 'storage' && it.type !== 'estorage') continue;
-      const res = it.type === 'storage' ? 'gold' : 'elixir';
+      const res = it.type === 'storage' ? 'gold'
+        : (it.type === 'estorage' ? 'elixir'
+          : (it.type === 'darkstorage' ? 'dark' : null));
+      if (!res) continue;
       out[res].cap += storageCapOf(it.type, level(it.id));
       out[res].count++;
     }
@@ -1105,7 +1188,8 @@ CC.Game = (function () {
 
     capCache = {
       gold: Math.round(totals.gold.cap),
-      elixir: Math.round(totals.elixir.cap)
+      elixir: Math.round(totals.elixir.cap),
+      dark: Math.round(totals.dark.cap)
     };
     return capCache;
   }
@@ -1119,7 +1203,8 @@ CC.Game = (function () {
      складов получают rescue сразу, сейв не сбрасывается. */
   function storageRescue(type) {
     const res = type === 'storage' ? 'gold'
-      : (type === 'estorage' ? 'elixir' : null);
+      : (type === 'estorage' ? 'elixir'
+        : (type === 'darkstorage' ? 'dark' : null));
     if (!res) return false;
 
     const list = CC.Base.list();
@@ -1138,7 +1223,7 @@ CC.Game = (function () {
 
     return {
       ok: true, rescue: true, type: type, res: res,
-      cost: { gold: 0, elixir: 0 }
+      cost: { gold: 0, elixir: 0, dark: 0 }
     };
   }
 
@@ -1160,6 +1245,11 @@ CC.Game = (function () {
       return c > 0 && st.elixir >= c - eps;
     }
 
+    if (it.type === 'darkstorage') {
+      const c = cap('dark');
+      return c > 0 && (st.dark || 0) >= c - eps;
+    }
+
     const p = CC.PRODUCTION[it.type];
     if (!p) return false;
 
@@ -1169,27 +1259,33 @@ CC.Game = (function () {
 
   // Единая точка начисления: и производство, и добыча, и награды.
   // Возвращает, сколько реально влезло и сколько потеряно из-за лимита.
-  function credit(gold, elixir) {
+  function credit(gold, elixir, dark) {
     const g = Math.max(0, Number(gold) || 0);
     const e = Math.max(0, Number(elixir) || 0);
+    const d = Math.max(0, Number(dark) || 0);
 
     const gc = cap('gold');
     const ec = cap('elixir');
+    const dc = cap('dark');
     const addG = st.gold >= gc ? 0 : Math.min(g, gc - st.gold);
     const addE = st.elixir >= ec ? 0 : Math.min(e, ec - st.elixir);
+    const addD = (st.dark || 0) >= dc ? 0 : Math.min(d, dc - (st.dark || 0));
 
     st.gold += addG;
     st.elixir += addE;
+    st.dark = (st.dark || 0) + addD;
     addStat('goldEarned', addG);
     addStat('elixirEarned', addE);
 
     return {
       gold: addG,
       elixir: addE,
-      offered: { gold: g, elixir: e },
+      dark: addD,
+      offered: { gold: g, elixir: e, dark: d },
       lost: {
         gold: Math.max(0, g - addG),
-        elixir: Math.max(0, e - addE)
+        elixir: Math.max(0, e - addE),
+        dark: Math.max(0, d - addD)
       }
     };
   }
@@ -1198,15 +1294,18 @@ CC.Game = (function () {
   // Возвращаем, сколько реально накопилось и сколько не влезло из-за ёмкости.
   function accrue(dt) {
     const zero = {
-      gold: 0, elixir: 0, lostGold: 0, lostElixir: 0, capped: false
+      gold: 0, elixir: 0, dark: 0,
+      lostGold: 0, lostElixir: 0, lostDark: 0, capped: false
     };
     if (!(dt > 0)) return zero;
 
     const list = CC.Base.list();
     let gold = 0;
     let elixir = 0;
+    let dark = 0;
     let lostGold = 0;
     let lostElixir = 0;
+    let lostDark = 0;
     let capped = false;
 
     if (!st.extract) st.extract = {};
@@ -1217,7 +1316,7 @@ CC.Game = (function () {
       const p = CC.PRODUCTION[it.type];
       if (!p) continue;
 
-      const perSec = p.rate * Math.pow(2, level(it.id) - 1);
+      const perSec = produceAt(it.type, level(it.id));
       const capBuf = extractCapOf(it);
       const before = stored(it.id);
       const want = perSec * dt;
@@ -1228,6 +1327,7 @@ CC.Game = (function () {
       if (add > 1e-9) {
         st.extract[it.id] = after;
         if (p.res === 'gold') gold += add;
+        else if (p.res === 'dark') dark += add;
         else elixir += add;
       }
 
@@ -1236,6 +1336,7 @@ CC.Game = (function () {
       if (overflow > 1e-9) {
         capped = true;
         if (p.res === 'gold') lostGold += overflow;
+        else if (p.res === 'dark') lostDark += overflow;
         else lostElixir += overflow;
       }
     }
@@ -1244,8 +1345,10 @@ CC.Game = (function () {
     return {
       gold: gold,
       elixir: elixir,
+      dark: dark,
       lostGold: lostGold,
       lostElixir: lostElixir,
+      lostDark: lostDark,
       capped: capped
     };
   }
@@ -1349,7 +1452,23 @@ CC.Game = (function () {
     return { ok: true, spent: cost, gems: gemsNow() };
   }
 
-  // Обмен платины на руду/энергию через общий credit() с лимитами хранилищ.
+  // Ресурсы: единые чтение/подпись для руды, энергии и плазмы.
+  function resHeld(res) {
+    return res === 'gold' ? st.gold
+      : (res === 'dark' ? (st.dark || 0) : st.elixir);
+  }
+
+  function resLabel(res) {
+    return res === 'gold' ? 'руды' : (res === 'dark' ? 'плазмы' : 'энергии');
+  }
+
+  function resCredit(res, amount) {
+    if (res === 'gold') return credit(amount, 0, 0);
+    if (res === 'dark') return credit(0, 0, amount);
+    return credit(0, amount, 0);
+  }
+
+  // Обмен платины на руду/энергию/плазму через общий credit().
   // Курс зависит от уровня центра: CC.gemExchange(res, TH).
   function exchangeGems(res, count) {
     const rate = CC.gemExchange
@@ -1365,8 +1484,8 @@ CC.Game = (function () {
 
     // Сначала проверяем свободное место, иначе credit() молча обрежет
     // начисление, а платина уже будет списана. Обмен неполным не бывает.
-    const capNow = res === 'gold' ? cap('gold') : cap('elixir');
-    const held = res === 'gold' ? st.gold : st.elixir;
+    const capNow = cap(res);
+    const held = resHeld(res);
     const free = Math.max(0, Math.floor(capNow - held));
     if (offered > free) {
       return {
@@ -1381,7 +1500,7 @@ CC.Game = (function () {
     st.gems -= n;
     addStat('gemsSpent', n);
 
-    const got = res === 'gold' ? credit(offered, 0) : credit(0, offered);
+    const got = resCredit(res, offered);
     save();
 
     return {
@@ -1390,7 +1509,7 @@ CC.Game = (function () {
       gems: gemsNow(),
       res: res,
       offered: offered,
-      got: { gold: got.gold, elixir: got.elixir },
+      got: { gold: got.gold, elixir: got.elixir, dark: got.dark },
       lost: got.lost
     };
   }
@@ -1399,7 +1518,7 @@ CC.Game = (function () {
      Если набор не влезает целиком — ничего не списываем и объясняем,
      сколько поместится. Частичных списаний больше нет. */
   function buyResource(res, count) {
-    if (res !== 'gold' && res !== 'elixir') {
+    if (res !== 'gold' && res !== 'elixir' && res !== 'dark') {
       return { error: 'Неизвестный ресурс' };
     }
 
@@ -1415,7 +1534,7 @@ CC.Game = (function () {
     const capNow = cap(res);
     if (capNow <= 0) {
       return {
-        error: 'Сначала построй склад ' + (res === 'gold' ? 'руды' : 'энергии'),
+        error: 'Сначала построй склад ' + resLabel(res),
         code: 'no-cap',
         res: res,
         gems: gemsNow()
@@ -1429,7 +1548,7 @@ CC.Game = (function () {
       return no;
     }
 
-    const held = res === 'gold' ? st.gold : st.elixir;
+    const held = resHeld(res);
     const free = Math.max(0, Math.floor(capNow - held));
 
     // Набор должен влезть целиком: иначе платина сгорит впустую.
@@ -1450,8 +1569,8 @@ CC.Game = (function () {
     st.gems -= n;
     addStat('gemsSpent', n);
 
-    const got = res === 'gold' ? credit(amount, 0) : credit(0, amount);
-    const added = res === 'gold' ? got.gold : got.elixir;
+    const got = resCredit(res, amount);
+    const added = res === 'gold' ? got.gold : (res === 'dark' ? got.dark : got.elixir);
     save();
 
     return {
@@ -1752,11 +1871,13 @@ CC.Game = (function () {
       reward: {
         gold: Math.max(0, Number(reward.gold) || 0),
         elixir: Math.max(0, Number(reward.elixir) || 0),
+        dark: Math.max(0, Number(reward.dark) || 0),
         gems: Math.max(0, Math.floor(Number(reward.gems) || 0))
       },
       perTh: {
         gold: Math.max(0, Number(perTh.gold) || 0),
-        elixir: Math.max(0, Number(perTh.elixir) || 0)
+        elixir: Math.max(0, Number(perTh.elixir) || 0),
+        dark: Math.max(0, Number(perTh.dark) || 0)
       },
       replayMax: Math.max(0, Math.floor(Number(d.replayMax) || 0))
     };
@@ -1794,6 +1915,7 @@ CC.Game = (function () {
     return {
       gold: Math.round(cfg.reward.gold + cfg.perTh.gold * th),
       elixir: Math.round(cfg.reward.elixir + cfg.perTh.elixir * th),
+      dark: Math.round(cfg.reward.dark + cfg.perTh.dark * th),
       gems: cfg.reward.gems
     };
   }
@@ -1874,7 +1996,7 @@ CC.Game = (function () {
     else d.progress = 0;
     d.claimed = Math.max(0, Number(d.claimed) || 0) + 1;
 
-    const got = credit(info.reward.gold, info.reward.elixir);
+    const got = credit(info.reward.gold, info.reward.elixir, info.reward.dark);
     st.gems += info.reward.gems;
     addXp(30);
     save();
@@ -1884,10 +2006,14 @@ CC.Game = (function () {
       reward: {
         gold: got.gold,
         elixir: got.elixir,
+        dark: got.dark,
         gems: info.reward.gems
       },
-      offered: { gold: info.reward.gold, elixir: info.reward.elixir },
-      lost: got.lost || { gold: 0, elixir: 0 },
+      offered: {
+        gold: info.reward.gold, elixir: info.reward.elixir,
+        dark: info.reward.dark
+      },
+      lost: got.lost || { gold: 0, elixir: 0, dark: 0 },
       info: daily(now)
     };
   }
@@ -1910,23 +2036,16 @@ CC.Game = (function () {
     return Math.round((Number(v) || 0) / 100) * 100;
   }
 
-  // Цена перехода на целевой уровень to (2..10): база × 2^(to−2).
-  // База — цена до 2 уровня из CC.UPGRADES[type].cost.
+  // Цена перехода на целевой уровень to — строго строка таблицы.
   function levelCost(type, to) {
-    const d = UP[type] || {};
-    const c = d.cost || {};
-    const k = Math.pow(2, Math.max(0, Math.floor(to) - 2));
-    return {
-      gold: round100((c.gold || 0) * k),
-      elixir: round100((c.elixir || 0) * k)
-    };
+    const c = CC.upgradeCost(type, to);
+    return { gold: c.gold, elixir: c.elixir, dark: c.dark, time: c.time };
   }
 
   function upgradeCost(id) {
     const it = item(id);
     if (!it) return null;
-    const d = UP[it.type];
-    if (!d) return null;
+    if (!CC.BUILDINGS[it.type]) return null;
 
     const lvl = level(id);
     if (lvl >= maxLevel(it.type)) return null;
@@ -1934,14 +2053,13 @@ CC.Game = (function () {
     const to = lvl + 1;
     const c = levelCost(it.type, to);
 
-    // Цены — кратны 100, чтобы в панели не мельтешили хвосты. Время
-    // берём из кривой уровня (CC.BUILD_TIME / CC.TOWNHALL_TIME).
     return {
       level: lvl,
       to: to,
       gold: c.gold,
       elixir: c.elixir,
-      time: CC.Base.upgradeTime(it.type, to)
+      dark: c.dark,
+      time: c.time
     };
   }
 
@@ -1955,8 +2073,7 @@ CC.Game = (function () {
 
     const it = item(id);
     if (!it) return null;
-
-    if (!UP[it.type]) return null;
+    if (!CC.BUILDINGS[it.type]) return null;
 
     const lvl = level(id);
     return levelCost(it.type, lvl + 1);
@@ -2023,6 +2140,7 @@ CC.Game = (function () {
     // У руды и энергии теперь разные здания, поэтому и подсказка своя.
     const capGold = cap('gold');
     const capElixir = cap('elixir');
+    const capDark = cap('dark');
 
     if (c.gold > capGold) {
       const reason = 'Склад руды мал: ' + numText(capGold) + ' из ' + numText(c.gold) +
@@ -2040,6 +2158,16 @@ CC.Game = (function () {
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         needStorage: true, resource: 'elixir', cap: Math.round(capElixir),
+        cost: c
+      };
+    }
+
+    if ((c.dark || 0) > capDark) {
+      const reason = 'Склад плазмы мал: ' + numText(capDark) + ' из ' + numText(c.dark) +
+        '. Поставь хранилище плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'dark', cap: Math.round(capDark),
         cost: c
       };
     }
@@ -2088,6 +2216,19 @@ CC.Game = (function () {
       };
     }
 
+    if ((st.dark || 0) < (c.dark || 0)) {
+      const need = Math.ceil((c.dark || 0) - (st.dark || 0));
+      const reason = 'Не хватает ' + need + ' плазмы';
+      return {
+        ok: false,
+        error: reason,
+        reason: reason,
+        needTh: null,
+        cost: c,
+        missing: { dark: need }
+      };
+    }
+
     return {
       ok: true,
       error: null,
@@ -2124,6 +2265,7 @@ CC.Game = (function () {
 
     st.gold -= c.gold;
     st.elixir -= c.elixir;
+    st.dark = (st.dark || 0) - (c.dark || 0);
 
     // Стены (и вообще всё с нулевым временем) завершаются сразу и не
     // занимают строителя.
@@ -2197,11 +2339,23 @@ CC.Game = (function () {
       Object.prototype.hasOwnProperty.call(TROOPS, type);
   }
 
-  // Потолок уровня войск = уровень командного центра (TH1 → 1, TH10 → 10).
+  // Потолок уровня войск: максимум по лаборатории для текущего TH.
+  // Без аргумента — самый высокий потолок среди всех войск (для панели).
   function troopMaxLevel(thLevel) {
     let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
     th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
-    return Math.min(TROOP_LVL.max || 10, th);
+    let best = 1;
+    for (let i = 0; i < CC.ARMY_ORDER.length; i++) {
+      const lvl = CC.troopMaxLevel(CC.ARMY_ORDER[i], th);
+      if (lvl > best) best = lvl;
+    }
+    return best;
+  }
+
+  function troopMaxFor(type, thLevel) {
+    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
+    return Math.max(1, CC.troopMaxLevel(type, th));
   }
 
   // Текущий уровень войска; мусор в сейве читается как 1.
@@ -2209,49 +2363,48 @@ CC.Game = (function () {
     if (!isTroopType(type)) return 1;
     const l = Math.floor(Number(st.troopLevels && st.troopLevels[type]));
     if (!(l >= 1)) return 1;
-    const max = TROOP_LVL.max || 10;
+    const row = CC.troopLevelRow(type, 999);
+    const max = row.lv || 1;
     return l > max ? max : l;
   }
 
-  // Множитель HP и урона: 2^(уровень − 1). Уровень 1 — ровно 1.0.
+  // Отношение HP текущего уровня к первому — для панели/совместимости.
   function troopMultiplier(type) {
-    return Math.pow(2, troopLevel(type) - 1);
+    const s = CC.troopStats(type, troopLevel(type));
+    const base = CC.troopStats(type, 1);
+    if (!s || !base || !base.hp) return 1;
+    return s.hp / base.hp;
   }
 
-  // Цена и время улучшения до СЛЕДУЮЩЕГО уровня.
-  // Целевой уровень to: цена = cost × 12 × 2^(to−2) до сотен,
-  // время = time × 6 × 1.5^(to−2) до 5 секунд.
+  // Цена и время исследования до СЛЕДУЮЩЕГО уровня — строка таблицы.
   function troopUpgradeCost(type) {
-    const d = isTroopType(type) ? TROOPS[type] : null;
-    if (!d) return null;
+    if (!isTroopType(type)) return null;
 
     // Закрытое по уровню центра войско не качается: цены для него нет.
     if (CC.troopUnlock && CC.troopUnlock(type) > townhallLevel()) return null;
 
     const lvl = troopLevel(type);
-    const max = troopMaxLevel();
+    const max = troopMaxFor(type);
     if (lvl >= max) return null;
 
     const to = lvl + 1;
-    const k = to - 2;
-    const cf = isFinite(TROOP_LVL.costFactor) ? TROOP_LVL.costFactor : 12;
-    const tf = isFinite(TROOP_LVL.timeFactor) ? TROOP_LVL.timeFactor : 6;
-    const tg = isFinite(TROOP_LVL.timeGrowth) ? TROOP_LVL.timeGrowth : 1.5;
-
-    const rawCost = (d.cost || 0) * cf * Math.pow(2, k);
-    // Лаборатория ускоряет исследование: −5% за каждый уровень после первого.
-    // L1 оставляем ровно прежним, чтобы старые ожидания не менялись.
-    const lab = labLevel();
-    const speed = lab > 1 ? Math.pow(0.95, lab - 1) : 1;
-    const rawTime = (d.time || 0) * tf * Math.pow(tg, k) * speed;
-
-    return {
+    const row = CC.troopLevelRow(type, to);
+    const currency = CC.entityCurrency('troop', type);
+    const cost = Math.max(0, Number(row.cost) || 0);
+    const out = {
       type: type,
       level: lvl,
       to: to,
-      elixir: round100(rawCost),
-      time: Math.max(5, Math.round(rawTime / 5) * 5)
+      gold: 0,
+      elixir: 0,
+      dark: 0,
+      time: Math.max(0, Number(row.time) || 0),
+      currency: currency
     };
+    if (currency === 'dark') out.dark = cost;
+    else if (currency === 'gold') out.gold = cost;
+    else out.elixir = cost;
+    return out;
   }
 
   function troopBusy() {
@@ -2263,6 +2416,7 @@ CC.Game = (function () {
   function canUpgradeTroop(type, now) {
     now = typeof now === 'number' ? now : Date.now();
     settleTroops(now);
+    settleSpell(now);
 
     if (!isTroopType(type)) {
       return {
@@ -2281,6 +2435,16 @@ CC.Game = (function () {
       };
     }
 
+    // Лабораторный слот один: войска и заклинания не качаются одновременно.
+    if (st.spellUp) {
+      const reason = 'Сначала заверши исследование';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: null, busy: true, busyType: 'spell:' + (st.spellUp.id || ''),
+        cost: troopUpgradeCost(type)
+      };
+    }
+
     if (troopBusy()) {
       const busyType = st.troopUp.type;
       const reason = busyType === type
@@ -2294,19 +2458,21 @@ CC.Game = (function () {
     }
 
     const lvl = troopLevel(type);
-    const max = troopMaxLevel(th);
+    const max = troopMaxFor(type, th);
     if (lvl >= max) {
-      if (max >= (TROOP_LVL.max || 10)) {
+      // Потолок задаёт лаборатория: либо ждём следующий TH, либо улучшаем её.
+      const need = CC.troopMaxLevel(type, Math.min(MAX_TH, th + 1));
+      if (need > max) {
         return {
-          ok: false, error: 'Максимальный уровень', reason: 'Максимальный уровень',
-          needTh: null, cost: null
+          ok: false,
+          error: 'Сначала улучши лабораторию',
+          reason: 'Сначала улучши лабораторию',
+          needTh: th + 1, needLab: true, cost: null
         };
       }
-      const need = lvl + 1;
-      const reason = 'Сначала улучши командный центр до ' + need + ' уровня';
       return {
-        ok: false, error: reason, reason: reason,
-        needTh: need, cost: null
+        ok: false, error: 'Максимальный уровень', reason: 'Максимальный уровень',
+        needTh: null, cost: null
       };
     }
 
@@ -2339,12 +2505,31 @@ CC.Game = (function () {
       };
     }
 
+    if ((c.dark || 0) > cap('dark')) {
+      const reason = 'Склад плазмы мал: ' + numText(cap('dark')) + ' из ' +
+        numText(c.dark) + '. Поставь хранилище плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'dark', cap: Math.round(cap('dark')),
+        cost: c
+      };
+    }
+
     if (st.elixir < c.elixir) {
       const need = Math.ceil(c.elixir - st.elixir);
       const reason = 'Не хватает ' + numText(need) + ' энергии';
       return {
         ok: false, error: reason, reason: reason, needTh: null,
         cost: c, missing: { elixir: need }
+      };
+    }
+
+    if ((st.dark || 0) < (c.dark || 0)) {
+      const need = Math.ceil((c.dark || 0) - (st.dark || 0));
+      const reason = 'Не хватает ' + numText(need) + ' плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        cost: c, missing: { dark: need }
       };
     }
 
@@ -2359,6 +2544,7 @@ CC.Game = (function () {
 
     const c = check.cost;
     st.elixir -= c.elixir;
+    st.dark = (st.dark || 0) - (c.dark || 0);
     st.troopUp = {
       type: type,
       to: c.to,
@@ -2405,7 +2591,8 @@ CC.Game = (function () {
     const type = u.type;
     if (isTroopType(type)) {
       const cur = troopLevel(type);
-      const max = TROOP_LVL.max || 10;
+      const rowMax = CC.troopLevelRow(type, 999);
+      const max = rowMax.lv || cur;
       const to = Math.min(max, Math.max(cur, Math.floor(Number(u.to) || cur)));
       st.troopLevels[type] = to;
       troopDoneEvent = { type: type, level: to, name: TROOPS[type].name };
@@ -2447,22 +2634,28 @@ CC.Game = (function () {
     };
   }
 
-  // Характеристики войска с учётом уровня — для панели.
+  // Характеристики войска с учётом уровня — строка таблицы.
   function troopStats(type) {
-    const d = isTroopType(type) ? TROOPS[type] : null;
-    if (!d) return null;
+    if (!isTroopType(type)) return null;
     const lvl = troopLevel(type);
-    const mult = troopMultiplier(type);
+    const s = CC.troopStats(type, lvl);
+    if (!s) return null;
+    const base = CC.troopStats(type, 1);
     return {
       type: type,
       level: lvl,
-      max: troopMaxLevel(),
-      maxAll: TROOP_LVL.max || 10,
-      mult: mult,
-      hp: Math.round((d.hp || 0) * mult),
-      dmg: Math.round((d.dmg || 0) * mult),
-      baseHp: d.hp || 0,
-      baseDmg: d.dmg || 0
+      max: troopMaxFor(type),
+      maxAll: (CC.troopLevelRow(type, 999).lv || lvl),
+      mult: base && base.hp ? s.hp / base.hp : 1,
+      hp: s.hp,
+      dmg: s.dmg,
+      baseHp: base ? base.hp : s.hp,
+      baseDmg: base ? base.dmg : s.dmg,
+      speed: s.speed,
+      range: s.range,
+      target: s.target,
+      fly: s.fly,
+      space: s.space
     };
   }
 
@@ -2472,62 +2665,598 @@ CC.Game = (function () {
     return e;
   }
 
-  /* ---------- герой ---------- */
+  /* ---------- заклинания ---------- */
 
-  // Потолок героя = уровень центра. До TH2 герой закрыт и max = 0.
-  function heroMaxLevel(thLevel) {
-    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
-    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
-    if (th < (HERO.minTh || 2)) return 0;
-    return Math.min(HERO.maxLevel || 10, th);
+  function isSpellType(id) {
+    return typeof id === 'string' &&
+      Object.prototype.hasOwnProperty.call(CC.SPELLS || {}, id);
   }
 
-  // Текущий уровень героя. Старый сейв с TH2+ открывает его на 1 уровне.
-  function heroLevel() {
-    const th = townhallLevel();
-    const max = heroMaxLevel(th);
-    if (max <= 0) return 0;
-
-    let l = Math.floor(Number(st.heroLevel));
-    if (!(l >= 1)) {
-      l = 1;
-      st.heroLevel = l;
-      save();
-    }
-    if (l > max) l = max;
+  function spellLevel(id) {
+    if (!isSpellType(id)) return 1;
+    const rowMax = CC.spellLevelRow(id, 999).lv || 1;
+    let l = Math.floor(Number(st.spellLevels && st.spellLevels[id]));
+    if (!(l >= 1)) l = 1;
+    if (l > rowMax) l = rowMax;
     return l;
   }
 
-  // Цена и время улучшения до СЛЕДУЮЩЕГО уровня. Целевой уровень to (2..10):
-  // руда = 1600 × 2^(to−2) до сотен, время — из таблицы CC.HERO.times.
-  function heroUpgradeCost() {
+  // Потолок: максимум по TH и фактической лаборатории. Если лаборатории
+  // ещё нет, отдаём потолок TH — панель показывает, что будет доступно.
+  function spellMaxLevelFor(id, thLevel) {
+    if (!isSpellType(id)) return 0;
+    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
+    let max = CC.spellMaxLevel(id, th);
+    const lab = labLevel();
+    if (lab > 0) {
+      let cap = 0;
+      (CC.SPELLS[id].levels || []).forEach(function (r) {
+        if ((Number(r.lab) || 0) <= lab) cap = Math.max(cap, r.lv || 0);
+      });
+      if (cap < max) max = cap;
+    }
+    return max;
+  }
+
+  function spellUpgradeCost(id) {
+    if (!isSpellType(id)) return null;
+    const lvl = spellLevel(id);
+    const max = spellMaxLevelFor(id);
+    if (!max || lvl >= max) return null;
+
+    const to = lvl + 1;
+    const row = CC.spellLevelRow(id, to);
+    const currency = (CC.SPELLS[id] && CC.SPELLS[id].currency) || 'elixir';
+    const cost = Math.max(0, Number(row.cost) || 0);
+    const out = {
+      id: id, type: 'spell', kind: id,
+      level: lvl, to: to,
+      gold: 0, elixir: 0, dark: 0,
+      currency: currency,
+      time: Math.max(0, Number(row.time) || 0)
+    };
+    if (currency === 'dark') out.dark = cost;
+    else out.elixir = cost;
+    out.energy = out.elixir;
+    return out;
+  }
+
+  function spellBusy() {
+    return !!st.spellUp;
+  }
+
+  function canUpgradeSpell(id, now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleSpell(now);
+    settleTroops(now);
+
+    if (!isSpellType(id)) {
+      return {
+        ok: false, error: 'Неизвестное заклинание',
+        reason: 'Неизвестное заклинание', needTh: null, cost: null
+      };
+    }
+
+    if (!hasLab()) {
+      return {
+        ok: false, error: 'Построй исследовательский центр',
+        reason: 'Построй исследовательский центр',
+        needTh: null, needLab: true, cost: null
+      };
+    }
+
+    // Лабораторный слот общий с войсками.
+    if (st.troopUp) {
+      const reason = 'Сначала заверши исследование';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: null, busy: true, busyType: 'troop:' + (st.troopUp.type || ''),
+        cost: spellUpgradeCost(id)
+      };
+    }
+
+    if (spellBusy()) {
+      const busy = st.spellUp.id;
+      const reason = busy === id ? 'Уже улучшается' : 'Сначала заверши исследование';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: null, busy: true, busyType: 'spell:' + busy,
+        cost: spellUpgradeCost(id)
+      };
+    }
+
+    const lvl = spellLevel(id);
+    const max = spellMaxLevelFor(id);
+    if (!max || lvl >= max) {
+      return {
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, cost: null
+      };
+    }
+
+    const c = spellUpgradeCost(id);
+    if (!c) {
+      return {
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, cost: null
+      };
+    }
+
+    if (c.elixir > cap('elixir')) {
+      const reason = 'Склад энергии мал: ' + numText(cap('elixir')) + ' из ' +
+        numText(c.elixir) + '. Поставь ещё склад энергии';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'elixir', cap: Math.round(cap('elixir')),
+        cost: c
+      };
+    }
+    if (c.dark > cap('dark')) {
+      const reason = 'Склад плазмы мал: ' + numText(cap('dark')) + ' из ' +
+        numText(c.dark) + '. Поставь хранилище плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'dark', cap: Math.round(cap('dark')),
+        cost: c
+      };
+    }
+
+    if (st.elixir < c.elixir) {
+      const need = Math.ceil(c.elixir - st.elixir);
+      const reason = 'Не хватает ' + numText(need) + ' энергии';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        cost: c, missing: { elixir: need }
+      };
+    }
+    if ((st.dark || 0) < c.dark) {
+      const need = Math.ceil(c.dark - (st.dark || 0));
+      const reason = 'Не хватает ' + numText(need) + ' плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        cost: c, missing: { dark: need }
+      };
+    }
+
+    return { ok: true, error: null, reason: null, needTh: null, cost: c };
+  }
+
+  function startSpellUpgrade(id, now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const check = canUpgradeSpell(id, now);
+    if (check.error) return check;
+
+    const c = check.cost;
+    st.elixir -= c.elixir;
+    st.dark = (st.dark || 0) - (c.dark || 0);
+    st.spellUp = {
+      id: id,
+      to: c.to,
+      startedAt: now,
+      endAt: now + c.time * 1000,
+      time: c.time
+    };
+    save();
+    return { ok: true, id: id, type: id, to: c.to, cost: c };
+  }
+
+  function spellUpInfo(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleSpell(now);
+
+    const u = st.spellUp;
+    if (!u) return null;
+
+    const leftMs = Math.max(0, u.endAt - now);
+    const total = Math.max(1, Number(u.time) || 0);
+    const left = leftMs / 1000;
+    return {
+      active: true,
+      id: u.id,
+      type: u.id,
+      name: (CC.SPELLS[u.id] && CC.SPELLS[u.id].name) || u.id,
+      to: u.to,
+      level: spellLevel(u.id),
+      total: total,
+      left: left,
+      leftMs: leftMs,
+      progress: Math.max(0, Math.min(1, 1 - left / total)),
+      startedAt: u.startedAt,
+      endAt: u.endAt
+    };
+  }
+
+  function settleSpell(now) {
+    const u = st.spellUp;
+    if (!u || !(u.endAt <= now)) return false;
+
+    if (isSpellType(u.id)) {
+      const cur = spellLevel(u.id);
+      const rowMax = CC.spellLevelRow(u.id, 999).lv || cur;
+      const to = Math.min(rowMax, Math.max(cur, Math.floor(Number(u.to) || cur)));
+      st.spellLevels[u.id] = to;
+      addXp(10 * to);
+    }
+
+    st.spellUp = null;
+    save();
+    return true;
+  }
+
+  function spellSpeedCost(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const info = spellUpInfo(now);
+    if (!info) return null;
+    return { gems: gemCostFor(info.left), left: info.left, id: info.id };
+  }
+
+  function speedUpSpell(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleSpell(now);
+
+    if (!st.spellUp) return { error: 'Улучшение не идёт' };
+
+    const id = st.spellUp.id;
+    const left = Math.max(0, (st.spellUp.endAt - now) / 1000);
+    const cost = gemCostFor(left);
+    if (st.gems < cost) return noGems(cost);
+
+    st.gems -= cost;
+    addStat('gemsSpent', cost);
+    st.spellUp.endAt = now;
+    settleSpell(now);
+    save();
+    return {
+      ok: true, spent: cost, gems: gemsNow(),
+      id: id, level: spellLevel(id)
+    };
+  }
+
+  /* ---------- питомцы ---------- */
+
+  function isPetType(id) {
+    return typeof id === 'string' &&
+      Object.prototype.hasOwnProperty.call(CC.PETS || {}, id);
+  }
+
+  function petLevel(id) {
+    if (!isPetType(id)) return 1;
+    const rowMax = CC.petLevelRow(id, 999).lv || 1;
+    let l = Math.floor(Number(st.petLevels && st.petLevels[id]));
+    if (!(l >= 1)) l = 1;
+    if (l > rowMax) l = rowMax;
+    return l;
+  }
+
+  // Потолок питомца: TH и фактический Питомник.
+  function petMaxLevelFor(id, thLevel) {
+    if (!isPetType(id)) return 0;
+    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
+    let max = CC.petMaxLevel(id, th);
+    const house = readyBuildingLevel('pethouse');
+    if (house > 0) {
+      let cap = 0;
+      (CC.PETS[id].levels || []).forEach(function (r) {
+        if ((Number(r.shop) || 0) <= house) cap = Math.max(cap, r.lv || 0);
+      });
+      if (cap < max) max = cap;
+    }
+    return max;
+  }
+
+  function petUpgradeCost(id) {
+    if (!isPetType(id)) return null;
+    const lvl = petLevel(id);
+    const max = petMaxLevelFor(id);
+    if (!max || lvl >= max) return null;
+
+    const to = lvl + 1;
+    const row = CC.petLevelRow(id, to);
+    const currency = (CC.PETS[id] && CC.PETS[id].currency) || 'dark';
+    const cost = Math.max(0, Number(row.cost) || 0);
+    const out = {
+      id: id, type: 'pet', kind: id,
+      level: lvl, to: to,
+      gold: 0, elixir: 0, dark: 0,
+      currency: currency,
+      time: Math.max(0, Number(row.time) || 0)
+    };
+    if (currency === 'dark') out.dark = cost;
+    else if (currency === 'elixir') out.elixir = cost;
+    else out.gold = cost;
+    return out;
+  }
+
+  function petBusy() {
+    return !!st.petUp;
+  }
+
+  function canUpgradePet(id, now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settlePet(now);
+
+    if (!isPetType(id)) {
+      return {
+        ok: false, error: 'Неизвестный питомец',
+        reason: 'Неизвестный питомец', needTh: null, cost: null
+      };
+    }
+
+    if (readyBuildingLevel('pethouse') <= 0) {
+      return {
+        ok: false, error: 'Построй питомник',
+        reason: 'Построй питомник',
+        needTh: null, needPetHouse: true, cost: null
+      };
+    }
+
+    if (petBusy()) {
+      const busy = st.petUp.id;
+      const reason = busy === id ? 'Уже улучшается' : 'Сначала заверши прокачку питомца';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: null, busy: true, busyType: 'pet:' + busy,
+        cost: petUpgradeCost(id)
+      };
+    }
+
+    const lvl = petLevel(id);
+    const max = petMaxLevelFor(id);
+    if (!max || lvl >= max) {
+      return {
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, cost: null
+      };
+    }
+
+    const c = petUpgradeCost(id);
+    if (!c) {
+      return {
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, cost: null
+      };
+    }
+
+    if (c.dark > cap('dark')) {
+      const reason = 'Склад плазмы мал: ' + numText(cap('dark')) + ' из ' +
+        numText(c.dark) + '. Поставь хранилище плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'dark', cap: Math.round(cap('dark')),
+        cost: c
+      };
+    }
+    if (c.elixir > cap('elixir')) {
+      const reason = 'Склад энергии мал: ' + numText(cap('elixir')) + ' из ' +
+        numText(c.elixir) + '. Поставь ещё склад энергии';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'elixir', cap: Math.round(cap('elixir')),
+        cost: c
+      };
+    }
+
+    if ((st.dark || 0) < c.dark) {
+      const need = Math.ceil(c.dark - (st.dark || 0));
+      const reason = 'Не хватает ' + numText(need) + ' плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        cost: c, missing: { dark: need }
+      };
+    }
+    if (st.elixir < c.elixir) {
+      const need = Math.ceil(c.elixir - st.elixir);
+      const reason = 'Не хватает ' + numText(need) + ' энергии';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        cost: c, missing: { elixir: need }
+      };
+    }
+
+    return { ok: true, error: null, reason: null, needTh: null, cost: c };
+  }
+
+  function startPetUpgrade(id, now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const check = canUpgradePet(id, now);
+    if (check.error) return check;
+
+    const c = check.cost;
+    st.elixir -= c.elixir || 0;
+    st.dark = (st.dark || 0) - (c.dark || 0);
+    st.petUp = {
+      id: id,
+      to: c.to,
+      startedAt: now,
+      endAt: now + c.time * 1000,
+      time: c.time
+    };
+    save();
+    return { ok: true, id: id, type: id, to: c.to, cost: c };
+  }
+
+  function petUpInfo(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settlePet(now);
+
+    const u = st.petUp;
+    if (!u) return null;
+
+    const leftMs = Math.max(0, u.endAt - now);
+    const total = Math.max(1, Number(u.time) || 0);
+    const left = leftMs / 1000;
+    return {
+      active: true,
+      id: u.id,
+      type: u.id,
+      name: (CC.PETS[u.id] && CC.PETS[u.id].name) || u.id,
+      to: u.to,
+      level: petLevel(u.id),
+      total: total,
+      left: left,
+      leftMs: leftMs,
+      progress: Math.max(0, Math.min(1, 1 - left / total)),
+      startedAt: u.startedAt,
+      endAt: u.endAt
+    };
+  }
+
+  function settlePet(now) {
+    const u = st.petUp;
+    if (!u || !(u.endAt <= now)) return false;
+
+    if (isPetType(u.id)) {
+      const cur = petLevel(u.id);
+      const rowMax = CC.petLevelRow(u.id, 999).lv || cur;
+      const to = Math.min(rowMax, Math.max(cur, Math.floor(Number(u.to) || cur)));
+      st.petLevels[u.id] = to;
+      addXp(10 * to);
+    }
+
+    st.petUp = null;
+    save();
+    return true;
+  }
+
+  function petSpeedCost(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const info = petUpInfo(now);
+    if (!info) return null;
+    return { gems: gemCostFor(info.left), left: info.left, id: info.id };
+  }
+
+  function speedUpPet(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settlePet(now);
+
+    if (!st.petUp) return { error: 'Улучшение не идёт' };
+
+    const id = st.petUp.id;
+    const left = Math.max(0, (st.petUp.endAt - now) / 1000);
+    const cost = gemCostFor(left);
+    if (st.gems < cost) return noGems(cost);
+
+    st.gems -= cost;
+    addStat('gemsSpent', cost);
+    st.petUp.endAt = now;
+    settlePet(now);
+    save();
+    return {
+      ok: true, spent: cost, gems: gemsNow(),
+      id: id, level: petLevel(id)
+    };
+  }
+
+  /* ---------- герой ---------- */
+
+  // kind по умолчанию — Сержант (barb), как старый общий герой.
+  function heroKindOf(kind) {
+    const hero = CC.heroDef ? CC.heroDef(kind) : HERO;
+    return (hero && hero.id) || 'barb';
+  }
+
+  // Гарантирует объект уровней. Старый сейв без heroLevels получает
+  // heroLevel для всех героев (не выше личного потолка).
+  function ensureHeroLevels() {
+    if (st.heroLevels && typeof st.heroLevels === 'object') return st.heroLevels;
+    const out = {};
+    const old = Math.floor(Number(st.heroLevel) || 0);
+    const list = CC.HEROES || [];
+    for (let i = 0; i < list.length; i++) {
+      const id = list[i].id;
+      const max = CC.heroMaxLevel(id, townhallLevel());
+      let l = old >= 1 ? old : 1;
+      if (max > 0 && l > max) l = max;
+      out[id] = l >= 1 ? l : 1;
+    }
+    st.heroLevels = out;
+    return out;
+  }
+
+  // Синхронизация после загрузки/смены TH: открытые герои не ниже 1,
+  // закрытые остаются с запасом 1 (heroLevel() отдаст 0, пока закрыты).
+  function syncHeroLevels() {
+    const levels = ensureHeroLevels();
+    const list = CC.HEROES || [];
+    for (let i = 0; i < list.length; i++) {
+      const id = list[i].id;
+      const max = CC.heroMaxLevel(id, townhallLevel());
+      let l = Math.floor(Number(levels[id]));
+      if (!(l >= 1)) l = 1;
+      if (max > 0 && l > max) l = max;
+      levels[id] = l;
+    }
+    st.heroLevel = heroLevel('barb');
+    return levels;
+  }
+
+  // Потолок конкретного героя (th, kind). Для совместимости принимает
+  // и heroMaxLevel('archer') — тогда TH берётся текущий.
+  function heroMaxLevel(thLevel, kind) {
+    if (typeof thLevel === 'string') {
+      kind = thLevel;
+      thLevel = undefined;
+    }
+    const id = heroKindOf(kind);
+    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
+    return Math.max(0, CC.heroMaxLevel(id, th));
+  }
+
+  // Уровень конкретного героя. Без аргумента — Сержант (barb).
+  // Закрытый герой отдаёт 0, но запас в heroLevels сохраняется.
+  function heroLevel(kind) {
+    const id = heroKindOf(kind);
     const th = townhallLevel();
-    const lvl = heroLevel();
-    const max = heroMaxLevel(th);
+    const max = CC.heroMaxLevel(id, th);
+    if (max <= 0) return 0;
+
+    const levels = ensureHeroLevels();
+    let l = Math.floor(Number(levels[id]));
+    if (!(l >= 1)) {
+      // Старый сейв/битая запись: подхватываем общий heroLevel.
+      l = Math.max(1, Math.floor(Number(st.heroLevel) || 0));
+      levels[id] = l;
+    }
+    if (l > max) l = max;
+    levels[id] = l;
+    if (id === 'barb') st.heroLevel = l;
+    return l;
+  }
+
+  // Все уровни героев для UI/P3: {kind: level}; закрытые — 0.
+  function heroLevels() {
+    const out = {};
+    const list = CC.HEROES || [];
+    for (let i = 0; i < list.length; i++) out[list[i].id] = heroLevel(list[i].id);
+    return out;
+  }
+
+  // Цена и время улучшения героя до СЛЕДУЮЩЕГО уровня — строка его таблицы.
+  function heroUpgradeCost(kind) {
+    const id = heroKindOf(kind);
+    const th = townhallLevel();
+    const lvl = heroLevel(id);
+    const max = heroMaxLevel(th, id);
     if (!lvl || lvl >= max) return null;
 
     const to = lvl + 1;
-    const table = HERO.costs || {};
-    let gold = Math.floor(Number(table[to]));
-    if (!isFinite(gold) || gold <= 0) {
-      const base = Number(HERO.costBase) || 1600;
-      gold = round100(base * Math.pow(2, to - 2));
-    }
-
-    const times = HERO.times || {};
-    let time = Math.floor(Number(times[to]));
-    if (!isFinite(time) || time <= 0) {
-      time = Math.min(24 * 3600, 30 * 60 * Math.pow(2, to - 2));
-    }
-    // Академия героя ускоряет прокачку: −5% за уровень после первого.
-    const hall = heroHallLevel();
-    if (hall > 1) time = Math.round(time * Math.pow(0.95, hall - 1));
+    const row = CC.heroLevelRow(id, to);
+    const currency = CC.entityCurrency('hero', id);
+    const cost = Math.max(0, Number(row.cost) || 0);
+    const time = Math.max(0, Number(row.time) || 0);
 
     return {
-      type: HERO.id || 'hero',
+      type: id,
+      kind: id,
       level: lvl,
       to: to,
-      gold: gold,
+      gold: currency === 'gold' ? cost : 0,
+      elixir: currency === 'elixir' ? cost : 0,
+      dark: currency === 'dark' ? cost : 0,
+      currency: currency,
       time: time
     };
   }
@@ -2536,60 +3265,92 @@ CC.Game = (function () {
     return !!st.heroUp;
   }
 
-  // Проверка перед стартом: закрыт → занят слот → максимум → руда.
-  function canUpgradeHero(now) {
+  // Проверка перед стартом: закрыт → занят слот → максимум → ресурсы.
+  // canUpgradeHero(now), canUpgradeHero(kind), canUpgradeHero(now, kind).
+  function canUpgradeHero(now, kind) {
+    if (typeof now === 'string') {
+      kind = now;
+      now = undefined;
+    }
     now = typeof now === 'number' ? now : Date.now();
     settleHero(now);
 
+    const id = heroKindOf(kind);
+    const hero = CC.heroDef ? CC.heroDef(id) : HERO;
     const th = townhallLevel();
-    const minTh = HERO.minTh || 2;
+    const minTh = hero.minTh || 2;
     if (th < minTh) {
       const reason = 'Откроется с командного центра ' + minTh + ' уровня';
       return {
         ok: false, error: reason, reason: reason,
-        needTh: minTh, locked: true, cost: null
+        needTh: minTh, locked: true, kind: id, cost: null
       };
     }
 
     if (heroBusy()) {
       return {
         ok: false, error: 'Уже улучшается', reason: 'Уже улучшается',
-        needTh: null, busy: true, cost: heroUpgradeCost()
+        needTh: null, busy: true, kind: id, cost: heroUpgradeCost(id)
       };
     }
 
-    const lvl = heroLevel();
-    const max = heroMaxLevel(th);
+    const lvl = heroLevel(id);
+    const max = heroMaxLevel(th, id);
     if (lvl >= max) {
-      if (max >= (HERO.maxLevel || 10)) {
+      const next = CC.heroMaxLevel(id, Math.min(MAX_TH, th + 1));
+      if (next > max) {
         return {
-          ok: false, error: 'Максимальный уровень',
-          reason: 'Максимальный уровень', needTh: null, cost: null
+          ok: false, error: 'Сначала улучши академию героя',
+          reason: 'Сначала улучши академию героя',
+          needTh: th + 1, needHeroHall: true, kind: id, cost: null
         };
       }
-      const need = lvl + 1;
-      const reason = 'Сначала улучши командный центр до ' + need + ' уровня';
       return {
-        ok: false, error: reason, reason: reason,
-        needTh: need, cost: null
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, kind: id, cost: null
       };
     }
 
     // Прокачка героя — только в готовой академии героя. Сам герой в бою
-    // остаётся доступен по TH2 и без академии.
+    // остаётся доступен по minTh и без академии.
     if (!hasHeroHall()) {
       const reason = 'Построй академию героя';
       return {
         ok: false, error: reason, reason: reason,
-        needTh: null, needHeroHall: true, cost: null
+        needTh: null, needHeroHall: true, kind: id, cost: null
       };
     }
 
-    const c = heroUpgradeCost();
+    const c = heroUpgradeCost(id);
     if (!c) {
       return {
         ok: false, error: 'Максимальный уровень',
-        reason: 'Максимальный уровень', needTh: null, cost: null
+        reason: 'Максимальный уровень', needTh: null, kind: id, cost: null
+      };
+    }
+
+    if (c.gold > cap('gold')) {
+      const reason = 'Склад руды мал: ' + numText(cap('gold')) + ' из ' +
+        numText(c.gold) + '. Поставь ещё склад руды';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'gold', kind: id, cost: c
+      };
+    }
+    if (c.elixir > cap('elixir')) {
+      const reason = 'Склад энергии мал: ' + numText(cap('elixir')) + ' из ' +
+        numText(c.elixir) + '. Поставь ещё склад энергии';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'elixir', kind: id, cost: c
+      };
+    }
+    if (c.dark > cap('dark')) {
+      const reason = 'Склад плазмы мал: ' + numText(cap('dark')) + ' из ' +
+        numText(c.dark) + '. Поставь хранилище плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'dark', kind: id, cost: c
       };
     }
 
@@ -2601,29 +3362,58 @@ CC.Game = (function () {
         cost: c, missing: { gold: need }
       };
     }
+    if (st.elixir < c.elixir) {
+      const need = Math.ceil(c.elixir - st.elixir);
+      return {
+        ok: false, error: 'Не хватает ' + numText(need) + ' энергии',
+        reason: 'Не хватает энергии', needTh: null,
+        cost: c, missing: { elixir: need }
+      };
+    }
+    if ((st.dark || 0) < c.dark) {
+      const need = Math.ceil(c.dark - (st.dark || 0));
+      return {
+        ok: false, error: 'Не хватает ' + numText(need) + ' плазмы',
+        reason: 'Не хватает плазмы', needTh: null,
+        cost: c, missing: { dark: need }
+      };
+    }
 
-    return { ok: true, error: null, reason: null, needTh: null, cost: c };
+    return { ok: true, error: null, reason: null, needTh: null, kind: id, cost: c };
   }
 
-  // Старт прокачки героя: отдельный слот, строители и troopUp не заняты.
-  function startHeroUpgrade(now) {
+  // Старт прокачки: startHeroUpgrade(), startHeroUpgrade(now),
+  // startHeroUpgrade(kind), startHeroUpgrade(kind, now).
+  function startHeroUpgrade(kind, now) {
+    if (typeof kind === 'number') {
+      now = kind;
+      kind = undefined;
+    }
     now = typeof now === 'number' ? now : Date.now();
-    const check = canUpgradeHero(now);
+    const id = heroKindOf(kind);
+    const check = canUpgradeHero(now, id);
     if (check.error) return check;
 
     const c = check.cost;
     st.gold -= c.gold;
+    st.elixir -= c.elixir || 0;
+    st.dark = (st.dark || 0) - (c.dark || 0);
     st.heroUp = {
+      kind: id,
       to: c.to,
       startedAt: now,
       endAt: now + c.time * 1000,
       time: c.time
     };
     save();
-    return { ok: true, to: c.to, gold: c.gold, time: c.time, cost: c };
+    return {
+      ok: true, kind: id, type: id, to: c.to,
+      gold: c.gold, elixir: c.elixir || 0, dark: c.dark || 0,
+      time: c.time, cost: c
+    };
   }
 
-  // Идущая прокачка героя: цель, остаток и прогресс 0..1 — для карточки.
+  // Идущая прокачка: один слот, но помнит kind.
   function heroUpInfo(now) {
     now = typeof now === 'number' ? now : Date.now();
     settleHero(now);
@@ -2631,15 +3421,17 @@ CC.Game = (function () {
     const u = st.heroUp;
     if (!u) return null;
 
+    const id = heroKindOf(u.kind || u.type || 'barb');
     const leftMs = Math.max(0, u.endAt - now);
     const total = Math.max(1, Number(u.time) || 0);
     const left = leftMs / 1000;
     return {
       active: true,
-      type: HERO.id || 'hero',
-      name: (TROOPS.hero && TROOPS.hero.name) || 'Сержант',
+      type: id,
+      kind: id,
+      name: (CC.heroDef && CC.heroDef(id).name) || 'Сержант',
       to: u.to,
-      level: heroLevel(),
+      level: heroLevel(id),
       total: total,
       left: left,
       leftMs: leftMs,
@@ -2649,13 +3441,11 @@ CC.Game = (function () {
     };
   }
 
-  // Ускорение прокачки героя: та же формула и потолок, что у построек
-  // и исследований войск. Отдельная кнопка в карточке героя.
   function heroSpeedCost(now) {
     now = typeof now === 'number' ? now : Date.now();
     const info = heroUpInfo(now);
     if (!info) return null;
-    return { gems: gemCostFor(info.left), left: info.left, to: info.to };
+    return { gems: gemCostFor(info.left), left: info.left, to: info.to, kind: info.kind };
   }
 
   function speedUpHero(now) {
@@ -2664,6 +3454,7 @@ CC.Game = (function () {
 
     if (!st.heroUp) return { error: 'Улучшение не идёт' };
 
+    const id = heroKindOf(st.heroUp.kind || st.heroUp.type || 'barb');
     const left = Math.max(0, (st.heroUp.endAt - now) / 1000);
     const cost = gemCostFor(left);
     if (st.gems < cost) return noGems(cost);
@@ -2673,24 +3464,29 @@ CC.Game = (function () {
     st.heroUp.endAt = now;
     settleHero(now);
     save();
-    return { ok: true, spent: cost, gems: gemsNow(), level: heroLevel() };
+    return { ok: true, spent: cost, gems: gemsNow(), kind: id, level: heroLevel(id) };
   }
 
-  // Завершение по абсолютному endAt: уровень поднимается один раз.
+  // Завершение по абсолютному endAt: поднимает уровень ТОЛЬКО своего героя.
   function settleHero(now) {
     const u = st.heroUp;
     if (!u || !(u.endAt <= now)) return false;
 
-    const max = heroMaxLevel();
-    const cur = heroLevel();
-    const to = Math.min(max || (HERO.maxLevel || 10),
+    const id = heroKindOf(u.kind || u.type || 'barb');
+    const max = heroMaxLevel(undefined, id);
+    const cur = heroLevel(id);
+    const to = Math.min(max || 1,
       Math.max(cur || 1, Math.floor(Number(u.to) || cur || 1)));
 
     if (max > 0 && to >= 1) {
-      st.heroLevel = to;
+      const levels = ensureHeroLevels();
+      levels[id] = to;
+      if (id === 'barb') st.heroLevel = to;
       heroDoneEvent = {
+        kind: id,
+        type: id,
         level: to,
-        name: (TROOPS.hero && TROOPS.hero.name) || 'Сержант'
+        name: (CC.heroDef && CC.heroDef(id).name) || 'Сержант'
       };
       addXp(10 * to);
     }
@@ -2700,90 +3496,91 @@ CC.Game = (function () {
     return true;
   }
 
-  // Характеристики героя по уровню. Сохранено для совместимости: это
-  // «Сержант» (barb). Новый код зовёт heroStatsFor(kind, level).
+  // Старый алиас: heroStats(level) — уровень Сержанта.
   function heroStats(level) {
     return heroStatsFor('barb', level);
   }
 
-  // Общий для всех героев уровень открывает конкретный вид героя, если
-  // уровень центра дошёл до minTh. До первого уровня героев закрыты все.
+  // Открыт ли конкретный герой по TH и своему уровню.
   function heroUnlocked(kind, thLevel, level) {
-    const hero = CC.heroDef ? CC.heroDef(kind) : HERO;
+    const id = heroKindOf(kind);
+    const hero = CC.heroDef ? CC.heroDef(id) : HERO;
     const th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
-    const lvl = typeof level === 'number' ? Math.floor(level) : heroLevel();
+    const lvl = typeof level === 'number' ? Math.floor(level) : heroLevel(id);
     return th >= (hero.minTh || 2) && lvl >= 1;
   }
 
-  // Список открытых видов героев в порядке CC.HEROES.
+  // Список открытых героев. level — старый общий override для тестов UI.
   function heroKinds(thLevel, level) {
     const th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
-    const lvl = typeof level === 'number' ? Math.floor(level) : heroLevel();
     const out = [];
     const list = CC.HEROES || [HERO];
     for (let i = 0; i < list.length; i++) {
       const h = list[i];
+      const lvl = typeof level === 'number' ? Math.floor(level) : heroLevel(h.id);
       if (th >= (h.minTh || 2) && lvl >= 1) out.push(h.id);
     }
     return out;
   }
 
-  // Снимок боевых героев: по одной штуке каждого открытого вида.
+  // Снимок боевых героев: kind → уровень (для P2, который выставит
+  // каждому герою его собственные статы). Старый код читает только ключи.
   function heroBattleArmy(thLevel, level) {
     const out = {};
     const kinds = heroKinds(thLevel, level);
-    for (let i = 0; i < kinds.length; i++) out[kinds[i]] = 1;
+    for (let i = 0; i < kinds.length; i++) {
+      const id = kinds[i];
+      // Каждому герою — его собственный уровень, даже если старый
+      // вызывающий передал общий level.
+      out[id] = heroLevel(id);
+    }
     return out;
   }
 
-  // Статы героя: HP = base.hp × 9 × 2^(L−1), урон = base.dmg × 3.5 × 2^(L−1).
-  // Скорость, дальность, цель и полёт берутся у базового войска. Щит общий
-  // и от множителей не зависит.
+  // Статы героя: HP/DPS/цена/время — строка CC.COC.heroes.
+  // Если level не передан — уровень берётся из heroLevels этого героя.
   function heroStatsFor(kind, level) {
     const hero = CC.heroDef ? CC.heroDef(kind) : HERO;
-    const base = TROOPS[hero.base] || TROOPS.barb || {
-      hp: 110, dmg: 22, speed: 2, range: 1.2, target: 'any'
-    };
-    const max = HERO.maxLevel || 10;
+    const id = hero.id;
     let l = Math.floor(Number(level));
-    if (!(l >= 1)) l = heroLevel() || 1;
-    if (l > max) l = max;
-
-    const mult = Math.pow(2, l - 1);
-    const hp = Math.round((base.hp || 1000) * 9 * mult);
-    const dmg = Math.round((base.dmg || 80) * 3.5 * mult);
+    if (!(l >= 1)) l = heroLevel(id) || 1;
+    const ownMax = heroMaxLevel(undefined, id) || (HERO.maxLevel || 1);
+    if (l > ownMax) l = ownMax;
+    const row = CC.heroStatsFor(id, l);
 
     return {
       type: 'hero',
-      id: hero.id,
-      heroKind: hero.id,
+      id: id,
+      heroKind: id,
       base: hero.base,
       name: hero.name,
       role: hero.role,
       portrait: hero.portrait,
-      level: l,
-      hp: hp,
-      dmg: dmg,
-      speed: base.speed,
-      range: base.range,
-      target: base.target || 'any',
-      fly: !!base.fly,
-      splash: base.splash || 0,
+      level: row.level,
+      hp: row.hp,
+      dmg: row.dmg,
+      speed: row.speed,
+      range: row.range,
+      target: row.target || 'any',
+      fly: !!row.fly,
+      splash: 0,
       space: 0,
       minTh: hero.minTh,
-      unlocked: heroUnlocked(hero.id, undefined, l),
-      max: heroMaxLevel(),
-      maxAll: max,
+      unlocked: heroUnlocked(id, undefined, l),
+      max: ownMax,
+      maxAll: ownMax,
       ability: HERO.ability || { name: 'Щит', duration: 3, uses: 1 }
     };
   }
 
   // Все герои для Академии и боевой панели: даже закрытые, чтобы UI мог
-  // показать замок «С центра N».
+  // показать замок «С центра N». Без аргумента — у каждого свой уровень.
   function heroList(level) {
-    const lvl = typeof level === 'number' ? level : heroLevel();
     const list = CC.HEROES || [HERO];
-    return list.map(function (h) { return heroStatsFor(h.id, lvl); });
+    return list.map(function (h) {
+      return heroStatsFor(h.id,
+        typeof level === 'number' ? level : heroLevel(h.id));
+    });
   }
 
   function takeHeroDone() {
@@ -3013,15 +3810,12 @@ CC.Game = (function () {
   function stats(id) {
     const it = item(id);
     if (!it) return null;
-    const d = DEFS[it.type] || {};
-    const u = UP[it.type] || {};
     const lvl = level(id);
-    const k = lvl - 1;
     const calc = CC.BuildingStats.at(it.type, lvl);
 
     const out = {
       level: lvl,
-      max: u.max || ECON.maxLevel,
+      max: maxLevel(it.type),
       hp: calc.hp
     };
 
@@ -3067,24 +3861,29 @@ CC.Game = (function () {
       out.store = 'elixir';
     }
 
+    if (it.type === 'darkstorage') {
+      out.capDark = Math.round(storageCapOf('darkstorage', lvl));
+      out.store = 'dark';
+    }
+
     if (it.type === 'barracks') {
-      // Ангар даёт 20 мест за свой уровень и один параллельный слот
-      // тренировки. Подпись панели показывает именно эти числа.
-      out.capacity = (CC.ARMY.capacityPerBarracks || 20) * lvl;
+      // Ангар (army_camp) даёт cap мест по строке таблицы.
+      out.capacity = Math.max(0, Number(calc.cap) || 0);
+      out.housing = true;
+    }
+
+    if (it.type === 'train' || it.type === 'darktrain') {
       out.trainSlots = 1;
+      out.training = true;
     }
 
     return out;
   }
 
-  // Производство в секунду на уровне: база × 2^(уровень − 1).
+  // Производство в секунду на уровне — строка prod / 3600.
   function produceAt(type, lvl) {
-    const p = CC.PRODUCTION[type];
-    if (!p) return 0;
-    let l = Math.floor(Number(lvl) || 1);
-    if (l < 1) l = 1;
-    if (l > ECON.maxLevel) l = ECON.maxLevel;
-    return +(p.rate * Math.pow(2, l - 1)).toFixed(3);
+    if (!CC.PRODUCTION[type]) return 0;
+    return CC.productionAt(type, lvl);
   }
 
   // ---------- армия ----------
@@ -3106,16 +3905,28 @@ CC.Game = (function () {
   }
 
   function capacity() {
-    const per = CC.ARMY.capacityPerBarracks || 20;
     const bars = barracksList();
     let n = 0;
-    for (let i = 0; i < bars.length; i++) n += per * level(bars[i].id);
+    for (let i = 0; i < bars.length; i++) {
+      const row = CC.buildingLevel('barracks', level(bars[i].id));
+      n += Math.max(0, Number(row.cap) || 0);
+    }
     return n;
   }
 
-  // Сколько юнитов тренируется одновременно: по одному на каждый ангар.
+  // Одновременная тренировка: по слоту на Казарму. Старый сейв без
+  // Казармы, но с Ангаром получает один слот совместимости.
   function trainSlots() {
-    return barracksList().length;
+    const list = CC.Base.list();
+    let n = 0;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i].type;
+      if (t !== 'train' && t !== 'darktrain') continue;
+      if (isBuilding(list[i].id)) continue;
+      n++;
+    }
+    if (!n && barracksList().length) n = 1;
+    return n;
   }
 
   function spaceOf(map) {
@@ -3764,12 +4575,16 @@ CC.Game = (function () {
       awaySeconds: pendingOffline.awaySeconds || pendingOffline.seconds,
       gold: pendingOffline.gold,
       elixir: pendingOffline.elixir,
+      dark: pendingOffline.dark || 0,
       storedGold: pendingOffline.storedGold || 0,
       storedElixir: pendingOffline.storedElixir || 0,
+      storedDark: pendingOffline.storedDark || 0,
       capGold: pendingOffline.capGold || 0,
       capElixir: pendingOffline.capElixir || 0,
+      capDark: pendingOffline.capDark || 0,
       lostGold: pendingOffline.lostGold || 0,
       lostElixir: pendingOffline.lostElixir || 0,
+      lostDark: pendingOffline.lostDark || 0,
       capped: !!pendingOffline.capped
     };
   }
@@ -4107,6 +4922,7 @@ CC.Game = (function () {
         v: 1,
         gold: st.gold,
         elixir: st.elixir,
+        dark: st.dark || 0,
         gems: st.gems,
         xp: st.xp,
         stats: st.stats,
@@ -4125,7 +4941,12 @@ CC.Game = (function () {
         builds: st.builds,
         troopLevels: st.troopLevels,
         troopUp: st.troopUp,
-        heroLevel: st.heroLevel,
+        spellLevels: st.spellLevels,
+        spellUp: st.spellUp,
+        petLevels: st.petLevels,
+        petUp: st.petUp,
+        heroLevels: st.heroLevels,
+        heroLevel: heroLevel('barb'),
         heroUp: st.heroUp,
         builders: st.builders,
         level: st.level,
@@ -4268,6 +5089,8 @@ CC.Game = (function () {
 
     s.gold = Math.max(0, num(d.gold, ECON.startGold));
     s.elixir = Math.max(0, num(d.elixir, ECON.startElixir));
+    // Старый сейв без плазмы читается как 0, а не как стартовый запас.
+    s.dark = Math.max(0, num(d.dark, 0));
     // старый сейв без платины получает стартовый запас
     s.gems = Math.max(0, Math.floor(num(d.gems, GEMS.start)));
     s.xp = Math.max(0, Math.floor(num(d.xp, 0)));
@@ -4327,7 +5150,7 @@ CC.Game = (function () {
     if (d.levels && typeof d.levels === 'object') {
       for (const id in d.levels) {
         const l = Math.floor(num(d.levels[id], 0));
-        if (l >= 1) s.levels[id] = Math.min(l, ECON.maxLevel);
+        if (l >= 1) s.levels[id] = Math.min(l, MAX_TH);
       }
     }
 
@@ -4361,11 +5184,11 @@ CC.Game = (function () {
     // подрезаем по общему максимуму, потолок по TH проверит load().
     s.troopLevels = freshTroopLevels();
     if (d.troopLevels && typeof d.troopLevels === 'object') {
-      const maxAll = TROOP_LVL.max || 10;
       for (const type in d.troopLevels) {
         if (!Object.prototype.hasOwnProperty.call(TROOPS, type)) continue;
+        const rowMax = CC.troopLevelRow(type, 999).lv || 1;
         const l = Math.floor(num(d.troopLevels[type], 1));
-        s.troopLevels[type] = l < 1 ? 1 : (l > maxAll ? maxAll : l);
+        s.troopLevels[type] = l < 1 ? 1 : (l > rowMax ? rowMax : l);
       }
     }
 
@@ -4375,7 +5198,8 @@ CC.Game = (function () {
         isFinite(Number(d.troopUp.endAt))) {
       s.troopUp = {
         type: d.troopUp.type,
-        to: Math.max(2, Math.min(TROOP_LVL.max || 10,
+        to: Math.max(2, Math.min(
+          CC.troopLevelRow(d.troopUp.type, 999).lv || 2,
           Math.floor(num(d.troopUp.to, 2)))),
         startedAt: num(d.troopUp.startedAt, 0),
         endAt: Number(d.troopUp.endAt),
@@ -4383,28 +5207,89 @@ CC.Game = (function () {
       };
     }
 
-    // Герой: старый сейв TH2+ открывает его на 1 уровне, TH ниже 2 — 0.
-    // Потолок всегда по уровню центра; битые значения подрезаем.
-    const heroTh = townhallFromSave(d);
-    const heroMax = heroTh >= (HERO.minTh || 2)
-      ? Math.min(HERO.maxLevel || 10, heroTh)
-      : 0;
-    let heroLvl = Math.floor(num(d.heroLevel, 0));
-    if (heroMax <= 0) heroLvl = 0;
-    else if (!(heroLvl >= 1)) heroLvl = 1;
-    else if (heroLvl > heroMax) heroLvl = heroMax;
-    s.heroLevel = heroLvl;
-
-    // Идущая прокачка героя: отдельный слот, абсолютный endAt.
-    if (heroLvl >= 1 && d.heroUp && typeof d.heroUp === 'object' &&
-        isFinite(Number(d.heroUp.endAt))) {
-      s.heroUp = {
-        to: Math.max(2, Math.min(HERO.maxLevel || 10,
-          Math.floor(num(d.heroUp.to, 2)))),
-        startedAt: num(d.heroUp.startedAt, 0),
-        endAt: Number(d.heroUp.endAt),
-        time: Math.max(0, num(d.heroUp.time, 0))
+    // Заклинания и питомцы: старый сейв получает все 1 и пустые слоты.
+    s.spellLevels = freshSpellLevels();
+    if (d.spellLevels && typeof d.spellLevels === 'object') {
+      Object.keys(s.spellLevels).forEach(function (id) {
+        if (d.spellLevels[id] === undefined) return;
+        const rowMax = CC.spellLevelRow(id, 999).lv || 1;
+        const l = Math.floor(num(d.spellLevels[id], 1));
+        s.spellLevels[id] = l < 1 ? 1 : (l > rowMax ? rowMax : l);
+      });
+    }
+    if (d.spellUp && typeof d.spellUp === 'object' &&
+        isSpellType(d.spellUp.id) && isFinite(Number(d.spellUp.endAt))) {
+      const rowMax = CC.spellLevelRow(d.spellUp.id, 999).lv || 2;
+      s.spellUp = {
+        id: d.spellUp.id,
+        to: Math.max(2, Math.min(rowMax,
+          Math.floor(num(d.spellUp.to, 2)))),
+        startedAt: num(d.spellUp.startedAt, 0),
+        endAt: Number(d.spellUp.endAt),
+        time: Math.max(0, num(d.spellUp.time, 0))
       };
+    }
+
+    s.petLevels = freshPetLevels();
+    if (d.petLevels && typeof d.petLevels === 'object') {
+      Object.keys(s.petLevels).forEach(function (id) {
+        if (d.petLevels[id] === undefined) return;
+        const rowMax = CC.petLevelRow(id, 999).lv || 1;
+        const l = Math.floor(num(d.petLevels[id], 1));
+        s.petLevels[id] = l < 1 ? 1 : (l > rowMax ? rowMax : l);
+      });
+    }
+    if (d.petUp && typeof d.petUp === 'object' &&
+        isPetType(d.petUp.id) && isFinite(Number(d.petUp.endAt))) {
+      const rowMax = CC.petLevelRow(d.petUp.id, 999).lv || 2;
+      s.petUp = {
+        id: d.petUp.id,
+        to: Math.max(2, Math.min(rowMax,
+          Math.floor(num(d.petUp.to, 2)))),
+        startedAt: num(d.petUp.startedAt, 0),
+        endAt: Number(d.petUp.endAt),
+        time: Math.max(0, num(d.petUp.time, 0))
+      };
+    }
+
+    // Герои: у каждого свой уровень. Старый сейв без heroLevels получает
+    // heroLevel для всех открытых героев (не выше личного потолка).
+    const heroTh = townhallFromSave(d);
+    const oldHero = Math.floor(num(d.heroLevel, 0));
+    s.heroLevels = {};
+    for (let hi = 0; hi < CC.HEROES.length; hi++) {
+      const h = CC.HEROES[hi];
+      const max = CC.heroMaxLevel(h.id, heroTh);
+      let lv = oldHero;
+      if (d.heroLevels && typeof d.heroLevels === 'object' &&
+          d.heroLevels[h.id] !== undefined) {
+        lv = Math.floor(num(d.heroLevels[h.id], oldHero));
+      }
+      if (!(lv >= 1)) lv = 1;
+      if (max > 0 && lv > max) lv = max;
+      s.heroLevels[h.id] = lv;
+    }
+    s.heroLevel = CC.heroMaxLevel('barb', heroTh) > 0
+      ? Math.min(CC.heroMaxLevel('barb', heroTh), s.heroLevels.barb)
+      : 0;
+
+    // Один слот прокачки: kind + абсолютный endAt.
+    if (d.heroUp && typeof d.heroUp === 'object' &&
+        isFinite(Number(d.heroUp.endAt))) {
+      let kind = d.heroUp.kind || d.heroUp.type || 'barb';
+      if (!CC.HERO_COC[kind]) kind = 'barb';
+      const max = CC.heroMaxLevel(kind, heroTh);
+      if (max > 0 && s.heroLevels[kind] >= 1) {
+        s.heroUp = {
+          kind: kind,
+          type: kind,
+          to: Math.max(2, Math.min(max,
+            Math.floor(num(d.heroUp.to, 2)))),
+          startedAt: num(d.heroUp.startedAt, 0),
+          endAt: Number(d.heroUp.endAt),
+          time: Math.max(0, num(d.heroUp.time, 0))
+        };
+      }
     }
 
     if (Array.isArray(d.queue)) {
@@ -4645,7 +5530,8 @@ CC.Game = (function () {
       if (l > lvl) lvl = l;
       if (l > level(anchor.id)) anchor = stores[i];
     }
-    lvl = lvl > ECON.maxLevel ? ECON.maxLevel : lvl;
+    const storeMax = CC.buildingMaxLevel('estorage') || MAX_TH;
+    if (lvl > storeMax) lvl = storeMax;
 
     let spot = spotsNear(anchor)[0] || null;
     if (!spot) {
@@ -4770,12 +5656,8 @@ CC.Game = (function () {
       st.questsDone = QUESTS.map(function (q) { return q.id; });
     }
 
-    // Герой всегда согласован с текущим центром: на TH2+ он есть,
-    // ниже — закрыт. Это же правило чинит сейв, где TH снесли/подняли.
-    const heroMaxLoad = heroMaxLevel();
-    if (heroMaxLoad <= 0) st.heroLevel = 0;
-    else if (!(st.heroLevel >= 1)) st.heroLevel = 1;
-    else if (st.heroLevel > heroMaxLoad) st.heroLevel = heroMaxLoad;
+    // Уровни всех героев согласованы с текущим центром и их потолками.
+    syncHeroLevels();
 
     // Старому сейву без ангара добавляем её, чтобы армии было где жить.
     // Новый старт (только центр) не трогаем: ангар выдаёт обучение.
@@ -4799,27 +5681,33 @@ CC.Game = (function () {
     if (!migrating && !addedEstorage) {
       const gcap = cap('gold');
       const ecap = cap('elixir');
+      const dcap = cap('dark');
       if (gcap > 0) st.gold = Math.min(st.gold, gcap);
       if (ecap > 0) st.elixir = Math.min(st.elixir, ecap);
+      if (dcap > 0) st.dark = Math.min(st.dark || 0, dcap);
     }
 
     pendingOffline = null;
     const off = tick(now);
     const buffered = bufferTotals();
     if (off.seconds >= 60 &&
-        (off.gold > 0 || off.elixir > 0 || off.capped ||
-         buffered.gold > 0 || buffered.elixir > 0)) {
+        (off.gold > 0 || off.elixir > 0 || off.dark > 0 || off.capped ||
+         buffered.gold > 0 || buffered.elixir > 0 || buffered.dark > 0)) {
       pendingOffline = {
         seconds: Math.floor(off.seconds),
         awaySeconds: Math.floor(off.awaySeconds || off.seconds),
         gold: Math.floor(off.gold),
         elixir: Math.floor(off.elixir),
+        dark: Math.floor(off.dark),
         storedGold: Math.floor(buffered.gold),
         storedElixir: Math.floor(buffered.elixir),
+        storedDark: Math.floor(buffered.dark),
         capGold: Math.floor(buffered.capGold || 0),
         capElixir: Math.floor(buffered.capElixir || 0),
+        capDark: Math.floor(buffered.capDark || 0),
         lostGold: Math.floor(off.lostGold),
         lostElixir: Math.floor(off.lostElixir),
+        lostDark: Math.floor(off.lostDark),
         capped: !!off.capped
       };
     }
@@ -4871,6 +5759,8 @@ CC.Game = (function () {
     settleUpgrades(now);
     settleBuilds(now);
     settleTroops(now);
+    settleSpell(now);
+    settlePet(now);
     settleHero(now);
     settleQueue(now);
     settleDaily(now);
@@ -4881,8 +5771,10 @@ CC.Game = (function () {
       awaySeconds: away,
       gold: gained.gold,
       elixir: gained.elixir,
+      dark: gained.dark,
       lostGold: gained.lostGold,
       lostElixir: gained.lostElixir,
+      lostDark: gained.lostDark,
       capped: gained.capped
     };
   }
@@ -4890,20 +5782,22 @@ CC.Game = (function () {
   function addLoot(loot) {
     if (!loot) {
       return {
-        gold: 0, elixir: 0,
-        offered: { gold: 0, elixir: 0 },
-        lost: { gold: 0, elixir: 0 }
+        gold: 0, elixir: 0, dark: 0,
+        offered: { gold: 0, elixir: 0, dark: 0 },
+        lost: { gold: 0, elixir: 0, dark: 0 }
       };
     }
 
     const g = Math.max(0, Math.floor(num(loot.gold, 0)));
     const e = Math.max(0, Math.floor(num(loot.elixir, 0)));
-    const got = credit(g, e);
+    const d = Math.max(0, Math.floor(num(loot.dark, 0)));
+    const got = credit(g, e, d);
 
     return {
       gold: got.gold,
       elixir: got.elixir,
-      offered: { gold: g, elixir: e },
+      dark: got.dark,
+      offered: { gold: g, elixir: e, dark: d },
       lost: got.lost
     };
   }
@@ -4958,8 +5852,27 @@ CC.Game = (function () {
     troopMultiplier: troopMultiplier,
     troopStats: troopStats,
     takeTroopDone: takeTroopDone,
+    // заклинания (общий лабораторный слот с войсками)
+    spellLevel: spellLevel,
+    spellMaxLevelFor: spellMaxLevelFor,
+    spellUpgradeCost: spellUpgradeCost,
+    canUpgradeSpell: canUpgradeSpell,
+    startSpellUpgrade: startSpellUpgrade,
+    spellUpInfo: spellUpInfo,
+    spellSpeedCost: spellSpeedCost,
+    speedUpSpell: speedUpSpell,
+    // питомцы (отдельный слот питомника)
+    petLevel: petLevel,
+    petMaxLevelFor: petMaxLevelFor,
+    petUpgradeCost: petUpgradeCost,
+    canUpgradePet: canUpgradePet,
+    startPetUpgrade: startPetUpgrade,
+    petUpInfo: petUpInfo,
+    petSpeedCost: petSpeedCost,
+    speedUpPet: speedUpPet,
     // герой
     heroLevel: heroLevel,
+    heroLevels: heroLevels,
     heroMaxLevel: heroMaxLevel,
     heroUpgradeCost: heroUpgradeCost,
     canUpgradeHero: canUpgradeHero,
@@ -5045,6 +5958,7 @@ CC.Game = (function () {
     upgradeSpent: upgradeSpent,
     gold: function () { return Math.floor(st.gold); },
     elixir: function () { return Math.floor(st.elixir); },
+    dark: function () { return Math.floor(st.dark || 0); },
     gems: gemsNow,
     pvp: function () { return st.pvp; },
     addGems: addGems,
