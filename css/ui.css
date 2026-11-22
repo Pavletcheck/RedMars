@@ -9478,3 +9478,308 @@ html:root {
 #app .res-panel.is-overflow .res-panel__track i {
   background: linear-gradient(90deg, #E2563B, #F0B23C);
 }
+
+/* ===================================================================
+   Этап 1: пять героев.
+   Академия — пять карточек с общим уровнем, бой — пять отдельных
+   карточек с портретами. Портреты берутся из assets/portraits/<base>.png,
+   фолбэк — арт CC.Render.troopArt или emoji.
+   =================================================================== */
+
+#app .hero-list {
+  display: block;
+  overflow: visible;
+  padding-bottom: 2px;
+}
+
+#app .hero-academy {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+#app .hero-roster {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+#app .hero-list .tcard.hero-card {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  text-align: center;
+  border-color: #b8912f;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .55),
+    0 0 0 2px rgba(240, 178, 60, .2),
+    0 2px 0 #4b3417;
+}
+
+#app .hero-card__portrait {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: radial-gradient(circle at 35% 30%, #ffe9a3, #c9a227 72%);
+}
+
+#app .hero-card__portrait__fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #4b3417;
+  font-size: 1.1rem;
+}
+
+#app .hero-card__portrait__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#app .hero-card__portrait__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+#app .hero-card__portrait.has-img .hero-card__portrait__fallback { display: none; }
+
+#app .hero-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
+}
+
+#app .hero-card .tcard__name {
+  color: #6b4f12;
+  font-size: var(--fs-11);
+  line-height: 1.12;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+#app .hero-card__role {
+  color: #7a5c24;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#app .hero-card__stats {
+  color: #4f3a16;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.12;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#app .hero-card__lvl {
+  align-self: center;
+  margin-top: 1px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #F0B23C, #C78B18);
+  color: #241307;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+#app .hero-card__lock {
+  align-self: center;
+  margin-top: 1px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(169, 183, 196, .18);
+  color: #A9B7C4;
+  font-size: 9px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+#app .hero-card.is-locked {
+  opacity: .72;
+  filter: none;
+  border-color: rgba(169, 183, 196, .45);
+  box-shadow: none;
+}
+
+#app .hero-card.is-locked .tcard__name { color: #A9B7C4; }
+
+#app .hero-common {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(90, 62, 28, .18);
+}
+
+#app .hero-common__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: #4f3a16;
+  font-size: var(--fs-12);
+  font-weight: 900;
+}
+
+#app .hero-common__head b { color: #8a6514; }
+
+#app .hero-common__hint {
+  color: var(--ui-muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+#app .hero-common .tcard__hire {
+  border-color: #8a5a12;
+  background: linear-gradient(180deg, #F0B23C, #C78B18);
+  color: #241307;
+  text-shadow: none;
+}
+
+#app .hero-common .tcard__actions {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+}
+
+#app .hero-common .tcard__actions .tcard__hire {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+#app .hero-common .tcard__hire:disabled {
+  border-color: #6b5a40;
+  background: rgba(92, 70, 47, .5);
+  color: #A9B7C4;
+}
+
+@media (min-width: 1000px) {
+  #app .selbar[data-type="herohall"] {
+    width: min(760px, calc(100% - 96px));
+  }
+  #app .hero-card__stats { font-size: 10px; }
+}
+
+/* Портрет в боевой карточке: лежит поверх арта/emoji. */
+#app .troop__icon { position: relative; }
+
+#app .troop__fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+#app .troop__portrait {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+#app .troop__icon.has-portrait .troop__fallback { display: none; }
+
+#app .troop_hero.is-locked {
+  opacity: .72;
+  filter: none;
+  border-color: rgba(169, 183, 196, .45);
+}
+
+#app .troop_hero.is-locked .troop__name { color: #A9B7C4; }
+
+/* Низкий ландшафт: пять карточек остаются читаемыми и скроллятся. */
+@media (max-height: 430px) {
+  #app .hero-roster {
+    grid-template-columns: repeat(5, minmax(86px, 1fr));
+    gap: 4px;
+  }
+  #app .hero-list .tcard.hero-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-items: center;
+    width: auto;
+    min-height: 0;
+    padding: 3px;
+    column-gap: 0;
+    row-gap: 1px;
+  }
+  #app .hero-card__portrait {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+  #app .hero-card .tcard__name {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #app .hero-card__role { display: none; }
+  #app .hero-card__stats {
+    font-size: 8px;
+    letter-spacing: -.1px;
+  }
+  #app .hero-common { margin-top: 4px; padding-top: 5px; }
+  #app .hero-common__hint { display: none; }
+}
+
+@media (max-width: 720px) {
+  #app .hero-roster {
+    grid-template-columns: repeat(5, minmax(78px, 1fr));
+  }
+}
+
+@media (max-height: 340px) {
+  #app .hero-card__portrait {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+  #app .hero-card { padding: 2px 3px; }
+  #app .hero-common { gap: 2px; margin-top: 2px; padding-top: 3px; }
+  #app .hero-common__head { display: none; }
+  #app .hero-common .tcard__meta { display: none; }
+}
+
+/* На 844 и ниже пятёрка героев должна попадать в первый экран панели. */
+@media (max-width: 900px) {
+  #app .army {
+    width: min(500px, calc(100% - 16px));
+  }
+}

@@ -250,6 +250,8 @@ CC.UI = (function () {
   const mapCardFree = document.getElementById('map-card-free');
   const mapCardBest = document.getElementById('map-card-best');
   const mapCardGo = document.getElementById('map-card-go');
+  const levelsHint = typeof document.querySelector === 'function'
+    ? document.querySelector('#levels .levels__hint') : null;
 
   // Повторы набегов: чип в деревне, список и просмотр боя.
   const replayChip = document.getElementById('replay-chip');
@@ -567,7 +569,7 @@ CC.UI = (function () {
     }
     if (chapterNext) {
       chapterNext.addEventListener('click', function () {
-        if (chapterIndex >= 4) return;
+        if (chapterIndex >= mapEraLast()) return;
         chapterIndex++;
         syncChapter();
       });
@@ -2330,9 +2332,22 @@ CC.UI = (function () {
 
   /* ---------- карта кампании ---------- */
 
-  const MAP_ERAS = [
-    'Красные пески', 'Кратеры', 'Ледяные жилы', 'Разлом', 'Купол'
-  ];
+  const MAP_ERAS = (CC.LEVEL_ERA_TITLES || [
+    'Красные пески', 'Кратеры', 'Ледяные жилы', 'Разлом', 'Купол',
+    'Пепельные равнины', 'Глубины', 'Орбитальный пояс',
+    'Стеклянная пустошь', 'Ядро'
+  ]).slice();
+
+  function mapEraLast() {
+    return Math.max(0, (CC.LEVEL_ERAS || 10) - 1);
+  }
+
+  function mapEraStyle(era) {
+    const c = CC.LEVEL_ERA_COLORS && CC.LEVEL_ERA_COLORS[era];
+    if (!c) return '';
+    return ' style="--era-rgb:' + c.rgb + ';--era-ink:' + c.ink +
+      ';--era-glyph:\'' + c.glyph + '\'"';
+  }
 
   /* ---------- глава кампании ---------- */
 
@@ -2384,15 +2399,16 @@ CC.UI = (function () {
   function syncChapter() {
     if (!chapterOpen || !chapterEl) return;
 
-    const era = Math.max(0, Math.min(4, chapterIndex));
+    const era = Math.max(0, Math.min(mapEraLast(), chapterIndex));
     const st = chapterStats(era);
     if (chapterTitle) chapterTitle.textContent = 'Глава ' + (era + 1) + ': ' + MAP_ERAS[era];
     if (chapterSub) {
-      chapterSub.textContent = 'Эпоха ' + (era + 1) + ' из 5 · сектора ' +
+      chapterSub.textContent = 'Эпоха ' + (era + 1) + ' из ' +
+        (CC.LEVEL_ERAS || 10) + ' · сектора ' +
         (st.start + 1) + '–' + (st.end) + ' · ★ ' + st.stars + '/30';
     }
     if (chapterPrev) chapterPrev.disabled = era <= 0;
-    if (chapterNext) chapterNext.disabled = era >= 4;
+    if (chapterNext) chapterNext.disabled = era >= mapEraLast();
     if (chapterReward) {
       chapterReward.textContent = 'За каждый сектор: +1 платина · всего 10';
     }
@@ -2446,7 +2462,7 @@ CC.UI = (function () {
       const base = mapSelected === null ? CC.Game.currentLevel() : mapSelected;
       n = Math.floor(base / 10);
     }
-    chapterIndex = Math.max(0, Math.min(4, Math.floor(n)));
+    chapterIndex = Math.max(0, Math.min(mapEraLast(), Math.floor(n)));
     chapterOpen = true;
     if (chapterEl) chapterEl.classList.remove('hidden');
     syncChapter();
@@ -2558,6 +2574,12 @@ CC.UI = (function () {
 
     const cleared = CC.Game.clearedLevels();
     const current = CC.Game.currentLevel();
+    if (levelsHint) {
+      const line = (CC.LEVEL_ERAS || 10) + ' эпох, ' + CC.LEVELS.length +
+        ' узлов. Звёзды — лучший результат. Для прохода хватит одной: ' +
+        '50% построек, снос центра или 100%.';
+      if (levelsHint.textContent !== line) levelsHint.textContent = line;
+    }
     const sig = current + '|' + cleared.join(',') + '|' + (mapSelected === null ? '' : mapSelected) + '|' +
       CC.LEVELS.map(function (lvl, i) { return CC.Game.levelStars(i); }).join('');
 
@@ -2565,7 +2587,7 @@ CC.UI = (function () {
       cache.levelSig = sig;
 
       const eras = [];
-      for (let era = 0; era < 5; era++) {
+      for (let era = 0; era < (CC.LEVEL_ERAS || 10); era++) {
         const nodes = [];
         const eraStars = mapEraStars(era);
         const chests = [3, 6, 10];
@@ -2627,7 +2649,7 @@ CC.UI = (function () {
         eras.push(
           '<section class="map-era' + (complete ? ' is-complete' : '') +
             (eraCurrent ? ' is-current' : '') +
-            '" data-era="' + era + '">' +
+            '" data-era="' + era + '"' + mapEraStyle(era) + '>' +
             '<header class="map-era__head">' +
               '<span class="map-era__name">' + escHtml(MAP_ERAS[era]) + '</span>' +
               '<span class="map-era__stars">★ ' + mapEraStars(era) + ' / 30</span>' +
@@ -4949,42 +4971,76 @@ CC.UI = (function () {
     }
   }
 
-  // Карточка героя в ангаре. Живёт первой в карусели войск: уровень,
-  // HP/урон, цена в руде, время и кнопка «Улучшить». Отдельный слот, поэтому
-  // не блокируется исследованием войск и не занимает строителей.
-  function heroCardHtml(th) {
-    const H = CC.HERO || { minTh: 5, ability: {} };
-    const d = CC.TROOPS.hero || {
-      name: 'Сержант', icon: '🎖️', color: '#c9a227'
-    };
-    const minTh = H.minTh || 5;
-    const lvl = CC.Game.heroLevel();
-    const heroArtLvl = (th < minTh || lvl < 1) ? 1 : lvl;
-    const heroArt = cardArt('troop', 'hero', 72, heroArtLvl, 'tcard__art');
-    const icon = '<span class="tcard__icon cc-icon' + (heroArt ? ' has-art' : '') + '"' +
-      ' data-type="hero"' +
-      ' style="background:' + d.color + '">' + (heroArt || d.icon) + '</span>';
+  // Портрет героя для Академии и боевой панели: сначала картинка найма из
+  // assets/portraits/<base>.png, если её нет — арт CC.Render.troopArt или
+  // emoji. Портреты рисует художник, логика не падает без файла.
+  function heroPortraitHtml(h, size, level, cls) {
+    const hero = h || {};
+    const base = CC.TROOPS[hero.base] || {};
+    const art = cardArt('troop', hero.base, size, level, cls + '__art');
+    const src = hero.portrait || ('assets/portraits/' + (hero.base || 'barb') + '.png');
+    return '<span class="' + cls + '">' +
+      '<span class="' + cls + '__fallback cc-icon" data-type="' +
+        escHtml(hero.base || 'barb') + '" style="background:' +
+        (base.color || '#6b5a45') + '">' + (art || base.icon || '★') + '</span>' +
+      '<img class="' + cls + '__img" src="' + escHtml(src) +
+        '" alt="" width="' + size + '" height="' + size + '"' +
+        ' draggable="false" decoding="async"' +
+        ' onload="if(this.parentNode)this.parentNode.classList.add(\'has-img\')"' +
+        ' onerror="this.style.display=\'none\'">' +
+      '</span>';
+  }
 
-    if (th < minTh || lvl < 1) {
-      return '<div class="tcard tcard_hero is-locked" data-hero="1"' +
-        ' data-hero-locked="1" aria-disabled="true"' +
-        ' title="' + d.name + ' · откроется на ' + minTh + ' уровне центра">' +
-        '<span class="tcard__lock" aria-hidden="true">🔒</span>' +
-        icon +
-        '<span class="tcard__name">' + d.name + '</span>' +
-        '<span class="tcard__desc">Щит 3 с на союзников · 1 раз за бой</span>' +
-        '<span class="tcard__cost">с центра ' + minTh + '</span>' +
+  // Академия героев: пять карточек с общим уровнем и одна общая прокачка.
+  // Старая одиночная карточка Сержанта больше не выводится.
+  function heroCardHtml(th) {
+    const H = CC.HERO || { minTh: 2, ability: {} };
+    const minTh = H.minTh || 2;
+    const lvl = CC.Game.heroLevel();
+    const max = CC.Game.heroMaxLevel ? CC.Game.heroMaxLevel() : 0;
+    const ability = (H.ability && H.ability.hint) ||
+      'Щит 3 с на союзников · 1 раз за бой';
+    const heroes = CC.Game.heroList ? CC.Game.heroList(lvl) : [];
+
+    let cards = '';
+    for (let i = 0; i < heroes.length; i++) {
+      const h = heroes[i];
+      const open = !!h.unlocked;
+      const artLvl = open ? Math.max(1, lvl) : 1;
+      const role = h.role || ((CC.TROOPS[h.base] || {}).name || '');
+      const line = open
+        ? 'HP ' + fmtNum(h.hp) + ' · урон ' + fmtNum(h.dmg)
+        : 'HP и урон — по общему уровню';
+      cards += '<div class="tcard tcard_hero hero-card' +
+        (open ? '' : ' is-locked') + '" data-hero="' + escHtml(h.id) + '"' +
+        (open ? '' : ' data-hero-locked="1" aria-disabled="true"') +
+        ' title="' + escHtml(h.name + ' · ' + role +
+          (open ? ' · ур. ' + lvl : ' · с центра ' + h.minTh)) + '">' +
+        heroPortraitHtml(h, 84, artLvl, 'hero-card__portrait') +
+        '<span class="hero-card__body">' +
+          '<span class="tcard__name">' + escHtml(h.name) +
+            (open ? ' · ур. ' + lvl : '') + '</span>' +
+          '<span class="hero-card__role">' + escHtml(role) + '</span>' +
+          '<span class="hero-card__stats">' + line + '</span>' +
+          (open
+            ? '<span class="hero-card__lvl">Ур. ' + lvl + '</span>'
+            : '<span class="hero-card__lock">🔒 С центра ' + h.minTh + '</span>') +
+        '</span>' +
         '</div>';
     }
 
-    const st = CC.Game.heroStats(lvl);
-    const up = CC.Game.heroUpInfo();
-    const cost = CC.Game.heroUpgradeCost();
-    const check = CC.Game.canUpgradeHero();
-    const ability = (H.ability && H.ability.hint) || 'Щит 3 с на союзников · 1 раз за бой';
+    const up = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
+    const cost = CC.Game.heroUpgradeCost ? CC.Game.heroUpgradeCost() : null;
+    const check = CC.Game.canUpgradeHero ? CC.Game.canUpgradeHero() : null;
 
-    let extra;
-    if (up) {
+    let action;
+    if (th < minTh || lvl < 1) {
+      action = '<span class="tcard__meta">Герои откроются с центра ' +
+        minTh + '</span>' +
+        '<span class="tcard__actions"><button class="tcard__hire" disabled' +
+        ' title="Сначала построй и улучши командный центр">С центра ' +
+        minTh + '</button></span>';
+    } else if (up) {
       // Кнопка ускорения показывает цену с учётом потолка (не больше 80).
       const speed = CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
       const gems = CC.Game.gems();
@@ -4998,7 +5054,7 @@ CC.UI = (function () {
           '<span class="ico ico-platinum" aria-hidden="true"></span>' +
           ' Ускорить за ' + speed.gems + '</button>'
         : '';
-      extra = '<span class="tcard__meta">Ур. ' + lvl + ' → ' + up.to +
+      action = '<span class="tcard__meta">Ур. ' + lvl + ' → ' + up.to +
         ' · ' + formatTime(up.left) + '</span>' +
         '<i class="hero-card__bar"><b style="width:' +
         Math.round(up.progress * 100) + '%"></b></i>' +
@@ -5011,30 +5067,32 @@ CC.UI = (function () {
         ? '🪙 ' + fmtNum(cost.gold) + ' руды · ' + formatTime(cost.time)
         : 'Максимальный уровень';
       let btn;
-      if (check.ok) {
+      if (check && check.ok) {
         btn = '<button class="tcard__hire" data-hero-up="1">Улучшить</button>';
       } else {
         let label = 'Улучшить';
-        if (check.busy) label = 'Занято';
-        else if (check.needTh) label = 'Центр ' + check.needTh;
-        else if (check.needHeroHall) label = 'Нет академии';
-        else if (check.reason === 'Максимальный уровень') label = 'Макс.';
-        else if (check.missing) label = 'Нет руды';
+        if (check && check.busy) label = 'Занято';
+        else if (check && check.needTh) label = 'Центр ' + check.needTh;
+        else if (check && check.needHeroHall) label = 'Нет академии';
+        else if (check && check.reason === 'Максимальный уровень') label = 'Макс.';
+        else if (check && check.missing) label = 'Нет руды';
         btn = '<button class="tcard__hire" disabled title="' +
-          (check.reason || '') + '">' + label + '</button>';
+          ((check && check.reason) || '') + '">' + label + '</button>';
       }
-      extra = '<span class="tcard__meta">' + price + '</span>' +
+      action = '<span class="tcard__meta">' + price + '</span>' +
         '<span class="tcard__actions">' + btn + '</span>';
     }
 
-    return '<div class="tcard tcard_hero" data-hero="1"' +
-      ' title="' + d.name + ' · ур. ' + lvl + ' · ' + ability + '">' +
-      icon +
-      '<span class="tcard__name">' + d.name + ' · ур. ' + lvl + '</span>' +
-      '<span class="tcard__desc">' + ability + '</span>' +
-      '<span class="tcard__meta">HP ' + fmtNum(st.hp) +
-      ' · урон ' + fmtNum(st.dmg) + '</span>' +
-      extra +
+    return '<div class="hero-academy" data-hero-level="' + lvl + '">' +
+      '<div class="hero-roster">' + cards + '</div>' +
+      '<div class="hero-common">' +
+        '<div class="hero-common__head">' +
+          '<span>Общий уровень героев</span>' +
+          '<b>Ур. ' + lvl + ' / ' + (max || 0) + '</b>' +
+        '</div>' +
+        '<span class="hero-common__hint">' + ability + '</span>' +
+        action +
+      '</div>' +
       '</div>';
   }
 
@@ -5173,6 +5231,20 @@ CC.UI = (function () {
       img.onerror = function () { img.style.display = 'none'; };
       // Картинка могла быть в кэше и загрузиться до назначения onload.
       if (img.complete && img.naturalWidth > 0) hideFallback();
+    }
+  }
+
+  function bindHeroPortraits(root) {
+    if (!root || !root.querySelectorAll) return;
+    const imgs = root.querySelectorAll('.hero-card__portrait__img');
+    for (let i = 0; i < imgs.length; i++) {
+      const img = imgs[i];
+      const show = function () {
+        if (img.parentNode) img.parentNode.classList.add('has-img');
+      };
+      img.onload = show;
+      img.onerror = function () { img.style.display = 'none'; };
+      if (img.complete && img.naturalWidth > 0) show();
     }
   }
 
@@ -5373,11 +5445,13 @@ CC.UI = (function () {
 
     const th = CC.Game.townhallLevel();
     const lvl = CC.Game.heroLevel();
+    const heroes = CC.Game.heroList ? CC.Game.heroList(lvl) : [];
     const up = CC.Game.heroUpInfo ? CC.Game.heroUpInfo() : null;
     const cost = CC.Game.heroUpgradeCost ? CC.Game.heroUpgradeCost() : null;
     const check = CC.Game.canUpgradeHero ? CC.Game.canUpgradeHero() : null;
     const speed = up && CC.Game.heroSpeedCost ? CC.Game.heroSpeedCost() : null;
     const sig = 'hero:' + th + ':' + lvl + ':' +
+      heroes.map(function (h) { return h.id + (h.unlocked ? '+' : '-'); }).join(',') + ':' +
       (up ? up.to + ':' + Math.ceil(up.left) : 'idle') + ':' +
       (speed ? speed.gems : 0) + ':' + CC.Game.gems() + ':' +
       (cost ? JSON.stringify(cost) : 'max') + ':' +
@@ -5388,6 +5462,7 @@ CC.UI = (function () {
     if (cache.heroSig === sig) return;
     cache.heroSig = sig;
     heroList.innerHTML = heroCardHtml(th);
+    bindHeroPortraits(heroList);
   }
 
   // Раздел «Улучшение войск» в панели ангара: только открытые войска.
@@ -5510,7 +5585,7 @@ CC.UI = (function () {
       if (res.error) toast(res.error);
       else {
         if (CC.Sound) CC.Sound.play('upgradeDone');
-        toast('Сержант — ур. ' + res.level);
+        toast('Герои — ур. ' + res.level);
       }
       invalidate();
       sync();
@@ -5524,7 +5599,7 @@ CC.UI = (function () {
       if (res.error) toast(res.error);
       else {
         if (CC.Sound) CC.Sound.play('upgrade');
-        toast('Сержант: улучшение до ур. ' + res.to);
+        toast('Герои: улучшение до ур. ' + res.to);
       }
       invalidate();
       sync();
@@ -6189,7 +6264,13 @@ CC.UI = (function () {
     if (S.over || S.kind === 'replay' || S.viewReplay) return false;
 
     const type = S.selected;
-    if (!type || !CC.TROOPS[type] || (S.army[type] | 0) <= 0) return false;
+    if (!type || !CC.TROOPS[type]) return false;
+    if (type === 'hero') {
+      const kind = S.selectedHero || 'barb';
+      if (!S.heroes || !(S.heroes[kind] > 0)) return false;
+    } else if ((S.army[type] | 0) <= 0) {
+      return false;
+    }
 
     const g = gridAtPoint(p);
     const x = Math.floor(g.x);
@@ -6272,6 +6353,55 @@ CC.UI = (function () {
   function buildArmy() {
     armyEl.innerHTML = '';
 
+    // Пять героев идут первыми: на 844 их карточки видны без прокрутки.
+    // Каждый высаживается один раз, уровень общий, место в армии — 0.
+    const heroes = CC.Game.heroList ? CC.Game.heroList() : [];
+    for (let i = 0; i < heroes.length; i++) {
+      const h = heroes[i];
+      const el = document.createElement('div');
+      el.className = 'troop troop_hero troop_hero_' + h.id +
+        (h.unlocked ? '' : ' is-locked');
+      el.dataset.type = 'hero';
+      el.dataset.heroKind = h.id;
+      const base = CC.TROOPS[h.base] || {};
+      const heroLvl = CC.Game.heroLevel ? CC.Game.heroLevel() : 0;
+      const lvl = heroLvl >= 1 ? heroLvl : 1;
+      const art = cardArt('troop', h.base, 64, lvl, 'troop__art');
+      const icon = '<span class="troop__icon cc-icon" data-type="hero"' +
+        ' data-hero-kind="' + escHtml(h.id) + '"' +
+        ' style="background:' + (base.color || '#c9a227') + '">' +
+        '<span class="troop__fallback">' + (art || base.icon || '★') + '</span>' +
+        '<img class="troop__portrait" src="' + escHtml(h.portrait) +
+          '" alt="" width="64" height="64" draggable="false" decoding="async"' +
+          ' onload="if(this.parentNode)this.parentNode.classList.add(\'has-portrait\')"' +
+          ' onerror="this.style.display=\'none\'">' +
+        '</span>';
+      el.innerHTML =
+        '<span class="troop__lvl">Ур. ' + lvl + '</span>' +
+        icon +
+        '<span class="troop__name">' + escHtml(h.name) + '</span>' +
+        '<span class="troop__req hidden"></span>' +
+        '<span class="troop__count">×1</span>';
+
+      el.addEventListener('click', function () {
+        if (el.classList.contains('is-locked')) {
+          toast('Откроется с центра ' + h.minTh);
+          return;
+        }
+        const S = CC.Battle && CC.Battle.state;
+        if (!S || !S.heroes || !(S.heroes[h.id] > 0)) {
+          toast('Герой уже высажен');
+          return;
+        }
+        CC.Battle.select('hero', h.id);
+        sync();
+      });
+
+      armyEl.appendChild(el);
+      cards['hero:' + h.id] = el;
+      if (i === 0) cards.hero = el;
+    }
+
     CC.ARMY_ORDER.forEach(function (type) {
       const d = CC.TROOPS[type];
       const el = document.createElement('div');
@@ -6302,42 +6432,6 @@ CC.UI = (function () {
       armyEl.appendChild(el);
       cards[type] = el;
     });
-
-    // Герой — отдельная карточка в боевой панели. Она всегда показывает
-    // «1» (один юнит на бой), а после высадки — 0.
-    const hd = CC.TROOPS.hero;
-    if (hd) {
-      const el = document.createElement('div');
-      el.className = 'troop troop_hero';
-      el.dataset.type = 'hero';
-      const heroLvl = CC.Game && CC.Game.heroLevel ? CC.Game.heroLevel() : 0;
-      const heroArt = cardArt('troop', 'hero', 64, Math.max(1, heroLvl), 'troop__art');
-      el.innerHTML =
-        '<span class="troop__lvl">Ур. ' + Math.max(1, heroLvl) + '</span>' +
-        '<span class="troop__icon cc-icon" data-type="hero"' +
-        (heroArt ? ' data-art="1"' : '') +
-        ' style="background:' + hd.color + '">' + (heroArt || hd.icon) + '</span>' +
-        '<span class="troop__name">' + hd.name + '</span>' +
-        '<span class="troop__req hidden"></span>' +
-        '<span class="troop__count">×1</span>';
-
-      el.addEventListener('click', function () {
-        if (el.classList.contains('is-locked')) {
-          const need = CC.HERO ? CC.HERO.minTh : 5;
-          toast('Откроется на ' + need + ' уровне центра');
-          return;
-        }
-        if (!CC.Battle.state || !CC.Battle.state.army.hero) {
-          toast('Герой уже высажен');
-          return;
-        }
-        CC.Battle.select('hero');
-        sync();
-      });
-
-      armyEl.appendChild(el);
-      cards.hero = el;
-    }
   }
 
   // В бою игрок должен сразу понимать, где он: сектор кампании, арена
@@ -6499,44 +6593,57 @@ CC.UI = (function () {
         : CC.TROOPS[type].name;
     }
 
-    // Карточка героя: одна штука на бой, отдельно от линейных войск.
-    const heroEl = cards.hero;
-    if (heroEl && heroEl.querySelector) {
-      const need = CC.HERO ? (CC.HERO.minTh || 5) : 5;
+    // Карточки героев: у каждого свой вид, по одной штуке за бой. Уровень
+    // общий, «×1» гаснет после высадки именно этого героя.
+    const heroDefs = CC.Game.heroList ? CC.Game.heroList() : [];
+    for (let i = 0; i < heroDefs.length; i++) {
+      const h = heroDefs[i];
+      const heroEl = cards['hero:' + h.id];
+      if (!heroEl || !heroEl.querySelector) continue;
       const level = CC.Game && CC.Game.heroLevel ? CC.Game.heroLevel() : 0;
-      const locked = level < 1 || th < need;
-      const n = S.army.hero | 0;
-      const key = n + '|' + (S.selected === 'hero') + '|' + locked + '|' + level;
-      if (cache.heroCard !== key) {
-        cache.heroCard = key;
-        const cnt = heroEl.querySelector('.troop__count');
-        if (cnt) cnt.textContent = '×' + n;
-        const req = heroEl.querySelector('.troop__req');
-        if (req) {
-          req.textContent = locked ? 'с центра ' + need : '';
-          req.classList.toggle('hidden', !locked);
-        }
-        heroEl.classList.toggle('is-empty', n === 0 && !locked);
-        heroEl.classList.toggle('is-locked', locked);
-        heroEl.classList.toggle('is-selected', S.selected === 'hero' && !locked);
-        heroEl.title = (CC.TROOPS.hero ? CC.TROOPS.hero.name : 'Сержант') +
-          ' · ур. ' + (level || 0) + ' · ' +
-          ((CC.HERO && CC.HERO.ability && CC.HERO.ability.hint) ||
-            'Щит 3 с на союзников · 1 раз за бой');
+      const locked = !h.unlocked;
+      const n = (S.heroes && S.heroes[h.id]) | 0;
+      const isSel = S.selected === 'hero' && S.selectedHero === h.id && !locked;
+      const key = n + '|' + isSel + '|' + locked + '|' + level;
+      if (cache['hero:' + h.id] === key) continue;
+      cache['hero:' + h.id] = key;
+      const cnt = heroEl.querySelector('.troop__count');
+      if (cnt) cnt.textContent = '×' + (locked ? 0 : n);
+      const req = heroEl.querySelector('.troop__req');
+      if (req) {
+        req.textContent = locked ? 'С центра ' + h.minTh : '';
+        req.classList.toggle('hidden', !locked);
       }
+      const lvlEl = heroEl.querySelector('.troop__lvl');
+      if (lvlEl) lvlEl.textContent = 'Ур. ' + (level >= 1 ? level : '—');
+      heroEl.classList.toggle('is-empty', n === 0 && !locked);
+      heroEl.classList.toggle('is-locked', locked);
+      heroEl.classList.toggle('is-selected', isSel);
+      heroEl.title = h.name + ' · ' + (h.role || '') + ' · ур. ' +
+        (locked ? '—' : level) + ' · ' +
+        ((CC.HERO && CC.HERO.ability && CC.HERO.ability.hint) ||
+          'Щит 3 с на союзников · 1 раз за бой');
     }
 
-    // Кнопка щита: активна, только пока герой жив и способность не потрачена.
+    // Кнопка щита: активна, пока жив хоть один герой и способность не
+    // потрачена. После использования или смерти всех героев исчезает.
     if (heroShieldBtn) {
-      const show = !replay && !S.over;
+      const alive = S.units.filter(function (u) {
+        return u.isHero && u.hp > 0;
+      }).length;
+      let left = 0;
+      if (S.heroes) {
+        for (const k in S.heroes) if (S.heroes[k] > 0) left++;
+      }
+      const show = !replay && !S.over && !S.abilityUsed && (alive > 0 || left > 0);
       heroShieldBtn.classList.toggle('hidden', !show);
-      heroShieldBtn.disabled = !S.abilityReady;
+      heroShieldBtn.disabled = !S.abilityReady || !show;
       const label = '🛡 Щит 3 с';
       if (heroShieldBtn.textContent !== label) heroShieldBtn.textContent = label;
       const title = S.abilityUsed
         ? 'Щит уже использован · один раз за бой'
-        : (!S.hero
-          ? 'Сначала высади Сержанта'
+        : (alive <= 0
+          ? 'Сначала высади любого героя'
           : 'Щит 3 с на союзников в радиусе 2.5 · 1 раз за бой (Q)');
       if (heroShieldBtn.title !== title) heroShieldBtn.title = title;
     }

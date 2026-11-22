@@ -8,7 +8,7 @@ CC.Battle = (function () {
   const DEFS = CC.BUILDINGS;
   const TROOPS = CC.TROOPS;
   const HERO = CC.HERO || {
-    id: 'hero', minTh: 5, maxLevel: 10,
+    id: 'hero', minTh: 2, maxLevel: 10,
     ability: { name: 'Щит', duration: 3, radius: 2.5, uses: 1 }
   };
   const LEVELS = CC.LEVELS || [];
@@ -29,6 +29,43 @@ CC.Battle = (function () {
     return out;
   }
 
+  // Герои приходят либо явной картой army.heroes = {kind: 1}, либо старым
+  // флагом army.hero. Старый флаг означает одного «Сержанта».
+  function copyHeroes(map) {
+    const out = {};
+    const list = CC.HEROES || [];
+    const src = map && map.heroes;
+    if (src && typeof src === 'object') {
+      for (let i = 0; i < list.length; i++) {
+        const id = list[i].id;
+        if (Number(src[id]) > 0) out[id] = 1;
+      }
+      // Неизвестный герой старого сейва не должен теряться: это barb.
+      if (!Object.keys(out).length && Number(src.hero) > 0) out.barb = 1;
+    } else if (map && Number(map.hero) > 0) {
+      out.barb = 1;
+    }
+    return out;
+  }
+
+  function heroKindsLeft() {
+    const out = [];
+    if (!S || !S.heroes) return out;
+    for (const k in S.heroes) if (S.heroes[k] > 0) out.push(k);
+    return out;
+  }
+
+  function firstHeroKind() {
+    const left = heroKindsLeft();
+    return left.length ? left[0] : null;
+  }
+
+  // army.hero — старый флаг «есть невысаженный герой», а не количество.
+  function syncHeroFlag() {
+    if (!S) return;
+    S.army.hero = heroKindsLeft().length ? 1 : 0;
+  }
+
   // Оставляем только войска, открытые на указанном уровне центра.
   function onlyUnlocked(map, th) {
     const out = copyArmy(map);
@@ -40,12 +77,12 @@ CC.Battle = (function () {
     return out;
   }
 
-  // Герой доступен только после открытия (TH5+) и если он есть в деревне.
+  // Герой доступен только после открытия (TH2+) и если он есть в деревне.
   // В headless-прогонах и на чужой базе героя нет.
   function heroAvailable(th) {
     if (!TROOPS.hero) return false;
     const level = typeof th === 'number' ? Math.round(th) : 1;
-    if (level < (HERO.minTh || 5)) return false;
+    if (level < (HERO.minTh || 2)) return false;
     if (!CC.Game || !CC.Game.heroLevel) return false;
     return CC.Game.heroLevel() >= 1;
   }
@@ -66,14 +103,17 @@ CC.Battle = (function () {
       costs: new Float32Array(G * G),
       deployable: new Uint8Array(G * G),
       army: copyArmy(o.army),
-      // Герой не входит в ARMY_ORDER: он не тратит места и не тренируется.
-      // В бою это отдельный слот «1», который сгорает после высадки.
+      // Герои не входят в ARMY_ORDER: они не тратят места и не тренируются.
+      // heroes — сколько экземпляров каждого вида ещё можно высадить (0/1).
+      // army.hero остаётся флагом совместимости для старых снимков.
+      heroes: copyHeroes(o.army),
       hero: null,
       heroDeployed: false,
       heroShield: 0,
       abilityUsed: false,
       abilityReady: false,
       selected: 'barb',
+      selectedHero: null,
       level: o.level || 0,
       levelId: o.levelId || 0,
       levelName: o.levelName || 'Бой',
@@ -87,6 +127,9 @@ CC.Battle = (function () {
       campaign: o.kind === 'campaign',
       // Просмотр повтора набега: бой идёт сам, управление выключено.
       viewReplay: !!o.viewReplay,
+      // Баланс-инструмент: применить уровни войск без «настоящей» кампании,
+      // чтобы не трогать прогресс игрока. Обычный бой поле не использует.
+      useTroopLevels: !!o.useTroopLevels,
       deployPlan: Array.isArray(o.deployPlan) ? o.deployPlan.slice() : [],
       deployLog: [],
       deployedCount: 0,
@@ -108,11 +151,20 @@ CC.Battle = (function () {
     // Снимок армии на входе: по нему считаем, сколько войск израсходовано.
     S.armyStart = copyArmy(S.army);
 
-    // Герой приходит отдельным полем снимка. Максимум один за бой:
-    // даже испорченный снимок с hero: 99 даёт ровно одного Сержанта.
-    if (o.army && Number(o.army.hero) > 0 && TROOPS.hero) {
-      S.army.hero = 1;
+    // В бою герои приходят отдельным полем снимка. Каждый вид — максимум
+    // одна штука за бой; army.hero остаётся старым флагом совместимости.
+    // Арена передаёт только флаг (pvp.js), поэтому открытые виды добираем
+    // из деревни, не меняя формат снимка армии.
+    if (o.kind === 'pvp' && o.army && Number(o.army.hero) > 0 &&
+        CC.Game && CC.Game.heroBattleArmy) {
+      S.heroes = CC.Game.heroBattleArmy();
     }
+    if (TROOPS.hero) {
+      S.army.hero = S.heroes && Object.keys(S.heroes).length ? 1 : 0;
+    } else {
+      S.heroes = {};
+    }
+    if (!S.selectedHero) S.selectedHero = firstHeroKind();
 
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -176,10 +228,14 @@ CC.Battle = (function () {
         ? Math.min(CC.MAX_TH || 10, (Math.floor(idx / 10) + 1) * 2)
         : CC.Game.townhallLevel();
       army = onlyUnlocked(CC.Game.armySnapshot(true), armyTh);
-      // Герой идёт только в настоящий бой игрока: баланс-симулятор и
-      // предпросмотр чужой эпохи его не получают.
+      // Герои идут только в настоящий бой игрока: баланс-симулятор и
+      // предпросмотр чужой эпохи их не получают. Открытые виды считаем
+      // по общему уровню героев и уровню центра.
       if (!preview && hasVillage && heroAvailable(armyTh)) {
         army.hero = 1;
+        army.heroes = CC.Game.heroBattleArmy
+          ? CC.Game.heroBattleArmy(armyTh, CC.Game.heroLevel())
+          : { barb: 1 };
       }
     } else {
       army = Object.assign({}, CC.START_ARMY);
@@ -245,6 +301,7 @@ CC.Battle = (function () {
       limit: d.limit || CC.TIME_LIMIT,
       silent: !!d.silent,
       viewReplay: !!d.viewReplay,
+      useTroopLevels: !!d.useTroopLevels,
       deployPlan: d.deployPlan || []
     });
   }
@@ -1054,19 +1111,38 @@ CC.Battle = (function () {
     return n;
   }
 
+  // Живые герои в бою. S.hero остаётся ссылкой на первого из них для
+  // старых тестов и рендера; способность работает, пока жив хоть один.
+  function aliveHeroes() {
+    const out = [];
+    if (!S) return out;
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (u.isHero && u.hp > 0) out.push(u);
+    }
+    return out;
+  }
+
   // Поля для рендера и панели: живой герой, остаток щита 0..1 и готовность
-  // способности. Щит тратится один раз за бой, после смерти героя — нет.
+  // способности. Щит общий: тратится один раз за бой, после смерти всех
+  // героев способность больше не доступна.
   function syncHeroState() {
     if (!S) return;
 
-    const h = S.hero;
-    const alive = !!(h && h.hp > 0 && S.units.indexOf(h) !== -1);
-    if (!alive && h) S.hero = null;
+    const heroes = aliveHeroes();
+    S.hero = heroes.length ? heroes[0] : null;
+    S.heroDeployed = heroes.length > 0 || S.heroDeployed;
 
     const dur = Math.max(0.01, Number(HERO.ability && HERO.ability.duration) || 3);
-    const left = alive ? Math.max(0, h.shieldUntil - S.time) : 0;
+    let left = 0;
+    for (let i = 0; i < heroes.length; i++) {
+      const h = heroes[i];
+      if (h.shieldUntil > S.time) {
+        left = Math.max(left, h.shieldUntil - S.time);
+      }
+    }
     S.heroShield = Math.min(1, left / dur);
-    S.abilityReady = alive && !S.abilityUsed && !S.over;
+    S.abilityReady = heroes.length > 0 && !S.abilityUsed && !S.over;
   }
 
   function heroShielded(u) {
@@ -1074,32 +1150,39 @@ CC.Battle = (function () {
   }
 
   // Способность «Щит»: 3 секунды неуязвимости всем союзным юнитам в радиусе
-  // 2.5 тайла от героя, включая самого героя. Один раз за бой.
+  // 2.5 тайла от активировавшего героя; все живые герои получают щит всегда.
+  // Один раз за бой, активируется любым живым героем.
   function heroAbility() {
     if (!S) return { error: 'Бой не начат' };
     if (S.over) return { error: 'Бой окончен' };
 
-    const h = S.hero;
-    if (!h || h.hp <= 0) return { error: 'Герой не высажен' };
-    if (S.abilityUsed || h.abilityUsed) return { error: 'Щит уже использован' };
+    const heroes = aliveHeroes();
+    if (!heroes.length) return { error: 'Герой не высажен' };
+    if (S.abilityUsed) return { error: 'Щит уже использован' };
+
+    let h = null;
+    if (S.selectedHero) {
+      for (let i = 0; i < heroes.length; i++) {
+        if (heroes[i].heroKind === S.selectedHero) { h = heroes[i]; break; }
+      }
+    }
+    if (!h) h = heroes[0];
 
     const dur = Math.max(0.01, Number(HERO.ability && HERO.ability.duration) || 3);
     const radius = Math.max(0, Number(HERO.ability && HERO.ability.radius) || 2.5);
     const until = S.time + dur;
 
-    // Щит получает каждый живой союзник в радиусе, герой — всегда.
-    // Дальние юниты остаются без защиты: позиция в момент активации.
+    // Щит получает каждый живой союзник в радиусе и каждый герой.
+    // Дальние линейные юниты остаются без защиты: позиция в момент активации.
     const covered = [];
     for (let i = 0; i < S.units.length; i++) {
       const u = S.units[i];
       if (u.hp <= 0) continue;
       const d = u === h ? 0 : Math.hypot(u.x - h.x, u.y - h.y);
-      if (d > radius) continue;
+      if (!u.isHero && d > radius) continue;
       u.shieldUntil = until;
       covered.push(u.id);
     }
-    // Герой мог оказаться вне списка только при NaN-координатах.
-    h.shieldUntil = until;
 
     h.abilityUsed = true;
     S.abilityUsed = true;
@@ -1110,6 +1193,7 @@ CC.Battle = (function () {
       duration: dur,
       until: until,
       radius: radius,
+      heroId: h.id,
       covered: covered
     };
   }
@@ -1228,45 +1312,73 @@ CC.Battle = (function () {
         return { error: 'Откроется на ' + need + ' уровне центра' };
       }
     }
-    if (type === 'hero' && S.heroDeployed) {
-      return { error: 'Герой уже высажен' };
+    if (type === 'hero') {
+      const kind = S.selectedHero || firstHeroKind();
+      if (!kind || !S.heroes || !(S.heroes[kind] > 0)) {
+        return { error: 'Герой уже высажен' };
+      }
+    } else if (!S.army[type]) {
+      return { error: 'Эти войска закончились' };
     }
-    if (!S.army[type]) return { error: 'Эти войска закончились' };
 
     const d = TROOPS[type];
     const isHero = type === 'hero';
-    S.army[type]--;
+    let heroKind = null;
+    let heroDef = null;
+    let baseDef = d;
+    if (isHero) {
+      heroKind = S.selectedHero || firstHeroKind();
+      heroDef = CC.heroDef ? CC.heroDef(heroKind) : { id: heroKind, base: 'barb' };
+      baseDef = TROOPS[heroDef.base] || d;
+    } else {
+      S.army[type]--;
+    }
+    if (isHero) {
+      S.heroes[heroKind] = 0;
+      syncHeroFlag();
+    }
     // Повтор и headless-прогон ставят бойцов ровно в записанную клетку.
     const jitter = (S.headless || S.viewReplay) ? 0 : 0.3;
 
     // Уровень войск игрока действует только в его атаках (кампания и Арена).
     // Набег ИИ и headless-симуляции остаются на 1 уровне: пороги баланса
     // и сложность набегов не должны зависеть от прокачки игрока.
-    // Герой сильнее линейных войск и считается по своей линейной формуле.
+    // Герой считается по общему уровню и базовому войску.
     let mult = 1;
-    if (!S.headless && (S.kind === 'campaign' || S.kind === 'pvp') &&
-        CC.Game && CC.Game.troopMultiplier) {
+    if (!S.headless && (S.kind === 'campaign' || S.kind === 'pvp' ||
+        S.useTroopLevels) && CC.Game && CC.Game.troopMultiplier) {
       mult = CC.Game.troopMultiplier(type);
     }
     if (!isFinite(mult) || mult < 1) mult = 1;
 
-    let hp = d.hp * mult;
-    let dmg = d.dmg * mult;
+    let hp = baseDef.hp * mult;
+    let dmg = baseDef.dmg * mult;
     let heroLevel = 0;
     if (isHero) {
       heroLevel = CC.Game && CC.Game.heroLevel ? CC.Game.heroLevel() : 1;
       if (!(heroLevel >= 1)) heroLevel = 1;
-      const stats = CC.Game && CC.Game.heroStats
-        ? CC.Game.heroStats(heroLevel)
-        : { hp: d.hp, dmg: d.dmg };
+      const stats = CC.Game && CC.Game.heroStatsFor
+        ? CC.Game.heroStatsFor(heroKind, heroLevel)
+        : { hp: baseDef.hp, dmg: baseDef.dmg };
       hp = stats.hp;
       dmg = stats.dmg;
     }
 
+    // Герой рисуется как type 'hero' (художник получит heroKind), но
+    // скорость/дальность/цель/полёт берёт у базового войска.
+    const unitDef = isHero
+      ? Object.assign({}, baseDef, {
+        name: heroDef.name,
+        hero: true,
+        heroKind: heroKind,
+        color: heroDef.color || baseDef.color
+      })
+      : d;
+
     const unit = {
       id: S.uid++,
       type: type,
-      def: d,
+      def: unitDef,
       x: x + 0.5 + (Math.random() - 0.5) * jitter,
       y: y + 0.5 + (Math.random() - 0.5) * jitter,
       hp: hp,
@@ -1280,12 +1392,13 @@ CC.Battle = (function () {
 
     if (isHero) {
       unit.isHero = true;
+      unit.heroKind = heroKind;
+      unit.base = heroDef.base;
       unit.level = heroLevel;
       unit.shieldUntil = 0;
       unit.abilityUsed = false;
       S.hero = unit;
       S.heroDeployed = true;
-      S.abilityUsed = false;
     }
 
     S.units.push(unit);
@@ -1295,6 +1408,7 @@ CC.Battle = (function () {
     S.deployLog.push({
       t: Math.round(S.time * 100) / 100,
       type: type,
+      heroKind: heroKind,
       x: x,
       y: y
     });
@@ -1326,7 +1440,7 @@ CC.Battle = (function () {
       y = best.y;
     }
 
-    select(entry.type);
+    select(entry.type, entry.heroKind);
     const res = deploy(x + 0.5, y + 0.5);
     return !!(res && res.ok);
   }
@@ -1340,8 +1454,18 @@ CC.Battle = (function () {
     }
   }
 
-  function select(type) {
-    if (TROOPS[type]) S.selected = type;
+  function select(type, heroKind) {
+    if (type === 'hero') {
+      const kind = heroKind && CC.heroDef ? CC.heroDef(heroKind).id : null;
+      if (kind && (!S.heroes || !(kind in S.heroes))) return;
+      S.selected = 'hero';
+      S.selectedHero = kind || firstHeroKind() || 'barb';
+      return;
+    }
+    if (TROOPS[type]) {
+      S.selected = type;
+      S.selectedHero = firstHeroKind();
+    }
   }
 
   // Шаг «кисти» при зажатой ЛКМ/пальце. Решает, пора ли высаживать юнита:
@@ -1479,15 +1603,24 @@ CC.Battle = (function () {
       return {
         t: Math.max(0, Number(e.t) || 0),
         type: e.type,
+        heroKind: e.heroKind || null,
         x: Math.floor(Number(e.x) || 0),
         y: Math.floor(Number(e.y) || 0)
       };
     }).filter(function (e) { return !!TROOPS[e.type]; });
     log.sort(function (a, b) { return a.t - b.t; });
 
+    // Повтор должен высадить того же героя: собираем карту по логу.
+    const heroes = {};
+    log.forEach(function (e) {
+      if (e.type === 'hero') heroes[e.heroKind || 'barb'] = 1;
+    });
+    const army = Object.assign({}, d.army || {});
+    if (Object.keys(heroes).length) army.heroes = heroes;
+
     return start({
       buildings: rows,
-      army: d.army || {},
+      army: army,
       kind: 'replay',
       levelName: d.name || 'Повтор нападения',
       loot: { gold: 0, elixir: 0 },
@@ -1518,6 +1651,7 @@ CC.Battle = (function () {
       // в симуляцию он не попадает.
       const raidArmy = Object.assign({}, desc.army || {});
       delete raidArmy.hero;
+      delete raidArmy.heroes;
 
       const state = start({
         buildings: buildings,

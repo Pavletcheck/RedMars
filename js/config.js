@@ -247,8 +247,8 @@ CC.TROOP_UNLOCK = {
   goblin: 6,
   gnome: 8,
   airship: 10,
-  // Герой открывается отдельно от линейки войск — на TH5.
-  hero: 5
+  // Герой открывается отдельно от линейки войск — на TH2.
+  hero: 2
 };
 
 // Уровень центра, с которого открыт тип войск (0 — неизвестный тип).
@@ -275,19 +275,21 @@ CC.TROOP_LEVEL = {
 };
 
 /* ---------- герой «Сержант» ----------
-   Открывается с командного центра 5 уровня. Уровень героя 1..10, потолок
-   равен уровню центра (TH5 — 1..5, TH10 — 10). Прокачка идёт в отдельном
+   Открывается с командного центра 2 уровня. Уровень героя 1..10, потолок
+   равен уровню центра (TH2 — 1..2, TH10 — 10). Прокачка идёт в отдельном
    слоте ангара, строителей не занимает и не пересекается с исследованием
    войск. Цена считается до целевого уровня to (2..10):
      руда = 1600 × 2^(to − 2), округление до 100
    Время задано таблицей: 2 — 30 мин, 3 — 1 ч, 4 — 2 ч, 5 — 4 ч,
    6 — 6 ч, 7 — 8 ч, 8 — 12 ч, 9 — 16 ч, 10 — 24 ч.
-   HP и урон удваиваются за уровень: 1000 → 512 000 и 80 → 40 960 на L10.
-   Способность «Щит» — 3 секунды неуязвимости всем союзным юнитам в радиусе
-   2.5 тайла (включая героя), один раз за бой. Щит от множителей не зависит. */
+   Уровень общий для пяти героев: статы считает CC.Game.heroStatsFor()
+   от базового войска (HP = base.hp × 9 × 2^(L−1),
+   урон = base.dmg × 3.5 × 2^(L−1)).
+   Способность «Щит» — 3 секунды неуязвимости всем героям и союзникам
+   в радиусе 2.5 тайла, один раз за бой. Щит от множителей не зависит. */
 CC.HERO = {
   id: 'hero',
-  minTh: 5,
+  minTh: 2,
   maxLevel: 10,
   costBase: 1600,
   costGrowth: 2,
@@ -326,6 +328,53 @@ CC.HERO = {
     ) * 100;
   }
 })();
+
+/* ---------- пять героев ----------
+   Каждый герой — отдельная карточка, но уровень у всех общий (heroLevel,
+   Академия). Герой открыт, когда уровень центра дошёл до minTh и общий
+   уровень героев уже получен. base — базовое войско: от него берутся
+   скорость, дальность, тип цели и полёт, а HP/урон считает
+   CC.Game.heroStatsFor(kind, level). Портрет — из найма. */
+CC.HEROES = [
+  {
+    id: 'barb', base: 'barb', name: 'Сержант', role: 'Штурмовик',
+    minTh: 2, portrait: 'assets/portraits/barb.png'
+  },
+  {
+    id: 'archer', base: 'archer', name: 'Снайпер', role: 'Лазерщик',
+    minTh: 4, portrait: 'assets/portraits/archer.png'
+  },
+  {
+    id: 'giant', base: 'giant', name: 'Мех-командир', role: 'Мех',
+    minTh: 6, portrait: 'assets/portraits/giant.png'
+  },
+  {
+    id: 'goblin', base: 'goblin', name: 'Главарь', role: 'Мародёр',
+    minTh: 8, portrait: 'assets/portraits/goblin.png'
+  },
+  {
+    id: 'airship', base: 'airship', name: 'Пилот', role: 'Дрон',
+    minTh: 10, portrait: 'assets/portraits/airship.png'
+  }
+];
+
+CC.HEROES.forEach(function (h) {
+  h.ability = CC.HERO.ability;
+});
+
+// Герой по идентификатору. Неизвестный id (старый сейв) — это «Сержант».
+CC.heroDef = function (kind) {
+  const id = String(kind || 'barb');
+  for (let i = 0; i < CC.HEROES.length; i++) {
+    if (CC.HEROES[i].id === id) return CC.HEROES[i];
+  }
+  return CC.HEROES[0];
+};
+
+CC.heroesAt = function (th) {
+  const t = Math.max(0, Math.floor(Number(th) || 0));
+  return CC.HEROES.filter(function (h) { return t >= h.minTh; });
+};
 
 /* Стартовая армия: новый игрок начинает без войск, ангар выдаётся
    обучением Сержанта. Ноль во всех полях — база совместимости для
@@ -695,7 +744,7 @@ CC.REQUIREMENTS = {
   ambush: { minTh: 7 },
   beam: { minTh: 9 },
   lab: { minTh: 2 },
-  herohall: { minTh: 5 }
+  herohall: { minTh: 2 }
 };
 
 CC.MAX_TH = 10;
@@ -762,9 +811,11 @@ function ccWallRing(x0, y0, x1, y1, gaps) {
   return out;
 }
 
-/* ---------- генератор 50 уровней ----------
+/* ---------- генератор 100 уровней ----------
    Уровень задаётся номером и seed; раскладка строится детерминированно,
-   поэтому в сейве достаточно индекса, а не 50 готовых массивов.
+   поэтому в сейве достаточно индекса, а не 100 готовых массивов.
+   Первые 50 уровней (эпохи 1–5) остаются прежними 1:1; новые эпохи 6–10
+   строятся тем же генератором с более плотной обороной и уровнями 6–10.
 
    База каждого уровня — не одно кольцо, а 2–3 компартмента: внешний
    энергобарьерный контур с широкими проходами на каждой стороне и
@@ -774,7 +825,7 @@ function ccWallRing(x0, y0, x1, y1, gaps) {
    хранилища убраны в глубину, ближе к центру. Ангар выносится наружу
    как приманка. */
 CC.LEVEL_SEED_BASE = 20261118;
-CC.LEVEL_ERAS = 5;
+CC.LEVEL_ERAS = 10;
 
 function ccLevelRng(seed) {
   let s = seed >>> 0;
@@ -789,7 +840,9 @@ function ccLevelRng(seed) {
 
 const CC_ERA_TITLES = [
   'Красные пески', 'Кратеры', 'Ледяные жилы',
-  'Разлом', 'Купол'
+  'Разлом', 'Купол',
+  'Пепельные равнины', 'Глубины', 'Орбитальный пояс',
+  'Стеклянная пустошь', 'Ядро'
 ];
 
 const CC_ERA_HINTS = [
@@ -797,8 +850,26 @@ const CC_ERA_HINTS = [
   'Держи мехов впереди, а лазерщиков — за ними',
   'Гаубица бьёт по площади: не собирай отряд в кучу',
   'Появился зенитный комплекс: дрон летит через барьеры, но боится его',
-  'Плотная крепость: вскрой энергобарьер, потом добивай центр'
+  'Плотная крепость: вскрой энергобарьер, потом добивай центр',
+  'Пепел скрывает вторую линию обороны: сначала снеси ПВО и плазму',
+  'Глубины давят уровнями: без прокачки войск и героев здесь не пройти',
+  'Орбитальный пояс простреливает подходы: раздели отряд и не лезь в центр',
+  'Стеклянная пустошь плавит броню: береги героев и вскрывай стены по очереди',
+  'Ядро — финал кампании: все башни L10, все ловушки и лучшая армия нужны целиком'
 ];
+
+// Цвета новых глав для карты: старые эпохи 1–5 заданы в style.css,
+// новые получают те же CSS-переменные inline, без правок стилей художника.
+CC.LEVEL_ERA_COLORS = [
+  null, null, null, null, null,
+  { rgb: '168, 150, 132', ink: '#ead9c6', glyph: '☲' },
+  { rgb: '58, 170, 190', ink: '#c9f5ff', glyph: '≈' },
+  { rgb: '142, 128, 255', ink: '#e0dbff', glyph: '✦' },
+  { rgb: '180, 235, 245', ink: '#f0ffff', glyph: '◇' },
+  { rgb: '255, 120, 72', ink: '#ffd7c2', glyph: '☢' }
+];
+
+CC.LEVEL_ERA_TITLES = CC_ERA_TITLES;
 
 /* Планы обороны по эпохам: [турель, лазерная вышка, гаубица, ПВО, плазма].
    Это верхняя граница; ниже counts дополнительно зажимаются CC.limitAt()
@@ -809,16 +880,21 @@ const CC_DEF_PLANS = [
   [3, 2, 1, 1, 0],
   [3, 2, 1, 1, 0],
   [3, 2, 2, 1, 1],
-  [5, 4, 2, 2, 1]
+  [5, 4, 2, 2, 1],
+  [6, 4, 3, 3, 2],
+  [7, 5, 4, 3, 2],
+  [8, 6, 4, 3, 2],
+  [8, 6, 5, 3, 2],
+  [8, 6, 5, 3, 2]
 ];
 
 /* Уровни обороны, стен и «отстающих» башен по эпохам. После перехода на
    удвоение HP/урона за уровень разница даже в одну ступень — это ×2,
-   поэтому кривая медленная: 1,1,1,2,2. Внутри эпохи сложность растёт
-   составом, а не уровнем. */
-const CC_DEF_LVLS = [1, 1, 2, 2, 2];
-const CC_WALL_LVLS = [1, 1, 1, 1, 1];
-const CC_TOWER_LVLS = [1, 1, 1, 1, 2];
+   поэтому первые пять эпох остаются на кривой 1,1,2,2,2. Новые эпохи
+   6–10 сразу идут на 6–10: это и есть их сложность. */
+const CC_DEF_LVLS = [1, 1, 2, 2, 2, 6, 7, 8, 9, 10];
+const CC_WALL_LVLS = [1, 1, 1, 1, 1, 6, 7, 8, 9, 10];
+const CC_TOWER_LVLS = [1, 1, 1, 1, 2, 6, 7, 8, 9, 10];
 
 
 function ccClamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
@@ -845,11 +921,15 @@ function ccShuffle(list, rnd) {
 CC.LevelGen = {
   level: function (index) {
     const i = Math.max(0, Math.floor(Number(index) || 0));
-    const era = Math.min(4, Math.floor(i / 10));
+    const era = Math.min(CC.LEVEL_ERAS - 1, Math.floor(i / 10));
     const within = i % 10;
-    const th = era + 1;
-    // Уровень центра, на который рассчитана эпоха: 2, 4, 6, 8, 10.
-    const capTh = Math.min(CC.MAX_TH || 10, (era + 1) * 2);
+    const finalLevel = i === CC.LEVEL_ERAS * 10 - 1;
+    // Первые пять эпох: TH1–5, лимит эпохи 2/4/6/8/10. Новые эпохи
+    // идут по TH6–10, но состав уже разрешён на полный TH10.
+    const th = era < 5 ? era + 1 : Math.min(CC.MAX_TH || 10, era + 1);
+    const capTh = era < 5
+      ? Math.min(CC.MAX_TH || 10, (era + 1) * 2)
+      : (CC.MAX_TH || 10);
     const seed = (CC.LEVEL_SEED_BASE + i * 7919) >>> 0;
     const rnd = ccLevelRng(seed);
     const occ = new Uint8Array(CC.GRID * CC.GRID);
@@ -896,8 +976,13 @@ CC.LevelGen = {
     function place(type, x, y, level) {
       if (!canPlace(type, x, y)) return false;
       const d = CC.BUILDINGS[type];
-      const lvl = ccClamp(Math.round(Number(level) || 1), 1,
-        ccLevelMax(type, capTh));
+      let maxLvl = ccLevelMax(type, capTh);
+      // Финал: все доступные обороны — строго L10, включая лазерные
+      // вышки, которым обычная кампания разрешает отставать на уровень.
+      if (finalLevel && CC_DEF_TYPES.indexOf(type) !== -1) {
+        maxLvl = Math.min(CC.MAX_TH || 10, 10);
+      }
+      const lvl = ccClamp(Math.round(Number(level) || 1), 1, maxLvl);
       mark(x, y, d.w || 1, d.h || 1);
       if (type !== 'wall' && !d.trap) {
         for (let yy = y; yy < y + (d.h || 1); yy++) {
@@ -913,9 +998,15 @@ CC.LevelGen = {
     /* ---------- внешнее кольцо и проходы ---------- */
 
     // Сторона растёт от эпохи к эпохе; на 36x36 с запасом для приманки.
-    const SIDE_RANGES = [[16, 17], [18, 19], [20, 21], [21, 22], [23, 24]];
+    // Эпохи 1–5 — прежние диапазоны; 6–10 — новые, не больше 32.
+    const SIDE_RANGES = [
+      [16, 17], [18, 19], [20, 21], [21, 22], [23, 24],
+      [24, 25], [25, 26], [26, 27], [28, 29], [30, 31]
+    ];
     const range = SIDE_RANGES[era];
     let side = range[0] + Math.floor(rnd() * (range[1] - range[0] + 1));
+    if (era >= 5 && within >= 8) side = Math.max(side, 31);
+    if (finalLevel) side = Math.min(32, CC.GRID - 4);
     if (side > CC.GRID - 4) side = CC.GRID - 4;
 
     let x0 = Math.round((CC.GRID - side) / 2) + (rnd() < 0.5 ? 0 : (rnd() < 0.5 ? -1 : 1));
@@ -946,6 +1037,7 @@ CC.LevelGen = {
     const wallLvl = CC_WALL_LVLS[era];
     let defLvl = CC_DEF_LVLS[era];
     const towerLvl = CC_TOWER_LVLS[era];
+    const advancedEra = era >= 5;
 
     // Точечное облегчение финала «Разлома»: после удвоения HP/урона
     // последние два сектора эпохи не добирали 50% разрушений. Снимаем
@@ -963,7 +1055,8 @@ CC.LevelGen = {
 
     // Энергобарьеры кампании — отдельный бюджет: обороняемая база должна
     // иметь замкнутый контур, даже если игроку на низком TH доступно меньше.
-    // Всего стен держим в пределах CC.LIMITS.wall (150).
+    // Первые пять эпох держат стены в бюджете CC.LIMITS.wall (150),
+    // новые эпохи могут доходить до 175: это кампания, не база игрока.
     ccWallRing(x0, y0, x1, y1, gaps).forEach(function (c) {
       place('wall', c[1], c[2], wallLvl);
     });
@@ -1205,9 +1298,13 @@ CC.LevelGen = {
     // Уровень держим ниже общего потолка, чтобы новые башни не ломали
     // кривую сложности, пока игрок только знакомится с типом.
     if (capTh >= 7) {
-      const ambushN = Math.min(CC.limitAt('ambush', capTh), capTh >= 10 ? 2 : 1);
-      const ambushLvl = Math.max(1, Math.min(ccLevelMax('ambush', capTh),
-        capTh >= 10 ? 2 : 1));
+      const ambushN = advancedEra
+        ? CC.limitAt('ambush', capTh)
+        : Math.min(CC.limitAt('ambush', capTh), capTh >= 10 ? 2 : 1);
+      const ambushLvl = advancedEra
+        ? Math.max(1, Math.min(ccLevelMax('ambush', capTh), defLvl))
+        : Math.max(1, Math.min(ccLevelMax('ambush', capTh),
+          capTh >= 10 ? 2 : 1));
       for (let k = 0; k < ambushN; k++) {
         // Засада — ближе к центру: её вскрывают уже внутри компартментов.
         if (!putInZone('ambush', ambushLvl, nextZone(), 'near')) {
@@ -1216,8 +1313,12 @@ CC.LevelGen = {
       }
     }
     if (capTh >= 9) {
-      const beamN = Math.min(CC.limitAt('beam', capTh), 1);
-      const beamLvl = Math.max(1, Math.min(ccLevelMax('beam', capTh), 1));
+      const beamN = advancedEra
+        ? CC.limitAt('beam', capTh)
+        : Math.min(CC.limitAt('beam', capTh), 1);
+      const beamLvl = advancedEra
+        ? Math.max(1, Math.min(ccLevelMax('beam', capTh), defLvl))
+        : Math.max(1, Math.min(ccLevelMax('beam', capTh), 1));
       for (let k = 0; k < beamN; k++) {
         if (!putInDepth('beam', beamLvl)) {
           putInZone('beam', beamLvl, nextZone(), 'far');
@@ -1260,8 +1361,9 @@ CC.LevelGen = {
 
     let ri = 0;
     const resPlaced = [];
+    const resLvl = advancedEra ? defLvl : 1;
     for (let c = 0; c < resCells.length && ri < resList.length; c++) {
-      if (place(resList[ri], resCells[c][0], resCells[c][1], 1)) {
+      if (place(resList[ri], resCells[c][0], resCells[c][1], resLvl)) {
         resPlaced.push([resCells[c][0], resCells[c][1]]);
         ri++;
       }
@@ -1269,7 +1371,7 @@ CC.LevelGen = {
     // Если в отсеках не хватило места, остаток кладём в любой свободный двор.
     for (; ri < resList.length; ri++) {
       const z = zones[ri % zones.length];
-      putInZone(resList[ri], 1, zones.indexOf(z), 'near');
+      putInZone(resList[ri], resLvl, zones.indexOf(z), 'near');
     }
 
     // Ангар: одна постройка снаружи как приманка, остальные — в отсеках.
@@ -1318,18 +1420,26 @@ CC.LevelGen = {
     // за CC.limitAt(); уровень ниже потолка, чтобы не ломать баланс.
     const trapPlan = {
       mine: capTh >= 2
-        ? Math.min(CC.limitAt('mine', capTh),
-          capTh >= 8 ? 4 : (capTh >= 6 ? 2 : (capTh >= 4 ? 2 : (within >= 8 ? 1 : 0))))
+        ? (advancedEra
+          ? CC.limitAt('mine', capTh)
+          : Math.min(CC.limitAt('mine', capTh),
+            capTh >= 8 ? 4 : (capTh >= 6 ? 2 : (capTh >= 4 ? 2 : (within >= 8 ? 1 : 0)))))
         : 0,
       spring: capTh >= 4
-        ? Math.min(CC.limitAt('spring', capTh), capTh >= 8 ? 2 : 1)
+        ? (advancedEra
+          ? CC.limitAt('spring', capTh)
+          : Math.min(CC.limitAt('spring', capTh), capTh >= 8 ? 2 : 1))
         : 0,
       airmine: capTh >= 5
-        ? Math.min(CC.limitAt('airmine', capTh), capTh >= 9 ? 2 : 1)
+        ? (advancedEra
+          ? CC.limitAt('airmine', capTh)
+          : Math.min(CC.limitAt('airmine', capTh), capTh >= 9 ? 2 : 1))
         : 0
     };
-    const trapLvl = Math.max(1, Math.min(ccLevelMax('mine', capTh),
-      capTh >= 8 ? 2 : 1));
+    const trapLvl = advancedEra
+      ? Math.max(1, Math.min(ccLevelMax('mine', capTh), defLvl))
+      : Math.max(1, Math.min(ccLevelMax('mine', capTh),
+        capTh >= 8 ? 2 : 1));
 
     // Проходы внешнего кольца — первые кандидаты: атакующий лезет именно туда.
     // В начале первой эпохи мины нет вовсе (знакомство), на последних двух
@@ -1361,11 +1471,25 @@ CC.LevelGen = {
       for (let k = 0; k < trapPlan[type]; k++) placeTrap(type);
     });
 
-    // Добыча растёт по эпохам и секторам.
-    const loot = {
-      gold: 300 + era * 900 + within * 80,
-      elixir: 200 + era * 650 + within * 60
-    };
+    // Добыча растёт по эпохам и секторам. Новые эпохи дают заметно больше:
+    // их оборона L6–L10 стоит затраченного времени.
+    const loot = advancedEra
+      ? {
+        gold: 300 + era * 1400 + within * 120,
+        elixir: 200 + era * 1100 + within * 100
+      }
+      : {
+        gold: 300 + era * 900 + within * 80,
+        elixir: 200 + era * 650 + within * 60
+      };
+
+    let levelName = CC_ERA_TITLES[era] + ' ' + (within + 1);
+    let levelHint = CC_ERA_HINTS[era] +
+      (era >= 3 && within >= 4 ? ' На этом уровне пригодятся дроны-бомбардировщики.' : '');
+    if (finalLevel) {
+      levelName += ' · Финал';
+      levelHint += ' Финал: нужна армия L10 и все пять героев.';
+    }
 
     return {
       id: i + 1,
@@ -1374,9 +1498,10 @@ CC.LevelGen = {
       th: th,
       // Лимиты, по которым собрана база: верхняя граница эпохи (2/4/6/8/10).
       limitTh: capTh,
-      name: CC_ERA_TITLES[era] + ' ' + (within + 1),
-      hint: CC_ERA_HINTS[era] +
-        (era >= 3 && within >= 4 ? ' На этом уровне пригодятся дроны-бомбардировщики.' : ''),
+      final: finalLevel,
+      boss: finalLevel,
+      name: levelName,
+      hint: levelHint,
       air: era >= 3 && within >= 4,
       loot: loot,
       layout: layout,
@@ -1389,7 +1514,8 @@ CC.LevelGen = {
 
   all: function () {
     const out = [];
-    for (let i = 0; i < 50; i++) out.push(CC.LevelGen.level(i));
+    const n = (CC.LEVEL_ERAS || 10) * 10;
+    for (let i = 0; i < n; i++) out.push(CC.LevelGen.level(i));
     return out;
   }
 };
@@ -1425,7 +1551,7 @@ CC.LIMITS_BY_TH = {
   estorage: [1, 2, 2, 2, 3, 3, 3, 3, 3, 3],
   barracks: [1, 1, 2, 2, 3, 3, 4, 4, 4, 4],
   lab: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  herohall: [0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+  herohall: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 };
 
 // Лимит типа на конкретном уровне центра (кривое th не ломает счёт).
@@ -1462,7 +1588,7 @@ CC.LIMITS = {
 
 /* Состав кампании: вражеские базы могут быть богаче игрока. Фиксируем
    прежние лимиты ресурсных построек, чтобы снижение лимитов игрока
-   (5 буров и 3 склада) не меняло 50 уровней и баланс боёв. */
+   (5 буров и 3 склада) не меняло 100 уровней и баланс боёв. */
 CC.CAMPAIGN_RES_LIMITS = {
   goldmine: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
   elixir: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
@@ -1478,7 +1604,7 @@ CC.campaignResLimitAt = function (type, th) {
   return row[i] || 0;
 };
 
-/* 50 уровней строятся после таблицы лимитов: генератор сверяется с
+/* 100 уровней строятся после таблицы лимитов: генератор сверяется с
    CC.limitAt(), а для ресурсов кампании — с CC.campaignResLimitAt(). */
 CC.LEVELS = CC.LevelGen.all();
 

@@ -8379,6 +8379,11 @@ CC.Render = (function () {
       m.walking = false;
     }
 
+    // Инструментам нужен принудительный ракурс (линейка героев, контактный
+    // лист): сцена-чек и бой это поле не ставят.
+    if (typeof u.__dir === 'number' && isFinite(u.__dir)) {
+      m.dir = ((Math.round(u.__dir) % UNIT_DIRS) + UNIT_DIRS) % UNIT_DIRS;
+    }
     if (m.dir < 0) m.dir = u.type === 'airship' ? 2 : 4;
     m.x = u.x;
     m.y = u.y;
@@ -8717,6 +8722,284 @@ CC.Render = (function () {
      сенсоры, свечение визора и длинный плащ — силуэт читается сразу. */
   const HERO_RED = '#a8402f';
   const HERO_RED_DARK = '#712a21';
+
+  /* --- пять героев ---
+     Каждый рисуется как своё базовое войско, но на 12–16% крупнее и с
+     золото-бирюзовой аурой. h/w — итоговый силуэт для тени и HP-бара,
+     scale — масштаб базового арта, headY/headR и sh/shY — точки, куда
+     ложатся геройские акценты (визор, наплечник, кокпит). */
+  const HERO_KINDS = {
+    barb: {
+      base: 'barb', h: 27.4, w: 1.12, scale: 1.14,
+      cape: '#8f3a2a', capeDark: '#5b2317',
+      capeW: 0.34, capeHem: 0.07,
+      headY: -22.7, headR: 3.9, headForward: 0.4,
+      sh: 5.9, shY: -17.4
+    },
+    archer: {
+      base: 'archer', h: 25.1, w: 0.89, scale: 1.14,
+      cape: '#1d5f5c', capeDark: '#123c3a',
+      capeW: 0.29, capeHem: 0.30,
+      headY: -21.6, headR: 3.3, headForward: 0.4,
+      sh: 4.0, shY: -17.2
+    },
+    giant: {
+      base: 'giant', h: 41.0, w: 1.84, scale: 1.14,
+      cape: null, capeDark: null,
+      headY: -33.4, headR: 4.4, headForward: 0.2,
+      sh: 8.6, shY: -26.4
+    },
+    goblin: {
+      base: 'goblin', h: 19.4, w: 0.82, scale: 1.14,
+      cape: '#7a3a26', capeDark: '#4b2117',
+      capeW: 0.32, capeHem: 0.24,
+      headY: -15.4, headR: 3.4, headForward: 1.6,
+      sh: 4.2, shY: -10.9
+    },
+    airship: {
+      base: 'airship', h: 34.2, w: 1.42, scale: 1.14,
+      cape: null, capeDark: null,
+      headY: -30, headR: 3, headForward: 0,
+      sh: 0, shY: 0
+    }
+  };
+
+  function heroKindOf(u) {
+    if (!u || u.type !== 'hero') return '';
+    const k = u.heroKind;
+    return (typeof k === 'string' && HERO_KINDS[k]) ? k : '';
+  }
+
+  // Силуэт для тени, купола и HP-бара: у нового героя — по базовому войску,
+  // у старого героя без heroKind — прежний крупный сержант.
+  function unitSpecOf(u) {
+    if (u && u.type === 'hero') {
+      const k = heroKindOf(u);
+      if (k) return HERO_KINDS[k];
+    }
+    return (u && UNIT_SPEC[u.type]) || { h: 20, w: 1 };
+  }
+
+  // Общая аура: мягкое золото-бирюзовое свечение и кольцо на грунте.
+  // Рисуется до фигуры, поэтому не съедает контур и не мешает щиту.
+  function heroAura(ctx, q, cfg) {
+    const bh = cfg.h / cfg.scale;
+    const flying = cfg.base === 'airship';
+    const cy = -bh * (flying ? 0.84 : 0.54);
+    const glow = ctx.createRadialGradient(0, cy, 1, 0, cy, bh * 0.84);
+    glow.addColorStop(0, 'rgba(255,207,74,.16)');
+    glow.addColorStop(0.44, 'rgba(70,224,200,.10)');
+    glow.addColorStop(1, 'rgba(70,224,200,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.ellipse(0, cy, bh * 0.50, bh * 0.68, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (flying) {
+      // У дрона кольцо вокруг корпуса, а не на земле: иначе герой
+      // выглядит стоящим на посадочной площадке.
+      const rx = bh * 0.58;
+      const ry = bh * 0.24;
+      ctx.strokeStyle = 'rgba(255,207,74,.62)';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.ellipse(0, -30, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(70,224,200,.60)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(0, -30, rx * 0.78, ry * 0.78, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      spot(ctx, -rx * 0.88, -30, 0.8, PAL.gold);
+      spot(ctx, rx * 0.88, -30, 0.7, PAL.cold);
+      return;
+    }
+
+    const rx = Math.min(18, bh * 0.50);
+    // Ниже якоря в спрайте всего 12 px: у меха кольцо чуть приплюснуто,
+    // чтобы нижняя дуга не обрезалась канвой.
+    const ry = Math.max(3.2, Math.min(11.5, rx * GQ));
+    ctx.strokeStyle = 'rgba(255,207,74,.62)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.ellipse(0, 0.2, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(70,224,200,.58)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 0.2, rx * 0.76, ry * 0.76, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    spot(ctx, -rx * 0.86, 0.2, 0.8, PAL.gold);
+    spot(ctx, rx * 0.86, 0.2, 0.7, PAL.cold);
+  }
+
+  // Плащ героя: короткая накидка позади фигуры. У меха и дрона её нет.
+  function heroCape(ctx, q, cfg) {
+    if (!cfg.cape) return;
+    const bh = cfg.h / cfg.scale;
+    const half = bh * (cfg.capeW || 0.34);
+    // Плащ начинается у плеч, а не у шлема: иначе на фронтальном ракурсе
+    // он превращает голову в широкий прямоугольник. У снайпера и главаря
+    // он короче, чтобы читались ноги и оружие.
+    const top = cfg.shY - 1.2;
+    const hem = -bh * (cfg.capeHem == null ? 0.07 : cfg.capeHem);
+    const bx = -q.f.x * bh * 0.08;
+    const by = -q.f.y * bh * 0.05;
+    const sway = q.step * 0.9;
+
+    poly(ctx, [
+      { x: -q.p.x * half * 0.80 + bx, y: top + by },
+      { x: q.p.x * half * 0.80 + bx, y: top + by },
+      { x: q.p.x * half + bx + sway, y: hem + 1.2 },
+      { x: bx - q.p.x * 1.2 + q.f.x * 1.2, y: hem + 2.6 },
+      { x: -q.p.x * half + bx - sway * 0.7, y: hem + 0.5 }
+    ], cfg.cape);
+    poly(ctx, [
+      { x: -q.p.x * half * 0.38 + bx, y: top + by + 1.0 },
+      { x: q.p.x * half * 0.42 + bx, y: top + by + 1.0 },
+      { x: q.p.x * half * 0.56 + bx + sway * 0.6, y: hem + 0.2 },
+      { x: bx + q.p.x * 0.4 + q.f.x * 0.9, y: hem + 2.2 }
+    ], cfg.capeDark);
+    uBar(ctx, -q.p.x * half * 0.75 + bx, top + by + 0.6,
+      q.p.x * half * 0.75 + bx, top + by + 0.6, 0.8,
+      'rgba(255,207,74,.55)');
+  }
+
+  // Угловатый медный наплечник с золотой кромкой и бирюзовой заклёпкой.
+  // Пехоте хватает одного, ближнего: два круга читались бы как «уши».
+  function heroShoulder(ctx, q, cfg) {
+    if (!cfg.sh) return;
+    const r = Math.max(1.9, Math.min(3.8, cfg.sh * 0.42));
+    const two = cfg.base === 'giant' || cfg.base === 'barb';
+    const count = two ? 2 : 1;
+    for (let n = 0; n < count; n++) {
+      const s = two ? (n === 0 ? -1 : 1) : 1;
+      const near = s > 0;
+      const x = q.p.x * cfg.sh * s;
+      const y = cfg.shY + q.p.y * cfg.sh * s * 0.5;
+
+      ctx.fillStyle = 'rgba(6,9,12,.46)';
+      ctx.beginPath();
+      ctx.ellipse(x + 0.4, y + 0.8, r * 1.16, r * 0.9, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      poly(ctx, [
+        { x: x - r * 1.10, y: y + r * 0.35 },
+        { x: x - r * 0.70, y: y - r * 0.75 },
+        { x: x + r * 0.55, y: y - r * 0.95 },
+        { x: x + r * 1.10, y: y + r * 0.15 },
+        { x: x + r * 0.65, y: y + r * 0.90 },
+        { x: x - r * 0.55, y: y + r * 0.90 }
+      ], near ? '#96421f' : '#5e2b1a');
+
+      poly(ctx, [
+        { x: x - r * 0.70, y: y - r * 0.70 },
+        { x: x + r * 0.50, y: y - r * 0.90 },
+        { x: x + r * 0.98, y: y - r * 0.05 },
+        { x: x - r * 0.15, y: y - r * 0.10 }
+      ], near ? '#c46a3a' : '#7a3a26');
+
+      ctx.strokeStyle = near ? PAL.gold : 'rgba(196,106,58,.75)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(x - r * 0.70, y - r * 0.70);
+      ctx.lineTo(x + r * 0.50, y - r * 0.90);
+      ctx.lineTo(x + r * 1.00, y - r * 0.05);
+      ctx.stroke();
+      spot(ctx, x + q.p.x * 0.3, y - r * 0.15, 0.55,
+        near ? PAL.cold : 'rgba(70,224,200,.4)');
+    }
+  }
+
+  // Визор/гребень у пехотных героев: золотая бровь и бирюзовая полоса.
+  function heroHeadAccent(ctx, q, cfg, kind) {
+    if (kind === 'giant' || kind === 'airship') return;
+    const hx = q.f.x * (cfg.headForward || 0.4) + q.p.x * q.step * 0.25;
+    const hy = cfg.headY;
+    const r = cfg.headR;
+    if (q.fy > -0.22) {
+      ctx.fillStyle = 'rgba(70,224,200,.26)';
+      ctx.beginPath();
+      ctx.ellipse(hx, hy + 0.1, r * 1.26, r * 0.74, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PAL.gold;
+      ctx.fillRect(hx - r * 0.9, hy - 0.35, r * 1.8, 0.7);
+      ctx.fillStyle = '#bafff5';
+      ctx.fillRect(hx - r * 0.64, hy - 0.12, r * 1.28, 0.65);
+      uBar(ctx, hx - 0.5, hy - r - 2.5, hx + 0.5, hy - r - 1.3, 0.9, PAL.gold);
+      spot(ctx, hx, hy - r - 2.7, 0.7, PAL.cold);
+    } else {
+      uBar(ctx, hx - r * 0.6, hy - 1.0, hx + r * 0.6, hy - 1.0, 0.8, PAL.gold);
+      spot(ctx, hx, hy - 1.8, 0.6, PAL.cold);
+    }
+  }
+
+  // Мех-командир: золотая рама кокпита и бирюзовое сердце.
+  function heroGiantAccent(ctx, q, cfg) {
+    ctx.strokeStyle = PAL.gold;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-5.8, -27.4, 11.6, 6.4, 1.5);
+    else ctx.rect(-5.8, -27.4, 11.6, 6.4);
+    ctx.stroke();
+    poly(ctx, [
+      { x: 0, y: -22.6 }, { x: 2.4, y: -20.2 },
+      { x: 0, y: -17.8 }, { x: -2.4, y: -20.2 }
+    ], PAL.cold);
+    spot(ctx, 0, -20.2, 0.9, PAL.gold);
+    uBar(ctx, -4.2, -30.4, 4.2, -30.4, 1.0, PAL.gold);
+    spot(ctx, -cfg.sh, cfg.shY, 0.8, PAL.cold);
+    spot(ctx, cfg.sh, cfg.shY, 0.8, PAL.cold);
+  }
+
+  // Пилот-дрон: золотая окантовка кокпита и полосы на крыльях.
+  function heroDroneAccent(ctx, q, cfg) {
+    const cy = -30;
+    const cx = q.f.x * 8;
+    const cyy = cy + q.f.y * 8 - 1;
+    ctx.strokeStyle = PAL.gold;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cyy, 4.1, 2.9, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    spot(ctx, cx, cyy, 2.6, 'rgba(70,224,200,.30)');
+    spot(ctx, cx, cyy, 1.5, PAL.cold);
+    spot(ctx, cx - 0.6, cyy - 0.6, 0.5, 'rgba(255,255,255,.85)');
+    for (let s = -1; s <= 1; s += 2) {
+      const ax = q.f.x * 2 + q.p.x * 11 * s;
+      const ay = cy + q.f.y * 2 + q.p.y * 11 * s;
+      const bx = q.f.x * 8 + q.p.x * 10 * s;
+      const by = cy + q.f.y * 8 + q.p.y * 10 * s;
+      uBar(ctx, ax, ay, bx, by, 0.9, 'rgba(255,207,74,.78)');
+    }
+    spot(ctx, q.f.x * 16, cy + q.f.y * 16, 1.2, PAL.gold);
+  }
+
+  // Герой-«базовое войско»: аура → плащ → фигура → золото/бирюза.
+  function artHeroKind(ctx, q, kind) {
+    const cfg = HERO_KINDS[kind];
+    if (!cfg) return;
+    const baseType = cfg.base;
+    const def = CC.TROOPS[baseType] || {};
+    const color = def.color || PAL.wood;
+
+    ctx.save();
+    ctx.scale(cfg.scale, cfg.scale);
+    heroAura(ctx, q, cfg);
+    heroCape(ctx, q, cfg);
+
+    if (baseType === 'giant') artGiant(ctx, q, color);
+    else if (baseType === 'archer') artArcher(ctx, q, color);
+    else if (baseType === 'goblin') artGoblin(ctx, q, color);
+    else if (baseType === 'airship') artDrone(ctx, q, color);
+    else artBarb(ctx, q, color);
+
+    heroShoulder(ctx, q, cfg);
+    if (kind === 'giant') heroGiantAccent(ctx, q, cfg);
+    else if (kind === 'airship') heroDroneAccent(ctx, q, cfg);
+    else heroHeadAccent(ctx, q, cfg, kind);
+    ctx.restore();
+  }
 
   function artHero(ctx, q, color) {
     const lvl = Math.max(1, Math.min(10, Math.round(q.lvl || 1)));
@@ -9663,13 +9946,19 @@ CC.Render = (function () {
   }
 
   // Кисть художника: рисует юнита в локальных координатах (ступни в 0,0).
-  function paintUnitArt(ctx, type, dir, frame, lvl, u) {
+  function paintUnitArt(ctx, type, dir, frame, lvl, u, heroKind) {
     const q = unitPose(type, dir, frame, lvl, u);
-    const def = (u && u.def) || CC.TROOPS[type] || {};
+    const kind = type === 'hero'
+      ? (heroKind || heroKindOf(u))
+      : '';
+    const def = (u && u.def) ||
+      (kind && CC.TROOPS[kind]) || CC.TROOPS[type] || {};
     const color = def.color || PAL.wood;
 
-    if (type === 'hero') artHero(ctx, q, color);
-    else if (type === 'giant') artGiant(ctx, q, color);
+    if (type === 'hero') {
+      if (kind && HERO_KINDS[kind]) artHeroKind(ctx, q, kind);
+      else artHero(ctx, q, color);
+    } else if (type === 'giant') artGiant(ctx, q, color);
     else if (type === 'archer') artArcher(ctx, q, color);
     else if (type === 'goblin') artGoblin(ctx, q, color);
     else if (type === 'gnome') artGnome(ctx, q, color);
@@ -9678,16 +9967,21 @@ CC.Render = (function () {
   }
 
   // Спрайт: один раз печём выбранный кадр/направление и кладём в кэш.
-  function unitSprite(type, dir, frame, lvl) {
-    const key = type + '|' + lvl + '|' + dir + '|' + frame;
+  // Ключ героя включает heroKind: hero|barb|уровень|направление|кадр.
+  function unitSprite(type, heroKind, dir, frame, lvl) {
+    const kind = type === 'hero' &&
+      typeof heroKind === 'string' && HERO_KINDS[heroKind] ? heroKind : '';
+    const key = type + (kind ? '|' + kind : '') + '|' + lvl + '|' + dir + '|' + frame;
     const hit = unitSpriteCache.get(key);
     if (hit) { unitBakes.hits++; return hit; }
 
-    const hero = type === 'hero';
-    const aw = hero ? HERO_ARTW : U_ARTW;
-    const ah = hero ? HERO_ARTH : U_ARTH;
-    const ax = hero ? HERO_AX : U_AX;
-    const ay = hero ? HERO_AY : U_AY;
+    // Старый герой без heroKind остаётся на своей крупной канве; новые
+    // герои рисуются в габаритах базового войска (с запасом под ауру).
+    const legacyHero = type === 'hero' && !kind;
+    const aw = legacyHero ? HERO_ARTW : U_ARTW;
+    const ah = legacyHero ? HERO_ARTH : U_ARTH;
+    const ax = legacyHero ? HERO_AX : U_AX;
+    const ay = legacyHero ? HERO_AY : U_AY;
 
     const w = aw * U_BAKE;
     const h = ah * U_BAKE;
@@ -9696,14 +9990,16 @@ CC.Render = (function () {
       const c = makeCanvas(w, h);
       const cx = c.getContext('2d');
       cx.setTransform(U_BAKE, 0, 0, U_BAKE, ax * U_BAKE, ay * U_BAKE);
-      paintUnitArt(cx, type, dir, frame, lvl, null);
+      paintUnitArt(cx, type, dir, frame, lvl, null, kind);
       sp = { canvas: c, ax: ax, ay: ay, w: aw, h: ah };
     } catch (e) {
       sp = null;
     }
 
-    // ограничиваем кэш: старые кадры не нужны после смены боя
-    if (unitSpriteCache.size >= 320) {
+    // ограничиваем кэш: старые кадры не нужны после смены боя.
+    // 384 ячейки держат пять героев (8 направлений × 4 кадра) и линейные
+    // войска, не раздувая память как безлимитный кэш.
+    if (unitSpriteCache.size >= 384) {
       const first = unitSpriteCache.keys().next().value;
       if (first !== undefined) unitSpriteCache.delete(first);
     }
@@ -9830,7 +10126,8 @@ CC.Render = (function () {
   // Размер купола по силуэту: герой остаётся крупным, линейные войска
   // получают сферу по росту, иначе штурмовик утонул бы в куполе героя.
   function shieldSize(spec, hero) {
-    // герой вырос в 1.5 раза: купол тоже, иначе шлем и наплечники торчат
+    // любой герой — и старый сержант, и пять новых видов — получает прежний
+    // крупный купол: он накрывает и фигуру, и ауру, и не зависит от heroKind
     if (hero) return { rx: 54, ry: 72 };
     const h = (spec && spec.h) || 20;
     const w = (spec && spec.w) || 1;
@@ -10078,8 +10375,13 @@ CC.Render = (function () {
 
   function drawUnit(ctx, u) {
     const p = P(u.x, u.y);
-    const spec = UNIT_SPEC[u.type] || { h: 20, w: 1 };
-    const def = u.def || CC.TROOPS[u.type] || {};
+    const spec = unitSpecOf(u);
+    const kind = heroKindOf(u);
+    // У героя-«базового войска» полёт, цвет и габариты берём у его вида:
+    // дрон-пилот должен летать, а мех — оставаться тяжёлым.
+    const def = kind
+      ? (CC.TROOPS[kind] || u.def || CC.TROOPS[u.type] || {})
+      : (u.def || CC.TROOPS[u.type] || {});
     const flying = def.fly === true;
     const lift = flying ? 22 : 0;
 
@@ -10129,7 +10431,9 @@ CC.Render = (function () {
     const sx = p.x + dirv.x * lunge;
     const sy = p.y - bob - lift + dirv.y * lunge;
 
-    const sp = spritesOn && tilePx <= 120 ? unitSprite(u.type, dir, frame, lvl) : null;
+    const sp = spritesOn && tilePx <= 120
+      ? unitSprite(u.type, u.heroKind, dir, frame, lvl)
+      : null;
     ctx.save();
     ctx.translate(sx, sy);
     ctx.scale(UNIT_DRAW_SCALE, UNIT_DRAW_SCALE);
@@ -10137,7 +10441,7 @@ CC.Render = (function () {
       ctx.drawImage(sp.canvas, -sp.ax, -sp.ay, sp.w, sp.h);
     } else {
       // векторный запасной путь: те же формы, без канвы (крупный зум и tools)
-      paintUnitArt(ctx, u.type, dir, frame, lvl, u);
+      paintUnitArt(ctx, u.type, dir, frame, lvl, u, kind);
     }
     ctx.restore();
 
@@ -10155,8 +10459,12 @@ CC.Render = (function () {
     // полоска здоровья — тонкая, только у раненых
     if (typeof u.maxHp === 'number' && u.hp < u.maxHp && u.maxHp > 0) {
       const ratio = Math.max(0, u.hp / u.maxHp);
-      const w = (hero ? 30 : (u.type === 'giant' || flying ? 18 : 13)) * 1.12;
-      const y = p.y - bob - lift - spec.h * UNIT_DRAW_SCALE - (hero ? 18 : 4);
+      // У новых героев полоска пропорциональна силуэту: у главаря она
+      // не шире самого героя и не висит на пол-экрана выше головы.
+      const barW = hero ? Math.max(16, Math.min(30, spec.h * 0.72)) : 0;
+      const w = (hero ? barW : (u.type === 'giant' || flying ? 18 : 13)) * 1.12;
+      const y = p.y - bob - lift - spec.h * UNIT_DRAW_SCALE -
+        (hero ? Math.max(7, spec.h * 0.30) : 4);
 
       ctx.fillStyle = 'rgba(30,26,20,.45)';
       ctx.fillRect(p.x - w / 2 - 1, y - 1, w + 2, 3);
@@ -14055,7 +14363,7 @@ CC.Render = (function () {
       if (cardArtCache.has(key)) return cardArtCache.get(key);
 
       // кадр покоя, взгляд на зрителя (юг): лучший ракурс для карточки
-      const sp = unitSprite(type, 4, 0, lvl);
+      const sp = unitSprite(type, '', 4, 0, lvl);
       if (!sp || !sp.canvas) return null;
       const url = cardFit(sp.canvas, s);
       if (!url) return null;
@@ -14139,7 +14447,8 @@ CC.Render = (function () {
       };
     },
     // счётчики псевдо-3D спрайтов войск: сколько канв запечено и сколько
-    // обращений попало в готовый кэш. Ключ — тип|уровень|направление|кадр.
+    // обращений попало в готовый кэш. У героев ключ — тип|heroKind|уровень|
+    // направление|кадр, у остальных — тип|уровень|направление|кадр.
     __unitSprites: function () {
       return {
         bakes: unitBakes.count,

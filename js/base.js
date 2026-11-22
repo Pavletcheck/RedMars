@@ -610,9 +610,9 @@ CC.Game = (function () {
     timeFactor: 6, timeGrowth: 1.5,
     hpPerLevel: 2, dmgPerLevel: 2
   };
-  // Герой: открытие с TH5, HP/урон ×2 за уровень и отдельный слот прокачки.
+  // Герой: открытие с TH2, HP/урон ×2 за уровень и отдельный слот прокачки.
   const HERO = CC.HERO || {
-    id: 'hero', minTh: 5, maxLevel: 10,
+    id: 'hero', minTh: 2, maxLevel: 10,
     costBase: 1600, costGrowth: 2,
     hpBase: 1000, dmgBase: 80, hpPerLevel: 2, dmgPerLevel: 2,
     speed: 2, range: 1.2,
@@ -685,7 +685,7 @@ CC.Game = (function () {
       },
       achClaimed: {},
       // Награды за завершённые главы кампании: era → true. Одна платина
-      // на главу, всего пять. Старый сейв без поля читается как пустой.
+      // на главу, всего десять. Старый сейв без поля читается как пустой.
       chapterClaims: {},
       army: copyArmy(CC.START_ARMY),
       extract: {},
@@ -707,7 +707,7 @@ CC.Game = (function () {
       // строителей не занимает; старый сейв получает все уровни по 1.
       troopLevels: freshTroopLevels(),
       troopUp: null,
-      // Герой: 0 — ещё не открыт (TH ниже 5), 1..10 — уровень.
+      // Герой: 0 — ещё не открыт (TH ниже 2), 1..10 — уровень.
       // heroUp — отдельный слот прокачки, не связанный с troopUp.
       heroLevel: 0,
       heroUp: null,
@@ -2474,15 +2474,15 @@ CC.Game = (function () {
 
   /* ---------- герой ---------- */
 
-  // Потолок героя = уровень центра. До TH5 герой закрыт и max = 0.
+  // Потолок героя = уровень центра. До TH2 герой закрыт и max = 0.
   function heroMaxLevel(thLevel) {
     let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
     th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
-    if (th < (HERO.minTh || 5)) return 0;
+    if (th < (HERO.minTh || 2)) return 0;
     return Math.min(HERO.maxLevel || 10, th);
   }
 
-  // Текущий уровень героя. Старый сейв с TH5+ открывает его на 1 уровне.
+  // Текущий уровень героя. Старый сейв с TH2+ открывает его на 1 уровне.
   function heroLevel() {
     const th = townhallLevel();
     const max = heroMaxLevel(th);
@@ -2542,7 +2542,7 @@ CC.Game = (function () {
     settleHero(now);
 
     const th = townhallLevel();
-    const minTh = HERO.minTh || 5;
+    const minTh = HERO.minTh || 2;
     if (th < minTh) {
       const reason = 'Откроется с командного центра ' + minTh + ' уровня';
       return {
@@ -2576,7 +2576,7 @@ CC.Game = (function () {
     }
 
     // Прокачка героя — только в готовой академии героя. Сам герой в бою
-    // остаётся доступен по TH5 и без академии.
+    // остаётся доступен по TH2 и без академии.
     if (!hasHeroHall()) {
       const reason = 'Построй академию героя';
       return {
@@ -2700,30 +2700,90 @@ CC.Game = (function () {
     return true;
   }
 
-  // Характеристики героя по уровню: HP и урон удваиваются за уровень.
-  // L1 — 1000/80, L10 — 512 000/40 960. Щит считается отдельно и от
-  // множителей не зависит.
+  // Характеристики героя по уровню. Сохранено для совместимости: это
+  // «Сержант» (barb). Новый код зовёт heroStatsFor(kind, level).
   function heroStats(level) {
+    return heroStatsFor('barb', level);
+  }
+
+  // Общий для всех героев уровень открывает конкретный вид героя, если
+  // уровень центра дошёл до minTh. До первого уровня героев закрыты все.
+  function heroUnlocked(kind, thLevel, level) {
+    const hero = CC.heroDef ? CC.heroDef(kind) : HERO;
+    const th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    const lvl = typeof level === 'number' ? Math.floor(level) : heroLevel();
+    return th >= (hero.minTh || 2) && lvl >= 1;
+  }
+
+  // Список открытых видов героев в порядке CC.HEROES.
+  function heroKinds(thLevel, level) {
+    const th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    const lvl = typeof level === 'number' ? Math.floor(level) : heroLevel();
+    const out = [];
+    const list = CC.HEROES || [HERO];
+    for (let i = 0; i < list.length; i++) {
+      const h = list[i];
+      if (th >= (h.minTh || 2) && lvl >= 1) out.push(h.id);
+    }
+    return out;
+  }
+
+  // Снимок боевых героев: по одной штуке каждого открытого вида.
+  function heroBattleArmy(thLevel, level) {
+    const out = {};
+    const kinds = heroKinds(thLevel, level);
+    for (let i = 0; i < kinds.length; i++) out[kinds[i]] = 1;
+    return out;
+  }
+
+  // Статы героя: HP = base.hp × 9 × 2^(L−1), урон = base.dmg × 3.5 × 2^(L−1).
+  // Скорость, дальность, цель и полёт берутся у базового войска. Щит общий
+  // и от множителей не зависит.
+  function heroStatsFor(kind, level) {
+    const hero = CC.heroDef ? CC.heroDef(kind) : HERO;
+    const base = TROOPS[hero.base] || TROOPS.barb || {
+      hp: 110, dmg: 22, speed: 2, range: 1.2, target: 'any'
+    };
     const max = HERO.maxLevel || 10;
     let l = Math.floor(Number(level));
     if (!(l >= 1)) l = heroLevel() || 1;
     if (l > max) l = max;
 
     const mult = Math.pow(2, l - 1);
-    const hp = Math.round((HERO.hpBase || 1000) * mult);
-    const dmg = Math.round((HERO.dmgBase || 80) * mult);
+    const hp = Math.round((base.hp || 1000) * 9 * mult);
+    const dmg = Math.round((base.dmg || 80) * 3.5 * mult);
 
     return {
-      type: HERO.id || 'hero',
+      type: 'hero',
+      id: hero.id,
+      heroKind: hero.id,
+      base: hero.base,
+      name: hero.name,
+      role: hero.role,
+      portrait: hero.portrait,
       level: l,
       hp: hp,
       dmg: dmg,
-      speed: HERO.speed || 2,
-      range: HERO.range || 1.2,
+      speed: base.speed,
+      range: base.range,
+      target: base.target || 'any',
+      fly: !!base.fly,
+      splash: base.splash || 0,
+      space: 0,
+      minTh: hero.minTh,
+      unlocked: heroUnlocked(hero.id, undefined, l),
       max: heroMaxLevel(),
       maxAll: max,
       ability: HERO.ability || { name: 'Щит', duration: 3, uses: 1 }
     };
+  }
+
+  // Все герои для Академии и боевой панели: даже закрытые, чтобы UI мог
+  // показать замок «С центра N».
+  function heroList(level) {
+    const lvl = typeof level === 'number' ? level : heroLevel();
+    const list = CC.HEROES || [HERO];
+    return list.map(function (h) { return heroStatsFor(h.id, lvl); });
   }
 
   function takeHeroDone() {
@@ -4236,7 +4296,9 @@ CC.Game = (function () {
     if (d.chapterClaims && typeof d.chapterClaims === 'object') {
       for (const era in d.chapterClaims) {
         const n = Math.floor(num(era, -1));
-        if (n >= 0 && n < 5 && d.chapterClaims[era]) s.chapterClaims[n] = true;
+        if (n >= 0 && n < (CC.LEVEL_ERAS || 10) && d.chapterClaims[era]) {
+          s.chapterClaims[n] = true;
+        }
       }
     }
     s.lastSeen = num(d.lastSeen, Date.now());
@@ -4321,10 +4383,10 @@ CC.Game = (function () {
       };
     }
 
-    // Герой: старый сейв TH5+ открывает его на 1 уровне, TH ниже 5 — 0.
+    // Герой: старый сейв TH2+ открывает его на 1 уровне, TH ниже 2 — 0.
     // Потолок всегда по уровню центра; битые значения подрезаем.
     const heroTh = townhallFromSave(d);
-    const heroMax = heroTh >= (HERO.minTh || 5)
+    const heroMax = heroTh >= (HERO.minTh || 2)
       ? Math.min(HERO.maxLevel || 10, heroTh)
       : 0;
     let heroLvl = Math.floor(num(d.heroLevel, 0));
@@ -4708,7 +4770,7 @@ CC.Game = (function () {
       st.questsDone = QUESTS.map(function (q) { return q.id; });
     }
 
-    // Герой всегда согласован с текущим центром: на TH5+ он есть,
+    // Герой всегда согласован с текущим центром: на TH2+ он есть,
     // ниже — закрыт. Это же правило чинит сейв, где TH снесли/подняли.
     const heroMaxLoad = heroMaxLevel();
     if (heroMaxLoad <= 0) st.heroLevel = 0;
@@ -4906,6 +4968,11 @@ CC.Game = (function () {
     heroSpeedCost: heroSpeedCost,
     speedUpHero: speedUpHero,
     heroStats: heroStats,
+    heroStatsFor: heroStatsFor,
+    heroUnlocked: heroUnlocked,
+    heroKinds: heroKinds,
+    heroBattleArmy: heroBattleArmy,
+    heroList: heroList,
     takeHeroDone: takeHeroDone,
     builders: builders,
     hireBuilder: hireBuilder,
