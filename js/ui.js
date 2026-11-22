@@ -105,6 +105,7 @@ CC.UI = (function () {
   const battlePrepEl = document.getElementById('battle-prep');
   const battlePrepText = document.getElementById('battle-prep-text');
   const battlePrepSkip = document.getElementById('battle-prep-skip');
+  const hudSector = document.getElementById('hud-sector');
   const lvlChip = document.getElementById('lvl-chip');
   const levelPill = document.getElementById('level-pill');
   const levelBadge = document.getElementById('level-badge');
@@ -4535,6 +4536,8 @@ CC.UI = (function () {
     recruitOpen = true;
     cache.recruitSig = null;
     if (recruitEl) recruitEl.classList.remove('hidden');
+    // Окно найма перекрывает низ экрана: Сержант не должен выглядывать.
+    if (sergeantEl) sergeantEl.classList.add('hidden');
     if (recruitSub) {
       recruitSub.textContent = 'Армия ' + CC.Game.armyUsed() + '/' + CC.Game.capacity() +
         ' · очередь ' + CC.Game.queueStats().queued;
@@ -5564,6 +5567,23 @@ CC.UI = (function () {
     }
   }
 
+  // В бою игрок должен сразу понимать, где он: сектор кампании, арена
+  // или набег на базу. Бейдж живёт у верхнего края слева от таймера.
+  function syncSectorBadge() {
+    if (!hudSector) return;
+    if (CC.App.mode !== 'battle' || !CC.Battle.state) {
+      hudSector.classList.add('hidden');
+      return;
+    }
+    const S = CC.Battle.state;
+    let text;
+    if (S.kind === 'pvp') text = 'Арена';
+    else if (S.kind === 'raid') text = 'Набег';
+    else text = 'Сектор ' + ((S.level | 0) + 1);
+    if (hudSector.textContent !== text) hudSector.textContent = text;
+    hudSector.classList.remove('hidden');
+  }
+
   function syncBattle() {
     const S = CC.Battle.state;
     if (!S) return;
@@ -6126,9 +6146,15 @@ CC.UI = (function () {
   function syncSergeant() {
     if (!sergeantEl) return;
     const t = CC.Game.tutorial ? CC.Game.tutorial() : null;
+    // Панель выбранной постройки/ангар/лаборатория занимает низ экрана:
+    // Сержант уступает ей место, иначе перекрывает кнопки и текст.
+    // Устаревший id (после сброса базы) панелью не считается.
+    const hasSelection = !!(state.selected && CC.Base.list().some(function (b) {
+      return b.id === state.selected;
+    }));
     const show = !!(t && t.active && CC.App.mode === 'base' &&
       !loreOpen && !anyOverlayOpen() && !buildersOpen && !questOpen &&
-      !state.buildMode);
+      !hasSelection && !state.buildMode);
 
     if (!show) {
       sergeantEl.classList.add('hidden');
@@ -6152,7 +6178,15 @@ CC.UI = (function () {
       sergeantHint.classList.toggle('hidden', !sergeantMore || !t.hint);
     }
     if (sergeantGo) {
-      const label = t.primary || 'Поставить';
+      // Для тренировки зовём в найм, а не в «ангар»: игрок должен видеть
+      // тот же текст, что и на кнопке окна найма. «К центру» остаётся
+      // только у шагов, где центр действительно следующая цель.
+      let label = 'Поставить';
+      if (t.goal === 'train') label = 'Нанять войска';
+      else if (t.goal === 'battle' || t.goal === 'level1') label = 'В бой';
+      else if (t.goal === 'th2') label = 'К центру';
+      else if (t.goal === 'cannon2') label = 'К турели';
+      else label = t.primary || 'Поставить';
       if (sergeantGo.textContent !== label) sergeantGo.textContent = label;
     }
     if (sergeantNext) {
@@ -6921,6 +6955,7 @@ CC.UI = (function () {
     syncAchievements();
     syncArena();
     syncReplay();
+    syncSectorBadge();
     if (replaysOpen) renderReplayList();
     syncDaily();
     syncLore();
@@ -7463,6 +7498,7 @@ CC.UI = (function () {
     openRecruit: openRecruit,
     closeRecruit: closeRecruit,
     syncRecruit: syncRecruit,
+    syncSectorBadge: syncSectorBadge,
     isRecruitOpen: function () { return recruitOpen; },
     heroAbility: heroAbility,
     closeQuestHint: closeQuestHint,

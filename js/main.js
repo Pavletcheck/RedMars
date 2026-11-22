@@ -1074,12 +1074,12 @@ CC.CamMath = (function () {
      фиксированное число тайлов. Нормы ниже — только для запасного
      варианта без рамки (пустая база/тесты). */
   const DEFAULT_TILES = 13;
-  const MIN_TILE_PX = 40;    // дефолт деревни: крупно и читаемо, обзор — зум-аут
+  const MIN_TILE_PX = 46;    // дефолт деревни: крупно и читаемо, обзор — зум-аут
   const BATTLE_MIN_TILE_PX = 34; // дефолт боя: читаемо, края — панорамой
   const MAX_TILE_PX = 104;   // на мониторе не приближаем тайл сильнее
   const MIN_VISIBLE_Y = 4.5; // по высоте полосы — хотя бы 4.5 тайла
   const BASE_PAD = 1.5;      // отступ вокруг ядра построек в тайлах
-  const BASE_CORE_MAX = 12;  // максимум рамки: ядро + запас, без дальних стен
+  const BASE_CORE_MAX = 9;   // кадр по ядру: внешние склады/стены — панорамой
   // Мир в деревне и в бою опускается относительно фона. Небольшой сдвиг
   // поднимает базу из-под нижней панели, не уводя её под верхний HUD.
   const BASE_DROP = 0.04;
@@ -1226,7 +1226,14 @@ CC.CamMath = (function () {
       // На очень маленьких экранах (683×320) держим прежний минимум 30,
       // чтобы база не превращалась в один обрезанный кусок.
       const minTile = (w < 700 && h <= 360) ? 30 : MIN_TILE_PX;
-      let s = fitScaleFor(homeRect, w, bandH, topPad || 0, tw, th);
+      // Резерв сверху нужен маленькой базе (TH1), но большое ядро 8–9
+      // тайлов уже само упирается в полосу HUD. Поэтому для крупной
+      // рамки оставляем только четверть запаса: иначе TH4+ получает
+      // 50–55% ширины вместо целевых 60–65%.
+      const span = Math.min(homeRect.x1 - homeRect.x0, homeRect.y1 - homeRect.y0);
+      const padK = span <= 5 ? 1
+        : (span >= 9 ? 0.35 : 1 - (span - 5) * 0.1625);
+      let s = fitScaleFor(homeRect, w, bandH, (topPad || 0) * padK, tw, th);
       // Даже если база не влезает целиком, тайл на телефоне должен
       // оставаться читаемым и тапабельным. «Всё поле» — кнопка ◎.
       s = Math.max(s, minTile / tw);
@@ -1286,14 +1293,22 @@ CC.CamMath = (function () {
 
     cam.bandCenterY = bandTop + bandH / 2;
     cam.topPad = topPad;
-    // В деревне опускаем мир на 10% высоты; в бою держим базу между
-    // таймером и карточками без дополнительного сдвига.
-    cam.dropY = battle ? 0 : Math.max(0, Math.min(h * BASE_DROP, bandH * BASE_DROP_LIMIT));
+
+    cam.defaultZoom = defaultZoomFor(w, h, bandH, tw, th, fit, focus, homeRect, topPad);
+    // «Авто»-сдвиг вниз ограничен не только процентом, но и остатком
+    // полосы: иначе крупная база TH4+ уезжает под нижнее меню.
+    const autoZoom = clamp(cam.defaultZoom, MIN_ZOOM, MAX_ZOOM);
+    const autoHomeH = homeBox.h * fit * autoZoom;
+    // Без рамки (пустая база/тесты) остаётся прежний лимит полосы.
+    const dropRoom = homeRect
+      ? Math.max(0, (bandH - autoHomeH) / 2)
+      : bandH * BASE_DROP_LIMIT;
+    cam.dropY = battle ? 0
+      : Math.max(0, Math.min(h * BASE_DROP, bandH * BASE_DROP_LIMIT, dropRoom));
     cam.centerX = w / 2 - cam.centerWorldX * fit;
     cam.centerY = cam.bandCenterY - cam.centerWorldY * fit + cam.dropY;
 
-    cam.defaultZoom = defaultZoomFor(w, h, bandH, tw, th, fit, focus, homeRect, topPad);
-    // zoom = 0 — «авто»: ставим базовый вид под текущий экран
+    // zoom = 0 - «авто»: ставим базовый вид под текущий экран
     if (!cam.zoom || !isFinite(cam.zoom)) cam.zoom = cam.defaultZoom;
     cam.zoom = clamp(cam.zoom, MIN_ZOOM, MAX_ZOOM);
     cam.scale = fit * cam.zoom;

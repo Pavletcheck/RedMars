@@ -101,6 +101,19 @@ CC.Render = (function () {
     glass: '#7fe9ff'
   };
 
+  // Ролевые акценты: оборона — медь, экономика — золото/фиолет,
+  // армия — бирюза/сталь. Только детали, не основной объём.
+  const ACC = {
+    copper: '#c46a3a',
+    copperLight: '#e08b55',
+    copperDark: '#8e4126',
+    army: '#46e0c8',
+    armyDark: '#1f8f86',
+    econ: '#ffcf4a',
+    econDark: '#c99520',
+    violet: '#b04fe0'
+  };
+
   // высота построек и их окрас
   const LOOK = {
     townhall: { h: 40, rise: 17, wall: PAL.plaster, roof: PAL.roof, flag: PAL.gold, door: PAL.wood },
@@ -250,8 +263,8 @@ CC.Render = (function () {
       shade(cBase, -0.24));
   }
 
-  // мягкая тень под объёмом. При высоком солнце тень короче и шире:
-  // смещения сжаты по вертикали под новую камеру (54:44).
+  // мягкая тень под объёмом. Тёплое солнце сбоку: тень чуть длиннее,
+  // но размазана четырьмя слоями, без жёсткой кромки.
   function castShadow(ctx, x0, y0, x1, y1, k) {
     const s = k || 1;
     const A = P(x0, y0);
@@ -259,23 +272,29 @@ CC.Render = (function () {
     const C = P(x1, y1);
     const D = P(x0, y1);
 
-    ctx.fillStyle = 'rgba(60,28,14,.14)';
+    ctx.fillStyle = 'rgba(60,28,14,.13)';
     diamond(ctx,
-      { x: A.x + 7.6 * s, y: A.y + 7.4 * s * SHY }, { x: B.x + 7.6 * s, y: B.y + 7.4 * s * SHY },
-      { x: C.x + 7.6 * s, y: C.y + 7.4 * s * SHY }, { x: D.x + 7.6 * s, y: D.y + 7.4 * s * SHY });
+      { x: A.x + 8.4 * s, y: A.y + 8.6 * s * SHY }, { x: B.x + 8.4 * s, y: B.y + 8.6 * s * SHY },
+      { x: C.x + 8.4 * s, y: C.y + 8.6 * s * SHY }, { x: D.x + 8.4 * s, y: D.y + 8.6 * s * SHY });
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(60,28,14,.21)';
+    ctx.fillStyle = 'rgba(60,28,14,.15)';
     diamond(ctx,
-      { x: A.x + 3.2 * s, y: A.y + 3.7 * s * SHY }, { x: B.x + 3.2 * s, y: B.y + 3.7 * s * SHY },
-      { x: C.x + 3.2 * s, y: C.y + 3.7 * s * SHY }, { x: D.x + 3.2 * s, y: D.y + 3.7 * s * SHY });
+      { x: A.x + 3.6 * s, y: A.y + 4.1 * s * SHY }, { x: B.x + 3.6 * s, y: B.y + 4.1 * s * SHY },
+      { x: C.x + 3.6 * s, y: C.y + 4.1 * s * SHY }, { x: D.x + 3.6 * s, y: D.y + 4.1 * s * SHY });
     ctx.fill();
 
     // дальний мягкий хвост длинной тени
-    ctx.fillStyle = 'rgba(60,28,14,.07)';
+    ctx.fillStyle = 'rgba(60,28,14,.05)';
     diamond(ctx,
-      { x: A.x + 13 * s, y: A.y + 12.4 * s * SHY }, { x: B.x + 13 * s, y: B.y + 12.4 * s * SHY },
-      { x: C.x + 13 * s, y: C.y + 12.4 * s * SHY }, { x: D.x + 13 * s, y: D.y + 12.4 * s * SHY });
+      { x: A.x + 16 * s, y: A.y + 15 * s * SHY }, { x: B.x + 16 * s, y: B.y + 15 * s * SHY },
+      { x: C.x + 16 * s, y: C.y + 15 * s * SHY }, { x: D.x + 16 * s, y: D.y + 15 * s * SHY });
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(60,28,14,.026)';
+    diamond(ctx,
+      { x: A.x + 23 * s, y: A.y + 21 * s * SHY }, { x: B.x + 23 * s, y: B.y + 21 * s * SHY },
+      { x: C.x + 23 * s, y: C.y + 21 * s * SHY }, { x: D.x + 23 * s, y: D.y + 21 * s * SHY });
     ctx.fill();
   }
 
@@ -287,15 +306,15 @@ CC.Render = (function () {
     const D = P(x0, y1);
 
     // мягкая тень по краю
-    ctx.fillStyle = 'rgba(78,32,16,.2)';
+    ctx.fillStyle = 'rgba(78,32,16,.16)';
     diamond(ctx,
-      { x: A.x + 4.4, y: A.y + 3.7 * SHY }, { x: B.x + 4.4, y: B.y + 3.7 * SHY },
-      { x: C.x + 4.4, y: C.y + 3.7 * SHY }, { x: D.x + 4.4, y: D.y + 3.7 * SHY });
+      { x: A.x + 4.6, y: A.y + 4.0 * SHY }, { x: B.x + 4.6, y: B.y + 4.0 * SHY },
+      { x: C.x + 4.6, y: C.y + 4.0 * SHY }, { x: D.x + 4.6, y: D.y + 4.0 * SHY });
     ctx.fill();
-    ctx.fillStyle = 'rgba(78,32,16,.15)';
+    ctx.fillStyle = 'rgba(78,32,16,.10)';
     diamond(ctx,
-      { x: A.x + 7.7, y: A.y + 6.2 * SHY }, { x: B.x + 7.7, y: B.y + 6.2 * SHY },
-      { x: C.x + 7.7, y: C.y + 6.2 * SHY }, { x: D.x + 7.7, y: D.y + 6.2 * SHY });
+      { x: A.x + 8.4, y: A.y + 7.0 * SHY }, { x: B.x + 8.4, y: B.y + 7.0 * SHY },
+      { x: C.x + 8.4, y: C.y + 7.0 * SHY }, { x: D.x + 8.4, y: D.y + 7.0 * SHY });
     ctx.fill();
 
     // сам газон — на тон темнее поля
@@ -342,13 +361,15 @@ CC.Render = (function () {
      В игровом режиме нет неба и горизонта: база и бой стоят на
      бесконечной марсианской равнине. Экран заливается базовым цветом,
      поверх него под мировой трансформацией идёт бесшовная плитка
-     512×512. Она движется строго вместе с миром — без параллакса. */
+     1024×1024. Она движется строго вместе с миром — без параллакса.
+     Крупные пятна и трещины рисуются отдельным непериодическим слоем
+     по хэшу мировых клеток, поэтому повтор плитки не читается. */
 
   const bgCache = {
-    key: 'regolith-v1', canvas: null, pattern: null, patternCtx: null,
+    key: 'regolith-v2', canvas: null, pattern: null, patternCtx: null,
     paints: 0, pad: 0, shift: 0
   };
-  const BG_TILE = 512;
+  const BG_TILE = 1024;
 
   function paintRegolithTile(ctx) {
     const S = BG_TILE;
@@ -363,10 +384,13 @@ CC.Render = (function () {
         const ny = y / S * Math.PI * 2;
         for (let x = 0; x < S; x++) {
           const nx = x / S * Math.PI * 2;
-          const n = Math.sin(nx * 3 + 0.7) + Math.sin(ny * 4 + 1.1) +
-            Math.sin((nx + ny) * 5 + 2.3) + Math.sin((nx - ny) * 7 + 0.4) +
-            Math.sin(nx * 11 + ny * 9 + 1.8) * 0.5;
-          const v = Math.round(n * 1.5);
+          const n = Math.sin(nx * 5 + 0.7) + Math.sin(ny * 7 + 1.1) +
+            Math.sin(nx * 13 + ny * 11 + 2.3);
+          // микрозерно, тоже бесшовное по повтору — зависит только от x,y
+          let h = (x * 374761393 + y * 668265263) >>> 0;
+          h = ((h ^ (h >>> 13)) * 1274126177) >>> 0;
+          const grain = (((h >>> 16) & 255) / 255 - 0.5) * 2.4;
+          const v = Math.round(n * 1.7 + grain);
           const i = (y * S + x) * 4;
           d[i] = 180 + v;
           d[i + 1] = 85 + Math.round(v * 0.55);
@@ -392,15 +416,15 @@ CC.Render = (function () {
     }
 
     reseed(512047);
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 4; i++) {
       const cx = rnd() * S;
       const cy = rnd() * S;
-      const rx = 28 + rnd() * 88;
-      const ry = 9 + rnd() * 30;
+      const rx = 30 + rnd() * 55;
+      const ry = 10 + rnd() * 18;
       const rot = rnd() * 0.5;
       ctx.fillStyle = rnd() < 0.52
-        ? 'rgba(255,214,178,.04)'
-        : 'rgba(88,38,20,.055)';
+        ? 'rgba(255,214,178,.022)'
+        : 'rgba(88,38,20,.03)';
       wrap(function () {
         ctx.beginPath();
         ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
@@ -409,10 +433,10 @@ CC.Render = (function () {
     }
 
     // Мелкие камешки: низкий контраст, без ярких повторяющихся пятен.
-    for (let i = 0; i < 86; i++) {
+    for (let i = 0; i < 210; i++) {
       const cx = rnd() * S;
       const cy = rnd() * S;
-      const r = 0.8 + rnd() * 1.9;
+      const r = 0.8 + rnd() * 2.1;
       const ry = r * (0.55 + rnd() * 0.35);
       const rot = rnd() * Math.PI;
       ctx.fillStyle = rnd() < 0.55
@@ -427,7 +451,7 @@ CC.Render = (function () {
 
     // Трещины: короткие ломаные, тоже с обёрткой.
     ctx.lineCap = 'round';
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 18; i++) {
       const pts = [];
       let x = rnd() * S;
       let y = rnd() * S;
@@ -436,18 +460,18 @@ CC.Render = (function () {
       for (let k = 0; k < seg; k++) {
         pts.push({ x: x, y: y });
         a += (rnd() - 0.5) * 1.2;
-        const len = 4 + rnd() * 16;
+        const len = 5 + rnd() * 20;
         x += Math.cos(a) * len;
         y += Math.sin(a) * len;
       }
       wrap(function () {
-        ctx.strokeStyle = 'rgba(78,32,16,.18)';
+        ctx.strokeStyle = 'rgba(78,32,16,.16)';
         ctx.lineWidth = 0.8;
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
         ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,214,170,.07)';
+        ctx.strokeStyle = 'rgba(255,214,170,.06)';
         ctx.lineWidth = 0.5;
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y - 0.7);
@@ -457,13 +481,13 @@ CC.Render = (function () {
     }
 
     // Лёгкие следы техники.
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 22; i++) {
       const cx = rnd() * S;
       const cy = rnd() * S;
-      const len = 6 + rnd() * 20;
+      const len = 6 + rnd() * 26;
       const rot = rnd() * Math.PI;
       wrap(function () {
-        ctx.strokeStyle = 'rgba(255,218,178,.045)';
+        ctx.strokeStyle = 'rgba(255,218,178,.04)';
         ctx.lineWidth = 0.7;
         ctx.beginPath();
         ctx.moveTo(cx - Math.cos(rot) * len / 2, cy - Math.sin(rot) * len / 2);
@@ -481,7 +505,7 @@ CC.Render = (function () {
       const cx = c.getContext('2d');
       paintRegolithTile(cx);
       bgCache.canvas = c;
-      bgCache.key = 'regolith-v1';
+      bgCache.key = 'regolith-v2';
       bgCache.paints++;
     } catch (e) {
       bgCache.canvas = null;
@@ -514,17 +538,141 @@ CC.Render = (function () {
     bgCache.shift = 0;
   }
 
-  // Бесконечный грунт в мировых координатах: узор жёстко привязан к миру
-  // и движется вместе с камерой без параллакса.
+  // Детерминированный хэш для непериодического макро-слоя.
+  function macroRand(ix, iy, salt) {
+    let h = (ix * 374761393 + iy * 668265263 + salt * 1442695041) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+
+  // Крупные пятна, ветровые полосы и трещины поверх плитки. Они привязаны
+  // к мировым клеткам по хэшу, а не к тайлу 1024, поэтому при панораме
+  // рисунок не повторяется и не выдаёт сетку.
+  function drawRegolithMacro(ctx) {
+    const CELL = 420;
+    const far = lod === 0;
+    const ix0 = Math.floor(worldView.x0 / CELL) - 1;
+    const ix1 = Math.floor(worldView.x1 / CELL) + 1;
+    const iy0 = Math.floor(worldView.y0 / CELL) - 1;
+    const iy1 = Math.floor(worldView.y1 / CELL) + 1;
+    const aMul = far ? 0.65 : 1;
+
+    for (let iy = iy0; iy <= iy1; iy++) {
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const h0 = macroRand(ix, iy, 1);
+        const h1 = macroRand(ix, iy, 2);
+        const h2 = macroRand(ix, iy, 3);
+        const h3 = macroRand(ix, iy, 4);
+        const h4 = macroRand(ix, iy, 5);
+
+        // Одно крупное пятно на клетку, иногда второе поменьше.
+        const wx = (ix + 0.12 + h0 * 0.78) * CELL;
+        const wy = (iy + 0.12 + h1 * 0.78) * CELL;
+        const rx = (far ? 0.6 : 0.72) * (70 + h2 * 150);
+        const ry = rx * (GQ * (0.42 + h3 * 0.5));
+        const rot = h4 * Math.PI;
+        const light = h2 > 0.46;
+        const baseA = (0.027 + h3 * 0.028) * aMul;
+
+        // Три вложенных эллипса дают мягкую кромку без filter/blur.
+        ctx.fillStyle = light
+          ? 'rgba(226,166,116,' + baseA.toFixed(3) + ')'
+          : 'rgba(86,34,18,' + (baseA * 1.15).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.ellipse(wx, wy, rx, ry, rot, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = light
+          ? 'rgba(226,166,116,' + (baseA * 0.7).toFixed(3) + ')'
+          : 'rgba(86,34,18,' + (baseA * 0.75).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.ellipse(wx + rx * 0.08, wy - ry * 0.06, rx * 0.68, ry * 0.66,
+          rot + 0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (!far && h0 > 0.58) {
+          const wx2 = (ix + 0.15 + h4 * 0.7) * CELL + 120;
+          const wy2 = (iy + 0.18 + h2 * 0.68) * CELL + 90;
+          const rx2 = rx * 0.5;
+          ctx.fillStyle = light
+            ? 'rgba(84,34,18,' + (baseA * 0.7).toFixed(3) + ')'
+            : 'rgba(230,170,120,' + (baseA * 0.6).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.ellipse(wx2, wy2, rx2, rx2 * GQ * 0.55, rot + 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Ветровая полоса: длинный мягкий мазок в случайном направлении.
+        const hs = macroRand(ix, iy, 6);
+        if (!far && hs < 0.42) {
+          const sx = (ix + 0.2 + macroRand(ix, iy, 7) * 0.6) * CELL;
+          const sy = (iy + 0.2 + macroRand(ix, iy, 8) * 0.6) * CELL;
+          const sa = macroRand(ix, iy, 9) * Math.PI;
+          const sl = 75 + macroRand(ix, iy, 10) * 110;
+          const sw = 8 + macroRand(ix, iy, 11) * 13;
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(sa);
+          ctx.fillStyle = hs < 0.2
+            ? 'rgba(255,210,170,' + (0.014 * aMul).toFixed(3) + ')'
+            : 'rgba(76,30,16,' + (0.022 * aMul).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, sl, sw, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Трещина: редкая, длинная, с тёмным дном и светлой кромкой.
+        const hc = macroRand(ix, iy, 12);
+        if (!far && hc < 0.3) {
+          let cx = (ix + 0.1 + macroRand(ix, iy, 13) * 0.8) * CELL;
+          let cy = (iy + 0.1 + macroRand(ix, iy, 14) * 0.8) * CELL;
+          let a = macroRand(ix, iy, 15) * Math.PI * 2;
+          const seg = 3 + (hc < 0.12 ? 2 : 1);
+          const pts = [];
+          for (let k = 0; k < seg; k++) {
+            pts.push({ x: cx, y: cy });
+            a += (macroRand(ix, iy, 16 + k) - 0.5) * 1.1;
+            const len = 28 + macroRand(ix, iy, 20 + k) * 58;
+            cx += Math.cos(a) * len;
+            cy += Math.sin(a) * len;
+          }
+          ctx.strokeStyle = 'rgba(70,28,14,' + (0.16 * aMul).toFixed(3) + ')';
+          ctx.lineWidth = 1.3;
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,216,178,' + (0.055 * aMul).toFixed(3) + ')';
+          ctx.lineWidth = 0.7;
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y - 1);
+          for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y - 1);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // Бесконечный грунт в мировых координатах: тайлы кладём целыми мировыми
+  // пикселями с перекрытием, чтобы при дробном масштабе камеры не было
+  // волосяных швов. Поверх — непериодический макро-слой.
   function drawGroundTexture(ctx) {
-    const pattern = regolithPattern(ctx);
-    if (!pattern) return;
-    const x0 = worldView.x0 - 4;
-    const y0 = worldView.y0 - 4;
-    const w = worldView.x1 - worldView.x0 + 8;
-    const h = worldView.y1 - worldView.y0 + 8;
-    ctx.fillStyle = pattern;
-    ctx.fillRect(x0, y0, w, h);
+    const tile = ensureRegolithTile();
+    if (!tile) return;
+    const T = BG_TILE;
+    const overlap = 2;
+    const step = T - overlap;
+    const x0 = Math.floor((worldView.x0 - overlap) / step) * step;
+    const y0 = Math.floor((worldView.y0 - overlap) / step) * step;
+    const x1 = Math.ceil((worldView.x1 + overlap) / step) * step;
+    const y1 = Math.ceil((worldView.y1 + overlap) / step) * step;
+    for (let y = y0; y < y1; y += step) {
+      for (let x = x0; x < x1; x += step) {
+        ctx.drawImage(tile, x, y, T, T);
+      }
+    }
+    drawRegolithMacro(ctx);
   }
   /* ---------- земля ---------- */
 
@@ -1370,6 +1518,75 @@ CC.Render = (function () {
     }
   }
 
+  /* ---------- пыль и плиты под ядром базы ----------
+     Лёгкий тёплый ореол и несколько плоских плит у командного центра.
+     Рисуется только в деревне, поверх грунта и под постройками. */
+  function drawCoreApron(ctx, list) {
+    if (!list || !list.length) return;
+    let th = null;
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (!b || b.dead) continue;
+      if (b.type === 'townhall') { th = b; break; }
+    }
+    if (!th) return;
+
+    const p = P(th.x + th.w / 2, th.y + th.h / 2);
+    const R = TW * 3.5;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(1, GQ);
+    const g = ctx.createRadialGradient(0, 0, TW * 0.35, 0, 0, R);
+    g.addColorStop(0, 'rgba(255,196,148,.075)');
+    g.addColorStop(0.55, 'rgba(236,156,108,.035)');
+    g.addColorStop(1, 'rgba(236,156,108,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // плоские плиты по периметру пятна: не бросаются в глаза, но база
+    // перестаёт «плавать» на бесконечном грунте
+    const slabs = [
+      [th.x - 0.92, th.y + 0.12, 0.82, 0.72],
+      [th.x + th.w - 0.02, th.y + 0.15, 0.78, 0.68],
+      [th.x - 0.86, th.y + th.h - 0.12, 0.74, 0.64],
+      [th.x + th.w + 0.04, th.y + th.h - 0.08, 0.7, 0.62],
+      [th.x + 0.55, th.y + th.h + 0.04, 0.9, 0.66],
+      [th.x + 0.7, th.y - 0.62, 0.78, 0.58]
+    ];
+    for (let i = 0; i < slabs.length; i++) {
+      const s = slabs[i];
+      const a = P(s[0], s[1]);
+      const b = P(s[0] + s[2], s[1]);
+      const c = P(s[0] + s[2], s[1] + s[3]);
+      const d = P(s[0], s[1] + s[3]);
+      ctx.fillStyle = 'rgba(120,88,70,.20)';
+      diamond(ctx, a, b, c, d);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,224,190,.10)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    // пара тонких трещин у плит
+    ctx.strokeStyle = 'rgba(66,28,14,.20)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 2; i++) {
+      const a = P(th.x - 1.1 + i * 3.5, th.y + th.h + 0.5 + i * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(a.x - 16, a.y + 2);
+      ctx.lineTo(a.x - 2, a.y - 3);
+      ctx.lineTo(a.x + 12, a.y + 1);
+      ctx.stroke();
+    }
+  }
+
   /* ---------- боевые силуэты по краям арены ----------
      Пять крупных объектов вне игрового поля: обломки техники, скалы и
      мёртвые антенны. Печём каждый силуэт один раз в маленький canvas и
@@ -1605,6 +1822,16 @@ CC.Render = (function () {
         g.addColorStop(0.62, 'rgba(28,44,52,.015)');
         g.addColorStop(1, 'rgba(20,34,42,.07)');
         cx.fillStyle = g;
+        cx.fillRect(0, 0, view.w, view.h);
+
+        // тёплый контровой свет: мягкое пятно сверху-слева
+        const warm = cx.createRadialGradient(
+          view.w * 0.18, view.h * 0.08, 0,
+          view.w * 0.18, view.h * 0.08, Math.max(view.w, view.h) * 0.55);
+        warm.addColorStop(0, 'rgba(255,196,132,.055)');
+        warm.addColorStop(0.45, 'rgba(255,186,122,.02)');
+        warm.addColorStop(1, 'rgba(255,186,122,0)');
+        cx.fillStyle = warm;
         cx.fillRect(0, 0, view.w, view.h);
 
         const b = cx.createLinearGradient(0, view.h * 0.68, 0, view.h);
@@ -2687,6 +2914,27 @@ CC.Render = (function () {
     prism(ctx, hx0 - 0.06, hy0 - 0.06, hx1 + 0.06, hy1 + 0.06, H, 4,
       PAL.metalLight, PAL.metal, PAL.metalDark);
 
+    // бирюзовая полоса под крышей — армия/ангар читаются и на L10
+    patchPx(ctx, D, C, H, 0.1, 0.9, H - 2.2, H - 0.9, 'rgba(70,224,200,.32)');
+    patchPx(ctx, C, B, H, 0.1, 0.9, H - 2.2, H - 0.9, 'rgba(70,224,200,.24)');
+
+    // до 5 уровня крышу обводит бирюза — армия/ангар читаются отдельно
+    if (lvl < 5) {
+      const RA = P(hx0 - 0.06, hy0 - 0.06);
+      const RB = P(hx1 + 0.06, hy0 - 0.06);
+      const RC = P(hx1 + 0.06, hy1 + 0.06);
+      const RD = P(hx0 - 0.06, hy1 + 0.06);
+      ctx.strokeStyle = 'rgba(70,224,200,.55)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(RA.x, RA.y - H - 4);
+      ctx.lineTo(RB.x, RB.y - H - 4);
+      ctx.lineTo(RC.x, RC.y - H - 4);
+      ctx.lineTo(RD.x, RD.y - H - 4);
+      ctx.closePath();
+      ctx.stroke();
+    }
+
     // вентиляция на крыше
     const vx = P((hx0 + hx1) / 2, (hy0 + hy1) / 2);
     prism(ctx, hx0 + 0.62, hy0 + 0.2, hx0 + 0.98, hy0 + 0.44, H + 4, 5,
@@ -2989,26 +3237,28 @@ CC.Render = (function () {
     const turH = 2.6 + t * 5.4;
 
     prism(ctx, x0 + inset, y0 + inset, x1 - inset, y1 - inset, 0, baseH,
-      PAL.metalLight, PAL.metal, PAL.metalDark);
+      mix(PAL.metalLight, ACC.copperLight, 0.28),
+      mix(PAL.metal, ACC.copper, 0.32),
+      mix(PAL.metalDark, ACC.copperDark, 0.32));
 
     const topY = p.y - baseH;
 
     // нижняя юбка: со 2 уровня, растёт с массой
     if (L >= 2) {
-      ctx.fillStyle = PAL.metalDark;
+      ctx.fillStyle = mix(PAL.metalDark, ACC.copperDark, 0.42);
       ctx.beginPath();
       ctx.ellipse(p.x, topY + 1.6, plateRx * 0.94, plateRy * 0.86, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // верхняя плита-погон
-    ctx.fillStyle = PAL.metal;
+    ctx.fillStyle = mix(PAL.metal, ACC.copper, 0.18);
     ctx.beginPath();
     ctx.ellipse(p.x, topY, plateRx, plateRy, 0, 0, Math.PI * 2);
     ctx.fill();
     if (L >= 2) {
-      ctx.strokeStyle = L >= 9 ? PAL.gold : PAL.metalLight;
-      ctx.lineWidth = L >= 5 ? 1.4 : 1;
+      ctx.strokeStyle = ACC.copper;
+      ctx.lineWidth = L >= 5 ? 1.5 : 1.1;
       ctx.beginPath();
       ctx.ellipse(p.x, topY, plateRx * 0.9, plateRy * 0.9, 0, 0, Math.PI * 2);
       ctx.stroke();
@@ -3086,7 +3336,7 @@ CC.Render = (function () {
     ctx.fill();
 
     if (L >= 2) {
-      ctx.strokeStyle = L >= 5 ? PAL.gold : PAL.cold;
+      ctx.strokeStyle = ACC.copper;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.ellipse(p.x, ttTop, ringRx * 0.9, ringRy * 0.9, 0, 0, Math.PI * 2);
@@ -3197,6 +3447,31 @@ CC.Render = (function () {
     const by = mz.y - 0.6;
 
     barrel(ctx, bx, by, f.x, f.y, len, bw, L >= 9, L >= 10);
+
+    // медные хомуты на стволе: тёплый ролевой акцент обороны
+    ctx.strokeStyle = ACC.copper;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 2; i++) {
+      const q = 0.28 + i * 0.34;
+      const cx = bx + f.x * len * q;
+      const cy = by + f.y * len * q;
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * bw * 0.52, cy - ry * bw * 0.52);
+      ctx.lineTo(cx + rx * bw * 0.52, cy + ry * bw * 0.52);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = ACC.copperLight;
+    ctx.lineWidth = 0.8;
+    for (let i = 0; i < 2; i++) {
+      const q = 0.28 + i * 0.34;
+      const cx = bx + f.x * len * q;
+      const cy = by + f.y * len * q;
+      ctx.beginPath();
+      ctx.moveTo(cx - rx * bw * 0.52, cy - ry * bw * 0.52 - 0.8);
+      ctx.lineTo(cx + rx * bw * 0.52, cy + ry * bw * 0.52 - 0.8);
+      ctx.stroke();
+    }
 
     const ex = bx + f.x * len;
     const ey = by + f.y * len;
@@ -3313,24 +3588,27 @@ CC.Render = (function () {
     castShadow(ctx, x0, y0, x1, y1, 0.9);
 
     prism(ctx, x0 + 0.06, y0 + 0.06, x1 - 0.06, y1 - 0.06, 0, baseH,
-      PAL.stoneLight, PAL.stone, PAL.stoneDark);
+      mix(PAL.stoneLight, ACC.copperLight, 0.25),
+      mix(PAL.stone, ACC.copper, 0.24),
+      mix(PAL.stoneDark, ACC.copperDark, 0.25));
 
     // тонкая опора
     prism(ctx, x0 + 0.3, y0 + 0.3, x1 - 0.3, y1 - 0.3, baseH, H - baseH,
       PAL.metalLight, PAL.metal, PAL.metalDark);
 
-    // циановые кольца на опоре
+    // медные/золотые обоймы на опоре — тёплый акцент обороны
     if (lvl >= 2) {
       const k = lvl >= 4 ? 3 : 2;
       for (let i = 1; i <= k; i++) {
         const yy = p.y - baseH - (H - baseH) * i / (k + 1);
-        ctx.strokeStyle = 'rgba(70,224,200,.55)';
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(196,106,58,.85)';
+        ctx.lineWidth = 1.3;
         ctx.beginPath();
         ctx.ellipse(p.x, yy, 8, 8 * GQ, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
+    ring(ctx, p.x, p.y - baseH + 1, 10, 10 * GQ, ACC.copperDark, 1.2);
 
     // радиаторные рёбра
     if (lvl >= 4 && mid()) {
@@ -3416,7 +3694,7 @@ CC.Render = (function () {
       ctx.moveTo(bR.x, bR.y);
       ctx.lineTo(p.x + 7, p.y - H * 0.52);
       ctx.stroke();
-      ring(ctx, p.x, p.y - H + 2, 13, 13 * GQ, 'rgba(154,167,173,.7)', 1.3);
+      ring(ctx, p.x, p.y - H + 2, 13, 13 * GQ, ACC.copper, 1.3);
     }
 
     // 8: шпиль-антенна над линзой и боковой излучатель
@@ -3552,13 +3830,13 @@ CC.Render = (function () {
     poly(ctx, [
       { x: rx0 - 1.5, y: ry0 + 3 }, { x: rx1 - 1, y: ry1 + 3 },
       { x: rx1 + 6, y: ry1 + 5 }, { x: rx0 + 6, y: ry0 + 5 }
-    ], PAL.metalDark);
+    ], mix(PAL.metalDark, ACC.copperDark, 0.55));
     poly(ctx, [
       { x: rx0, y: ry0 + 1 }, { x: rx1 - 0.5, y: ry1 + 1 },
       { x: rx1 + 4.5, y: ry1 + 2.2 }, { x: rx0 + 4.5, y: ry0 + 2.2 }
-    ], shade(PAL.metal, -0.12));
+    ], mix(PAL.metal, ACC.copper, 0.35));
 
-    ctx.strokeStyle = PAL.metalDark;
+    ctx.strokeStyle = ACC.copperDark;
     ctx.lineWidth = 2.6;
     ctx.beginPath();
     ctx.moveTo(rx0, ry0);
@@ -3568,7 +3846,7 @@ CC.Render = (function () {
     ctx.stroke();
 
     // поперечины рамы: пусковая установка, а не просто палка
-    ctx.strokeStyle = PAL.metalLight;
+    ctx.strokeStyle = ACC.copperLight;
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     for (let i = 1; i <= 3; i++) {
@@ -3933,11 +4211,12 @@ CC.Render = (function () {
       }
     }
 
-    // котёл
+    // котёл — медь обороны
     const bY = p.y - baseH;
     const bowlH = 14;
     const rBot = 11;
     const rTop = 16;
+    const bowlCol = mix(PAL.metal, ACC.copper, 0.40);
 
     ctx.fillStyle = PAL.metalDark;
     ctx.beginPath();
@@ -3947,27 +4226,27 @@ CC.Render = (function () {
     poly(ctx, [
       { x: p.x - rBot, y: bY }, { x: p.x + rBot, y: bY },
       { x: p.x + rTop, y: bY - bowlH }, { x: p.x - rTop, y: bY - bowlH }
-    ], PAL.metal);
+    ], bowlCol);
 
     // объём котла
     poly(ctx, [
       { x: p.x - rBot, y: bY }, { x: p.x - rBot * 0.35, y: bY },
       { x: p.x - rTop * 0.35, y: bY - bowlH }, { x: p.x - rTop, y: bY - bowlH }
-    ], shade(PAL.metal, 0.16));
+    ], shade(bowlCol, 0.16));
 
     poly(ctx, [
       { x: p.x + rBot * 0.4, y: bY }, { x: p.x + rBot, y: bY },
       { x: p.x + rTop, y: bY - bowlH }, { x: p.x + rTop * 0.4, y: bY - bowlH }
-    ], shade(PAL.metal, -0.2));
+    ], shade(bowlCol, -0.2));
 
     // срез
-    ctx.fillStyle = PAL.metalLight;
+    ctx.fillStyle = mix(PAL.metalLight, ACC.copperLight, 0.3);
     ctx.beginPath();
     ctx.ellipse(p.x, bY - bowlH, rTop, rTop * GQ, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // светлый внутренний край среза
-    ctx.fillStyle = shade(PAL.metal, 0.3);
+    ctx.fillStyle = shade(bowlCol, 0.3);
     ctx.beginPath();
     ctx.ellipse(p.x, bY - bowlH + 0.5, rTop * 0.72, rTop * 0.72 * GQ, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -3978,12 +4257,12 @@ CC.Render = (function () {
     ctx.ellipse(p.x, bY - bowlH + 1, rTop * 0.42, rTop * 0.42 * GQ, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2+: железные обручи
+    // 2+: медные обручи
     const hoops = lvl >= 4 ? 2 : (lvl >= 2 ? 1 : 0);
     for (let i = 0; i < hoops; i++) {
       const hh = bowlH * (0.34 + i * 0.3);
       const rr = rBot + (rTop - rBot) * (hh / bowlH);
-      ctx.strokeStyle = PAL.dark;
+      ctx.strokeStyle = ACC.copperDark;
       ctx.lineWidth = 2.4;
       ctx.beginPath();
       ctx.ellipse(p.x, bY - hh, rr + 0.5, (rr + 0.5) * GQ, 0, 0, Math.PI * 2);
@@ -5298,6 +5577,9 @@ CC.Render = (function () {
   const HH_ROOF = '#6f7576';
   const HH_RED = '#a8402f';
   const HH_RED_DARK = '#712a21';
+  // Знамя академии — бирюза армии, красный остаётся только у статуи героя.
+  const HH_FLAG = '#2f8f8a';
+  const HH_FLAG_DARK = '#1d5f5c';
 
   // Мини-статуя Сержанта: плащ, песочная броня, золото, бирюзовый визор.
   function heroStatue(ctx, x, baseY, s, holo) {
@@ -5508,11 +5790,11 @@ CC.Render = (function () {
     // красные знамёна на крыше
     const flagX = L >= 2 ? mx0 + 0.55 : mx0 + 0.5;
     const fy = P(flagX, my1).y - baseH - H - 2.8;
-    banner(ctx, P(flagX, my1).x, fy, 13, 6, 9, HH_RED);
-    if (L >= 2) banner(ctx, P(flagX, my1).x + 1, fy - 11, 8, 4, 5, HH_RED_DARK);
+    banner(ctx, P(flagX, my1).x, fy, 13, 6, 9, HH_FLAG);
+    if (L >= 2) banner(ctx, P(flagX, my1).x + 1, fy - 11, 8, 4, 5, HH_FLAG_DARK);
     if (L >= 4) {
       const f2x = mx1 - 0.55;
-      banner(ctx, P(f2x, my1).x, fy, 12, 5.5, 8, HH_RED);
+      banner(ctx, P(f2x, my1).x, fy, 12, 5.5, 8, HH_FLAG);
     }
 
     // полотнища на фасаде: красный цвет читается даже на мелком тайле
@@ -5641,7 +5923,7 @@ CC.Render = (function () {
       patchPx(ctx, UD, UC, upperH, 0.9, 0.96, 1.2, upperH - 1.2, PAL.gold);
       banner(ctx, P(ux0 + 0.2, uy1).x,
         P(ux0 + 0.2, uy1).y - baseH - H - upperH - 1.8,
-        10, 5, 7, L >= 9 ? PAL.gold : HH_RED);
+        10, 5, 7, L >= 9 ? PAL.gold : HH_FLAG);
     }
 
     // 8: купол и прожекторы
@@ -5862,6 +6144,8 @@ CC.Render = (function () {
 
     // золотая жила по нижней кромке
     patchPx(ctx, D, C, h1, 0.08, 0.92, 1.2, 2.4, 'rgba(255,207,74,.5)');
+    // тонкий золотой пояс под крышкой — экономика читается и на L1
+    patchPx(ctx, D, C, h1, 0.08, 0.92, h1 - 2.6, h1 - 1.2, 'rgba(255,207,74,.42)');
 
     // открытый лоток на крыше: горка руды
     const t = P(x0 + 0.4, y0 + 0.32);
@@ -7021,6 +7305,7 @@ CC.Render = (function () {
 
     prism(ctx, x0 + 0.08, y0 + 0.08, x1 - 0.08, y1 - 0.08, 0, baseH,
       PAL.stoneLight, PAL.stone, PAL.stoneDark);
+    ring(ctx, p.x, p.y - baseH + 1, 12, 12 * GQ, ACC.copperDark, 1.5);
 
     // узкий ствол
     prism(ctx, x0 + 0.36, y0 + 0.36, x1 - 0.36, y1 - 0.36, baseH, H - baseH,
@@ -7045,7 +7330,9 @@ CC.Render = (function () {
     for (let i = 1; i <= bands; i++) {
       const yy = p.y - baseH - (H - baseH) * i / (bands + 1);
       const rad = 7.2 - i * 0.25;
-      ctx.strokeStyle = i === 1 && lvl >= 5 ? 'rgba(255,207,74,.75)' : 'rgba(70,224,200,.45)';
+      ctx.strokeStyle = i === 1
+        ? 'rgba(196,106,58,.8)'
+        : 'rgba(70,224,200,.45)';
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.ellipse(p.x, yy, rad, rad * GQ, 0, 0, Math.PI * 2);
@@ -7981,6 +8268,8 @@ CC.Render = (function () {
     // ширина полосы — по прежнему силуэту, чтобы тень не раздувалась
     hero: { h: 60, w: 1.56 }
   };
+  // На камере ~48° юниты чуть крупнее: иначе теряются на оранжевом поле.
+  const UNIT_DRAW_SCALE = 1.18;
 
   // полоски здоровья: цвет от травы к золоту и красному (10 ступеней)
   const HP_COLORS = (function () {
@@ -9820,17 +10109,20 @@ CC.Render = (function () {
       const sway = Math.sin(t * 1.25 + ((u.id || 0) * 1.7) % 6.283) * 1.4;
       ctx.fillStyle = 'rgba(34,52,24,.15)';
       ctx.beginPath();
-      ctx.ellipse(p.x + sway, p.y + 1, 13 * spec.w, 13 * spec.w * GQ, 0, 0, Math.PI * 2);
+      ctx.ellipse(p.x + sway, p.y + 1, 13 * spec.w * UNIT_DRAW_SCALE,
+        13 * spec.w * UNIT_DRAW_SCALE * GQ, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = 'rgba(34,52,24,.12)';
       ctx.beginPath();
-      ctx.ellipse(p.x + sway, p.y + 1, 8 * spec.w, 8 * spec.w * GQ, 0, 0, Math.PI * 2);
+      ctx.ellipse(p.x + sway, p.y + 1, 8 * spec.w * UNIT_DRAW_SCALE,
+        8 * spec.w * UNIT_DRAW_SCALE * GQ, 0, 0, Math.PI * 2);
       ctx.fill();
     } else {
+      const shR = 7.5 * spec.w * (spec.h / 24) * UNIT_DRAW_SCALE;
       ctx.fillStyle = 'rgba(34,52,24,.22)';
       ctx.beginPath();
       ctx.ellipse(p.x + dirv.x * lunge * 0.4, p.y,
-        7.5 * spec.w * (spec.h / 24), 7.5 * spec.w * (spec.h / 24) * GQ, 0, 0, Math.PI * 2);
+        shR, shR * GQ, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -9838,30 +10130,33 @@ CC.Render = (function () {
     const sy = p.y - bob - lift + dirv.y * lunge;
 
     const sp = spritesOn && tilePx <= 120 ? unitSprite(u.type, dir, frame, lvl) : null;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(UNIT_DRAW_SCALE, UNIT_DRAW_SCALE);
     if (sp) {
-      ctx.drawImage(sp.canvas, sx - sp.ax, sy - sp.ay, sp.w, sp.h);
+      ctx.drawImage(sp.canvas, -sp.ax, -sp.ay, sp.w, sp.h);
     } else {
       // векторный запасной путь: те же формы, без канвы (крупный зум и tools)
-      ctx.save();
-      ctx.translate(sx, sy);
       paintUnitArt(ctx, u.type, dir, frame, lvl, u);
-      ctx.restore();
     }
+    ctx.restore();
 
     // щит — только вектор, поверх спрайта и под полоской здоровья.
     // Купол получает любой свой живой юнит с активным shieldUntil.
     if (!u.dead) {
       const shield = unitShieldable(u) ? unitShieldPower(u) : 0;
       if (shield > 0.01) {
-        drawUnitShield(ctx, u, shield, p.y - lift - 3, spec, hero, flying);
+        drawUnitShield(ctx, u, shield, p.y - lift - 3,
+          { h: spec.h * UNIT_DRAW_SCALE, w: spec.w * UNIT_DRAW_SCALE },
+          hero, flying);
       }
     }
 
     // полоска здоровья — тонкая, только у раненых
     if (typeof u.maxHp === 'number' && u.hp < u.maxHp && u.maxHp > 0) {
       const ratio = Math.max(0, u.hp / u.maxHp);
-      const w = (hero ? 30 : (u.type === 'giant' || flying ? 18 : 13));
-      const y = p.y - bob - lift - spec.h - (hero ? 18 : 4);
+      const w = (hero ? 30 : (u.type === 'giant' || flying ? 18 : 13)) * 1.12;
+      const y = p.y - bob - lift - spec.h * UNIT_DRAW_SCALE - (hero ? 18 : 4);
 
       ctx.fillStyle = 'rgba(30,26,20,.45)';
       ctx.fillRect(p.x - w / 2 - 1, y - 1, w + 2, 3);
@@ -10624,21 +10919,75 @@ CC.Render = (function () {
       ctx.fill();
     }
 
-    // Сердцевина базы: один выпуклый контур по занятым клеткам. Мягкий
-    // тёмно-коричневый слой, поверх него стоят сами постройки.
-    ctx.globalAlpha = 0.20;
-    ctx.fillStyle = '#35130e';
-    if (geo.inner) {
-      ctx.fill(geo.inner);
-    } else if (geo.innerPoly && geo.innerPoly.length >= 6) {
-      ctx.beginPath();
-      ctx.moveTo(geo.innerPoly[0], geo.innerPoly[1]);
-      for (let i = 2; i < geo.innerPoly.length; i += 2) {
-        ctx.lineTo(geo.innerPoly[i], geo.innerPoly[i + 1]);
+    // Сердцевина базы: один выпуклый контур по занятым клеткам. Край мягкий:
+    // лёгкий blur + несколько вложенных проходов, чтобы тёмное пятно не
+    // выглядело наклейкой на грунте.
+    let cx0 = 0;
+    let cy0 = 0;
+    let cw = 0;
+    let ch = 0;
+    let hasBox = false;
+    if (geo.innerPoly && geo.innerPoly.length >= 6) {
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (let i = 0; i < geo.innerPoly.length; i += 2) {
+        const px = geo.innerPoly[i];
+        const py = geo.innerPoly[i + 1];
+        if (px < x0) x0 = px;
+        if (px > x1) x1 = px;
+        if (py < y0) y0 = py;
+        if (py > y1) y1 = py;
       }
-      ctx.closePath();
-      ctx.fill();
+      if (x1 > x0 && y1 > y0) {
+        cx0 = (x0 + x1) / 2;
+        cy0 = (y0 + y1) / 2;
+        cw = x1 - x0;
+        ch = y1 - y0;
+        hasBox = true;
+      }
     }
+
+    function fillInnerShape() {
+      if (geo.inner) {
+        ctx.fill(geo.inner);
+      } else if (geo.innerPoly && geo.innerPoly.length >= 6) {
+        ctx.beginPath();
+        ctx.moveTo(geo.innerPoly[0], geo.innerPoly[1]);
+        for (let i = 2; i < geo.innerPoly.length; i += 2) {
+          ctx.lineTo(geo.innerPoly[i], geo.innerPoly[i + 1]);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.save();
+    ctx.fillStyle = '#35130e';
+    if (hasBox && typeof ctx.filter === 'string') {
+      ctx.globalAlpha = 0.20;
+      ctx.filter = 'blur(' + Math.max(3, 9 / scale).toFixed(1) + 'px)';
+      fillInnerShape();
+      ctx.filter = 'none';
+    } else if (hasBox) {
+      // запасной путь без filter: расширенный и сжатый контуры
+      const passes = [
+        { k: 1.08, a: 0.045 },
+        { k: 1.0, a: 0.10 },
+        { k: 0.92, a: 0.06 }
+      ];
+      for (let i = 0; i < passes.length; i++) {
+        ctx.save();
+        ctx.globalAlpha = passes[i].a;
+        ctx.translate(cx0, cy0);
+        ctx.scale(passes[i].k, passes[i].k);
+        ctx.translate(-cx0, -cy0);
+        fillInnerShape();
+        ctx.restore();
+      }
+    } else {
+      ctx.globalAlpha = 0.18;
+      fillInnerShape();
+    }
+    ctx.restore();
 
     // Свободные клетки: без выбора — тихий статичный рисунок, с выбранным
     // войском — ярче и с пульсом (кроме prefers-reduced-motion).
@@ -10661,45 +11010,47 @@ CC.Render = (function () {
       ctx.fill();
     }
 
-    // Внешняя граница зоны: тёплое свечение + чёткая линия 2.8 screen px.
-    const edgeW = 2.8 / scale;
-    ctx.globalAlpha = 0.15 + (selected ? 0.04 * pulse : 0);
-    ctx.strokeStyle = '#ff5a32';
-    ctx.lineWidth = 8 / scale;
-    if (geo.border) {
-      ctx.stroke(geo.border);
-    } else {
-      const A = P(0, 0);
-      const B = P(G, 0);
-      const C = P(G, G);
-      const D = P(0, G);
-      ctx.beginPath();
-      ctx.moveTo(A.x, A.y);
-      ctx.lineTo(B.x, B.y);
-      ctx.lineTo(C.x, C.y);
-      ctx.lineTo(D.x, D.y);
-      ctx.closePath();
-      ctx.stroke();
+    // Внешняя граница зоны: широкая тёплая полоса 6.5 screen px, тёмная
+    // подложка и мягкое свечение. На оранжевом грунте читается сразу.
+    const edgeW = 6.5 / scale;
+    function strokeFieldBorder() {
+      if (geo.border) {
+        ctx.stroke(geo.border);
+      } else {
+        const A = P(0, 0);
+        const B = P(G, 0);
+        const C = P(G, G);
+        const D = P(0, G);
+        ctx.beginPath();
+        ctx.moveTo(A.x, A.y);
+        ctx.lineTo(B.x, B.y);
+        ctx.lineTo(C.x, C.y);
+        ctx.lineTo(D.x, D.y);
+        ctx.closePath();
+        ctx.stroke();
+      }
     }
 
-    ctx.globalAlpha = 0.92;
-    ctx.strokeStyle = '#ffb066';
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = 0.62;
+    ctx.strokeStyle = '#54180c';
+    ctx.lineWidth = 9.5 / scale;
+    strokeFieldBorder();
+
+    ctx.globalAlpha = 0.17 + (selected ? 0.05 * pulse : 0);
+    ctx.strokeStyle = '#ff5a32';
+    ctx.lineWidth = 17 / scale;
+    strokeFieldBorder();
+
+    ctx.globalAlpha = 0.96;
+    ctx.strokeStyle = '#ff6a36';
     ctx.lineWidth = edgeW;
-    if (geo.border) {
-      ctx.stroke(geo.border);
-    } else {
-      const A = P(0, 0);
-      const B = P(G, 0);
-      const C = P(G, G);
-      const D = P(0, G);
-      ctx.beginPath();
-      ctx.moveTo(A.x, A.y);
-      ctx.lineTo(B.x, B.y);
-      ctx.lineTo(C.x, C.y);
-      ctx.lineTo(D.x, D.y);
-      ctx.closePath();
-      ctx.stroke();
-    }
+    strokeFieldBorder();
+
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = '#ffc08a';
+    ctx.lineWidth = 1.8 / scale;
+    strokeFieldBorder();
 
     ctx.globalAlpha = 1;
   }
@@ -11418,6 +11769,94 @@ CC.Render = (function () {
   }
 
   /* ---------- кадр ---------- */
+
+  // Красный штандарт над вражеским центром: цель видно с первого кадра.
+  // Чистая декорация боя, состояние не меняет.
+  function drawEnemyStandard(ctx, S) {
+    if (!S || !S.buildings || !S.buildings.length) return;
+    let th = null;
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (!b || b.dead || b.type !== 'townhall') continue;
+      th = b;
+      break;
+    }
+    if (!th) return;
+
+    const lvl = levelOf(th);
+    const p = P(th.x + th.w / 2, th.y + th.h / 2);
+    const baseY = p.y - Math.min(crown(th, lvl), 96) + 20;
+    const topY = baseY - 46;
+    if (!pointVisible(p.x, p.y, 180)) return;
+
+    // мягкое красное свечение, чтобы флаг не терялся на закатном грунте
+    const glow = ctx.createRadialGradient(p.x + 10, topY + 10, 2,
+      p.x + 10, topY + 10, 34);
+    glow.addColorStop(0, 'rgba(255,88,64,.22)');
+    glow.addColorStop(1, 'rgba(255,88,64,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(p.x + 10, topY + 10, 34, 0, Math.PI * 2);
+    ctx.fill();
+
+    // древко
+    ctx.strokeStyle = '#241a16';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(p.x, baseY);
+    ctx.lineTo(p.x, topY - 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#b8c2c6';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 0.8, baseY);
+    ctx.lineTo(p.x - 0.8, topY - 1);
+    ctx.stroke();
+    spot(ctx, p.x, topY - 4, 2.2, PAL.gold);
+    spot(ctx, p.x - 0.5, topY - 4.4, 0.8, 'rgba(255,250,235,.85)');
+
+    // полотнище: красный стяг с золотой окантовкой и шевронами
+    const wave = Math.sin(t * 2.3) * 2.2;
+    const wave2 = Math.sin(t * 2.3 + 0.8) * 1.6;
+    const fL = p.x + 1;
+    const fR = p.x + 27 + wave;
+    const fTop = topY - 1;
+    const fBot = topY + 24;
+    ctx.fillStyle = '#c9342b';
+    ctx.strokeStyle = '#6d1712';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(fL, fTop);
+    ctx.lineTo(fR, fTop + 3 + wave2);
+    ctx.lineTo(fR - 3, fBot + wave2);
+    ctx.lineTo(fL, fBot);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255,207,74,.9)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(fL + 1, fTop + 3);
+    ctx.lineTo(fR - 3, fTop + 5.5 + wave2);
+    ctx.moveTo(fL + 1, fBot - 3);
+    ctx.lineTo(fR - 5, fBot - 1 + wave2);
+    ctx.stroke();
+
+    // пара золотых шевронов — «штандарт сектора» без текста
+    ctx.strokeStyle = PAL.gold;
+    ctx.lineWidth = 2.2;
+    ctx.lineJoin = 'round';
+    for (let k = 0; k < 2; k++) {
+      const yy = topY + 8 + k * 6;
+      ctx.beginPath();
+      ctx.moveTo(p.x + 7, yy + 4);
+      ctx.lineTo(p.x + 12, yy);
+      ctx.lineTo(p.x + 18, yy + 4);
+      ctx.stroke();
+    }
+  }
 
   function drawBuildingHp(ctx, b) {
     if (!(b.maxHp > 0) || b.hp >= b.maxHp) return;
@@ -12232,9 +12671,11 @@ CC.Render = (function () {
       drawShots(ctx, S);
       drawFx(ctx, S);
       drawParticles(ctx);
+      drawEnemyStandard(ctx, S);
     } else {
       const list = CC.Base.renderList();
       updateWalkers(1 / 60);
+      drawCoreApron(ctx, list);
       drawPlacement(ctx);
       drawExitDust(ctx);
       drawEntities(ctx, list, walkers.list.concat(troopExit.list));
