@@ -187,6 +187,13 @@ CC.UI = (function () {
   const infoClose = document.getElementById('info-close');
   const infoUpgradeBtn = document.getElementById('info-upgrade');
   const infoReason = document.getElementById('info-reason');
+  // Подробное окно исследования войск из лаборатории.
+  const researchEl = document.getElementById('research');
+  const researchBody = document.getElementById('research-body');
+  const researchX = document.getElementById('research-x');
+  const researchClose = document.getElementById('research-close');
+  const researchGo = document.getElementById('research-go');
+  const researchReason = document.getElementById('research-reason');
   const btnRestart = document.getElementById('btn-restart');
   const btnFinish = document.getElementById('btn-finish');
   // Кнопка способности героя в бою: 40+ px, горячая клавиша Q.
@@ -328,6 +335,9 @@ CC.UI = (function () {
   let replayEndShown = false;
   let infoOpen = false;        // подробное окно выбранной постройки
   let infoBound = false;
+  let researchOpen = false;    // окно исследования войск
+  let researchType = null;
+  let researchBound = false;
 
   const DRAG_PX = 9; // порог «это тап, а не перетаскивание»
 
@@ -727,6 +737,7 @@ CC.UI = (function () {
 
     selbar.addEventListener('click', onSelbarClick);
     bindInfo();
+    bindResearch();
     if (shopPrev) shopPrev.addEventListener('click', function () { scrollCarousel(shopGrid, -1); });
     if (shopNext) shopNext.addEventListener('click', function () { scrollCarousel(shopGrid, 1); });
     if (shopGrid) shopGrid.addEventListener('keydown', onCarouselKey);
@@ -914,6 +925,7 @@ CC.UI = (function () {
     closeBuilders();
     closeShop();
     closeInfo();
+    closeResearch();
     closeLevels();
     closeArena();
     closeDaily();
@@ -1701,7 +1713,7 @@ CC.UI = (function () {
   // не всплывали поверх кнопок модальных окон.
   function anyOverlayOpen() {
     if (shopOpen || levelsOpen || chapterOpen || recruitOpen || achOpen || dailyOpen || arenaOpen ||
-        replaysOpen || buyResOpen || buyPlatOpen || askState || infoOpen) return true;
+        replaysOpen || buyResOpen || buyPlatOpen || askState || infoOpen || researchOpen) return true;
     if (overlayShown) return true;
     if (replayEnd && !replayEnd.classList.contains('hidden')) return true;
     if (offlineEl && !offlineEl.classList.contains('hidden')) return true;
@@ -3724,6 +3736,13 @@ CC.UI = (function () {
 
     if (e.key !== 'Escape') return;
 
+    // Окно исследования войск закрывается раньше панелей базы.
+    if (researchOpen) {
+      closeResearch();
+      sync();
+      return;
+    }
+
     // Подробное окно постройки закрывается раньше остальных панелей.
     if (infoOpen) {
       closeInfo();
@@ -3811,6 +3830,7 @@ CC.UI = (function () {
     cache.qSpeed = null;
     cache.gems = null;
     cache.infoSig = null;
+    cache.researchSig = null;
   }
 
   function describe(type, s) {
@@ -4448,7 +4468,11 @@ CC.UI = (function () {
     if (cache.infoSig === sig) return;
     cache.infoSig = sig;
 
-    if (infoBody) infoBody.innerHTML = infoBodyHtml(it, s, up, maxLvl);
+    if (infoBody) {
+      const keepScroll = infoBody.scrollTop || 0;
+      infoBody.innerHTML = infoBodyHtml(it, s, up, maxLvl);
+      if (keepScroll && infoBody.scrollTop !== keepScroll) infoBody.scrollTop = keepScroll;
+    }
 
     if (infoUpgradeBtn) {
       infoUpgradeBtn.disabled = !!up.disabled;
@@ -4531,6 +4555,303 @@ CC.UI = (function () {
     return res;
   }
 
+  /* ---------- окно исследования войск ---------- */
+
+  function troopName(type) {
+    return (CC.TROOPS[type] || {}).name || 'Войско';
+  }
+
+  function troopSpaceText(type) {
+    const n = Math.max(1, Math.floor(Number((CC.TROOPS[type] || {}).space) || 1));
+    return n + ' ' + spaceWord(n);
+  }
+
+  // Состояние кнопки «Исследовать»: одна точка правды для окна и причины.
+  function researchState(type) {
+    const check = CC.Game.canUpgradeTroop(type);
+    const cost = check.cost || CC.Game.troopUpgradeCost(type);
+    const up = CC.Game.troopUpInfo();
+    let label = 'Исследовать';
+    let reason = '';
+
+    if (check.ok) {
+      label = 'Исследовать';
+      reason = '';
+    } else if (check.busy) {
+      label = 'Идёт исследование';
+      if (up && up.type !== type) {
+        reason = 'Сначала завершится: ' + (up.name || troopName(up.type)) +
+          ' ' + up.level + ' → ' + up.to + ' · осталось ' + formatTime(up.left);
+      } else if (up) {
+        reason = 'Это войско уже исследуется · осталось ' + formatTime(up.left);
+      } else {
+        reason = check.reason || 'Идёт другое исследование';
+      }
+    } else if (check.needLab) {
+      label = 'Нет лаборатории';
+      reason = 'Построй исследовательский центр';
+    } else if (check.reason === 'Максимальный уровень') {
+      label = 'Максимальный уровень';
+      reason = 'Достигнут максимальный уровень';
+    } else if (check.needTh) {
+      label = 'Нужен центр ' + check.needTh;
+      reason = 'Нужен командный центр ур. ' + check.needTh;
+    } else if (check.missing) {
+      label = 'Нет энергии';
+      reason = check.reason || 'Не хватает энергии';
+    } else if (check.needStorage) {
+      label = 'Склад мал';
+      reason = check.reason || 'Склад энергии мал';
+    } else if (check.locked) {
+      label = 'Откроется на TH ' + check.needTh;
+      reason = check.reason || 'Войско ещё не открыто';
+    } else {
+      reason = check.reason || 'Исследование недоступно';
+    }
+
+    return {
+      check: check, cost: cost, up: up,
+      label: label, reason: reason, disabled: !check.ok
+    };
+  }
+
+  function researchNextHtml(type, st, state) {
+    const maxAll = st.maxAll || (CC.TROOP_LEVEL && CC.TROOP_LEVEL.max) || 10;
+
+    if (st.level >= maxAll) {
+      return '<div class="info-max"><b>Максимальный уровень</b>' +
+        '<span>' + st.level + ' / ' + maxAll + ' — дальше исследовать нечего.</span></div>';
+    }
+
+    const cost = state.cost;
+    if (!cost) {
+      const need = state.check.needTh || (st.level + 1);
+      return '<div class="info-max"><b>Максимальный уровень для этого центра</b>' +
+        '<span>Нужен командный центр ур. ' + need + '.</span></div>';
+    }
+
+    const nextHp = Math.round((st.baseHp || 0) * (st.mult || 1) * 2);
+    const nextDmg = Math.round((st.baseDmg || 0) * (st.mult || 1) * 2);
+
+    return '<div class="info-next">' +
+      '<span class="info-next__tag">Ур. ' + st.level + ' → ' + (st.level + 1) + '</span>' +
+      '<div class="info-next__rows">' +
+        '<div class="info-next__row"><span>HP</span><b>' + fmtNum(st.hp) +
+          '</b><i>→</i><b class="info-next__up">' + fmtNum(nextHp) + '</b></div>' +
+        '<div class="info-next__row"><span>Урон</span><b>' + fmtNum(st.dmg) +
+          '</b><i>→</i><b class="info-next__up">' + fmtNum(nextDmg) + '</b></div>' +
+      '</div>' +
+      '<p class="info-next__price">⚡ ' + fmtNum(cost.elixir) + ' · ' +
+        formatTime(cost.time) + '</p>' +
+    '</div>';
+  }
+
+  function researchLabHtml(lab, state) {
+    const up = state.up;
+    const speed = up ? CC.Game.troopSpeedCost() : null;
+    const gems = CC.Game.gems();
+    const factor = lab > 1 ? Math.pow(0.95, lab - 1) : 1;
+    const pct = Math.round((1 - factor) * 100);
+    const bonus = '−5% за уровень · ×' + factor.toFixed(2) +
+      (lab > 1 ? ' (−' + pct + '%)' : '');
+
+    let now;
+    if (up) {
+      const pctDone = Math.round(up.progress * 100);
+      const gemsOk = !speed || gems >= speed.gems;
+      const speedBtn = speed
+        ? '<button class="research-speed" data-research-speed type="button"' +
+            (gemsOk ? '' : ' disabled') +
+            ' title="' + (gemsOk ? 'Завершить исследование мгновенно'
+              : 'Нужно ещё ' + platText(speed.gems - gems)) + '">' +
+            '<span class="ico ico-platinum" aria-hidden="true"></span> ' +
+            speed.gems + '</button>'
+        : '';
+      now = '<div class="research-now is-run">' +
+        '<div class="research-now__head">' +
+          '<b>' + escHtml(up.name || troopName(up.type)) + '</b>' +
+          '<span class="research-now__lvl">Ур. ' + up.level + ' → ' + up.to + '</span>' +
+          '<span class="research-now__time">осталось ' + formatTime(up.left) + '</span>' +
+        '</div>' +
+        '<i class="research-bar"><b style="width:' + pctDone + '%"></b></i>' +
+        '<div class="research-now__foot">' +
+          '<span>' + pctDone + '%</span>' +
+          speedBtn +
+        '</div>' +
+      '</div>';
+    } else {
+      now = '<div class="research-now is-free">Свободен · можно начать исследование</div>';
+    }
+
+    return '<section class="research-lab">' +
+      '<h3 class="info-block__title">Исследовательский центр</h3>' +
+      '<div class="research-lab__grid">' +
+        '<span>Уровень центра</span><b>' + (lab > 0 ? lab : 'не построен') + '</b>' +
+        '<span>Бонус скорости</span><b>' + bonus + '</b>' +
+      '</div>' +
+      now +
+    '</section>';
+  }
+
+  function researchBodyHtml(type, st, state) {
+    const d = CC.TROOPS[type] || {};
+    const maxAll = st.maxAll || (CC.TROOP_LEVEL && CC.TROOP_LEVEL.max) || 10;
+    const portrait = troopPortrait(type, 168, st.level, 'recruit-card__portrait');
+    const lab = CC.Game.labLevel();
+
+    return '<div class="research-grid">' +
+      '<aside class="research-hero">' +
+        '<div class="research-hero__portrait">' + portrait + '</div>' +
+        '<b class="research-hero__name">' + escHtml(d.name || type) + '</b>' +
+        '<span class="research-hero__role">' + escHtml(d.desc || '') + '</span>' +
+        '<span class="research-hero__level">Ур. ' + st.level + ' / ' + maxAll + '</span>' +
+        '<span class="research-hero__space">Место в армии: ' + troopSpaceText(type) + '</span>' +
+      '</aside>' +
+      '<section class="research-main">' +
+        '<div class="info-block">' +
+          '<h3 class="info-block__title">Сейчас</h3>' +
+          '<div class="research-stats">' +
+            '<span class="research-stat"><b>' + fmtNum(st.hp) + '</b><i>HP</i></span>' +
+            '<span class="research-stat"><b>' + fmtNum(st.dmg) + '</b><i>Урон</i></span>' +
+            '<span class="research-stat"><b>' + (d.speed || 1) + '</b><i>Скорость</i></span>' +
+            '<span class="research-stat"><b>' + (d.range || 1) + '</b><i>Дальность</i></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="info-block">' +
+          '<h3 class="info-block__title">Следующий уровень</h3>' +
+          researchNextHtml(type, st, state) +
+        '</div>' +
+      '</section>' +
+      researchLabHtml(lab, state) +
+    '</div>';
+  }
+
+  function syncResearch() {
+    if (!researchOpen) return;
+
+    const type = researchType;
+    if (!type || !CC.TROOPS[type]) {
+      closeResearch();
+      return;
+    }
+
+    const st = CC.Game.troopStats(type);
+    if (!st) {
+      closeResearch();
+      return;
+    }
+
+    const state = researchState(type);
+    const up = state.up;
+    const sig = [
+      type, st.level, Math.round(CC.Game.elixir()), CC.Game.gems(),
+      CC.Game.labLevel(), state.label, state.reason,
+      state.cost ? state.cost.elixir + ':' + state.cost.time : 'max',
+      up ? up.type + ':' + up.to + ':' + Math.ceil(up.left) + ':' +
+        Math.round((up.progress || 0) * 100) : 'idle'
+    ].join('|');
+    if (cache.researchSig === sig) return;
+    cache.researchSig = sig;
+
+    if (researchBody) researchBody.innerHTML = researchBodyHtml(type, st, state);
+
+    if (researchGo) {
+      researchGo.disabled = !!state.disabled;
+      if (researchGo.textContent !== state.label) researchGo.textContent = state.label;
+      researchGo.title = state.reason || '';
+      researchGo.classList.toggle('is-max', state.label === 'Максимальный уровень');
+    }
+
+    if (researchReason) {
+      researchReason.textContent = state.reason || '';
+      researchReason.title = state.reason || '';
+      researchReason.classList.toggle('hidden', !state.reason);
+    }
+  }
+
+  function bindResearch() {
+    if (researchBound) return;
+    researchBound = true;
+
+    if (researchX) {
+      researchX.addEventListener('click', function () { closeResearch(); sync(); });
+    }
+    if (researchClose) {
+      researchClose.addEventListener('click', function () { closeResearch(); sync(); });
+    }
+    if (researchGo) {
+      researchGo.addEventListener('click', function () { startResearch(); });
+    }
+    if (researchEl) {
+      researchEl.addEventListener('click', function (e) {
+        if (e.target === researchEl) {
+          closeResearch();
+          sync();
+          return;
+        }
+        const speedBtn = e.target.closest && e.target.closest('[data-research-speed]');
+        if (speedBtn) speedResearch();
+      });
+    }
+  }
+
+  function openResearch(type) {
+    if (!type || !CC.TROOPS[type]) {
+      return { ok: false, error: 'Неизвестное войско' };
+    }
+
+    closeInfo();
+    bindResearch();
+    researchOpen = true;
+    researchType = type;
+    cache.researchSig = null;
+    if (researchEl) researchEl.classList.remove('hidden');
+    if (sergeantEl) sergeantEl.classList.add('hidden');
+    hideTip();
+    syncResearch();
+    return { ok: true, type: type };
+  }
+
+  function closeResearch() {
+    const was = researchOpen;
+    researchOpen = false;
+    researchType = null;
+    cache.researchSig = null;
+    if (researchEl) researchEl.classList.add('hidden');
+    return { ok: true, was: was };
+  }
+
+  function startResearch() {
+    const type = researchType;
+    if (!type) return { error: 'Войско не выбрано' };
+
+    const res = CC.Game.startTroopUpgrade(type);
+    if (res.error) {
+      toast(res.error);
+      return res;
+    }
+
+    if (CC.Sound) CC.Sound.play('upgrade');
+    const name = troopName(type);
+    toast(name + ': исследование до ур. ' + res.to);
+    invalidate();
+    sync();
+    return res;
+  }
+
+  function speedResearch() {
+    const res = CC.Game.speedUpTroop();
+    if (res.error) {
+      toast(res.error);
+      return res;
+    }
+
+    if (CC.Sound) CC.Sound.play('upgradeDone');
+    toast(troopName(res.type) + ' — ур. ' + res.level);
+    invalidate();
+    sync();
+    return res;
+  }
 
   // Шаг прокрутки — ровно одна карточка плюс зазор, чтобы снап не «прыгал».
   function carouselStep(el) {
@@ -5104,7 +5425,9 @@ CC.UI = (function () {
       if (info && info.type === type) {
         const pct = Math.round(info.progress * 100);
         const gemsOk = !speed || gems >= speed.gems;
-        html += '<div class="tup is-run" data-troop="' + type + '">' +
+        html += '<div class="tup is-run" data-troop="' + type + '"' +
+          ' data-troop-open="' + type + '" role="button" tabindex="0"' +
+          ' title="Подробнее об исследовании">' +
           icon +
           '<span class="tup__text">' +
             '<b class="tup__name">' + d.name + '</b>' +
@@ -5147,7 +5470,9 @@ CC.UI = (function () {
         ? '⚡ ' + fmtNum(cost.elixir) + ' · ' + formatTime(cost.time)
         : '—';
 
-      html += '<div class="tup" data-troop="' + type + '">' +
+      html += '<div class="tup" data-troop="' + type + '"' +
+        ' data-troop-open="' + type + '" role="button" tabindex="0"' +
+        ' title="Подробнее об исследовании">' +
         icon +
         '<span class="tup__text">' +
           '<b class="tup__name">' + d.name + '</b>' +
@@ -5223,6 +5548,14 @@ CC.UI = (function () {
       }
       invalidate();
       sync();
+      return;
+    }
+
+    // Клик по строке войска в лаборатории открывает подробное окно.
+    // Кнопки «Улучшить»/«Ускорить» перехвачены выше и остаются быстрыми.
+    const troopRow = e.target.closest('[data-troop-open]');
+    if (troopRow) {
+      openResearch(troopRow.dataset.troopOpen);
       return;
     }
 
@@ -7620,6 +7953,7 @@ CC.UI = (function () {
       syncShopButton();
       syncSelbar();
       syncInfo();
+      syncResearch();
       syncBaseTip();
       syncSergeant();
       updateGhost();
@@ -8178,6 +8512,13 @@ CC.UI = (function () {
     syncInfo: syncInfo,
     upgradeFromInfo: upgradeFromInfo,
     isInfoOpen: function () { return infoOpen; },
+    openResearch: openResearch,
+    closeResearch: closeResearch,
+    syncResearch: syncResearch,
+    startResearch: startResearch,
+    speedResearch: speedResearch,
+    isResearchOpen: function () { return researchOpen; },
+    researchType: function () { return researchType; },
     findOtherArena: findOtherArena,
     startPvpBattle: startPvpBattle,
     arenaAgain: arenaAgain,

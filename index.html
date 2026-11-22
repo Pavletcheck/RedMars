@@ -391,6 +391,26 @@
     </div>
   </div>
 
+  <!-- Подробное окно исследования войск: открывается строкой лаборатории. -->
+  <div class="overlay hidden" id="research">
+    <div class="overlay__card info-card research-card" role="dialog" aria-modal="true"
+         aria-labelledby="research-title">
+      <header class="info-card__head">
+        <h2 class="overlay__title info-card__title" id="research-title">Исследовательский центр</h2>
+        <button class="shop__x info-card__x" id="research-x" type="button" title="Закрыть">✕</button>
+      </header>
+      <div class="info-card__scroll" id="research-body"></div>
+      <footer class="info-card__foot">
+        <p class="info-card__reason hidden" id="research-reason"></p>
+        <div class="info-card__actions">
+          <button class="overlay__btn info-card__up" id="research-go" type="button">Исследовать</button>
+          <button class="overlay__btn overlay__btn_ghost info-card__close" id="research-close"
+                  type="button">Закрыть</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
   <!-- Покупка ресурса за платину: три набора в карусели -->
   <div class="overlay hidden" id="buyres">
     <div class="overlay__card shop buy-card">

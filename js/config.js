@@ -532,16 +532,17 @@ CC.RAIDS = {
 };
 
 /* Что производят постройки: resource — куда капает, rate — в секунду на 1 уровне.
-   Каждый уровень удваивает производство: 0.75 → 1.5 → 3 … (см. base.js). */
+   Каждый уровень удваивает производство: 0.375 → 0.75 → 1.5 … (см. base.js). */
 CC.PRODUCTION = {
-  goldmine: { res: 'gold', rate: 0.75 },
-  elixir: { res: 'elixir', rate: 0.65 }
+  goldmine: { res: 'gold', rate: 0.375 },
+  elixir: { res: 'elixir', rate: 0.325 }
 };
 
 /* Собственный накопитель бура/реактора. Ёмкость = round(400 × 2^(уровень−1)):
    400, 800, 1600 … 204 800 на 10 уровне. Пока накопитель не забрали,
    производство копится в нём, а не уходит на склад. Первый уровень
-   заполняется за ~8.9 минуты при 0.75/с. */
+   заполняется за ~17.8 минуты при 0.375/с (руда) и ~20.5 минуты при
+   0.325/с (энергия). */
 CC.EXTRACT = { base: 400, perLevel: 2 };
 
 // Ёмкость накопителя для типа постройки и уровня. Не производящая — 0.
@@ -1226,10 +1227,10 @@ CC.LevelGen = {
 
     // Ресурсы — в глубину, ближе к центру поля.
     const resCounts = {
-      goldmine: CC.limitAt('goldmine', capTh),
-      elixir: CC.limitAt('elixir', capTh),
-      storage: CC.limitAt('storage', capTh),
-      estorage: CC.limitAt('estorage', capTh)
+      goldmine: CC.campaignResLimitAt('goldmine', capTh),
+      elixir: CC.campaignResLimitAt('elixir', capTh),
+      storage: CC.campaignResLimitAt('storage', capTh),
+      estorage: CC.campaignResLimitAt('estorage', capTh)
     };
     if (within < 4) {
       resCounts.goldmine = Math.max(2, resCounts.goldmine - 1);
@@ -1418,10 +1419,10 @@ CC.LIMITS_BY_TH = {
   spring: [0, 0, 0, 1, 2, 2, 3, 3, 4, 4],
   airmine: [0, 0, 0, 0, 1, 2, 2, 3, 3, 4],
   wall: [0, 20, 40, 60, 80, 100, 120, 130, 140, 150],
-  goldmine: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
-  elixir: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
-  storage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
-  estorage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
+  goldmine: [2, 3, 4, 4, 5, 5, 5, 5, 5, 5],
+  elixir: [2, 3, 4, 4, 5, 5, 5, 5, 5, 5],
+  storage: [1, 2, 2, 2, 3, 3, 3, 3, 3, 3],
+  estorage: [1, 2, 2, 2, 3, 3, 3, 3, 3, 3],
   barracks: [1, 1, 2, 2, 3, 3, 4, 4, 4, 4],
   lab: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
   herohall: [0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
@@ -1450,17 +1451,35 @@ CC.LIMITS = {
   spring: 4,
   airmine: 4,
   wall: 150,
-  goldmine: 6,
-  elixir: 6,
-  storage: 5,
-  estorage: 5,
+  goldmine: 5,
+  elixir: 5,
+  storage: 3,
+  estorage: 3,
   barracks: 4,
   lab: 1,
   herohall: 1
 };
 
+/* Состав кампании: вражеские базы могут быть богаче игрока. Фиксируем
+   прежние лимиты ресурсных построек, чтобы снижение лимитов игрока
+   (5 буров и 3 склада) не меняло 50 уровней и баланс боёв. */
+CC.CAMPAIGN_RES_LIMITS = {
+  goldmine: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
+  elixir: [2, 3, 4, 4, 5, 5, 6, 6, 6, 6],
+  storage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5],
+  estorage: [1, 2, 2, 2, 3, 3, 3, 4, 4, 5]
+};
+
+CC.campaignResLimitAt = function (type, th) {
+  const row = CC.CAMPAIGN_RES_LIMITS[type];
+  if (!row) return 0;
+  const n = Math.round(Number(th) || 1);
+  const i = n < 1 ? 0 : (n > CC.MAX_TH ? CC.MAX_TH - 1 : n - 1);
+  return row[i] || 0;
+};
+
 /* 50 уровней строятся после таблицы лимитов: генератор сверяется с
-   CC.limitAt(), чтобы состав базы не превышал лимиты эпохи. */
+   CC.limitAt(), а для ресурсов кампании — с CC.campaignResLimitAt(). */
 CC.LEVELS = CC.LevelGen.all();
 
 /* ---------- добыча привязана к постройкам ----------

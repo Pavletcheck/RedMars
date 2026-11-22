@@ -869,7 +869,7 @@ CC.Game = (function () {
   /* ---------- производство и хранилища ---------- */
 
   // Скорость добычи ресурса: все буры/реакторы со своим уровнем.
-  // Каждый уровень удваивает производство: 0.75 → 1.5 → 3 …
+  // Каждый уровень удваивает производство: 0.375 → 0.75 → 1.5 …
   // Стройплощадка ещё не даёт производства.
   function rate(res) {
     const list = CC.Base.list();
@@ -3024,7 +3024,7 @@ CC.Game = (function () {
     let l = Math.floor(Number(lvl) || 1);
     if (l < 1) l = 1;
     if (l > ECON.maxLevel) l = ECON.maxLevel;
-    return +(p.rate * Math.pow(2, l - 1)).toFixed(2);
+    return +(p.rate * Math.pow(2, l - 1)).toFixed(3);
   }
 
   // ---------- армия ----------
