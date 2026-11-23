@@ -7932,7 +7932,7 @@ CC.Render = (function () {
     if (b.type === 'townhall' && levelOf(b) >= 4) return h + 12;
     if (b.type === 'ambush') return ambushOpen(b) ? 28 : 14;
     if (b.type === 'beam') return beamH(levelOf(b)) + 12;
-    return h;
+    return h * artScale(b);
   }
 
   /* ---------- спрайты статичных построек ----------
@@ -8408,6 +8408,9 @@ CC.Render = (function () {
      для видимых зданий выше 10 уровня. */
   function highTier(ctx, b, lvl) {
     if (lvl < 11 || !mid() || b.type === 'wall' || isTrapType(b.type)) return;
+    // у новых типов свои ярусы в painter'е; общий слой им не нужен и
+    // масштабировать его под 1×1/2×2 было бы дороже, чем пользы
+    if (artNominal(b.type)) return;
     const t = (Math.min(lvl, MAX_LVL) - 11) / 10;
     const A = P(b.x + 0.12, b.y + 0.12);
     const B = P(b.x + b.w - 0.12, b.y + 0.12);
@@ -8487,16 +8490,46 @@ CC.Render = (function () {
         drawBeamZap(ctx, b, lvl);
         return;
       }
-      if (type === 'sweeper') { drawSweeperGlow(ctx, b, lvl); return; }
-      if (type === 'spelltower') { drawSpellGlow(ctx, b, lvl); return; }
-      if (type === 'monolith') { drawMonolithGlow(ctx, b, lvl); return; }
-      if (type === 'spellfactory') { drawFactoryGlow(ctx, b, lvl, false); return; }
-      if (type === 'darkspellfactory') { drawFactoryGlow(ctx, b, lvl, true); return; }
-      if (type === 'firespitter') { drawFireGlow(ctx, b, lvl); return; }
-      if (type === 'revenge') { drawRevengeGlow(ctx, b, lvl); return; }
-      if (type === 'superwizard') { drawSuperwizardGlow(ctx, b, lvl); return; }
-      if (type === 'spiky') { drawSpikyFx(ctx, b, lvl); return; }
-      if (type === 'firecracker') { drawFirecrackerGlow(ctx, b, lvl); return; }
+      if (type === 'sweeper') {
+        drawScaledArt(ctx, b, function (c, v) { drawSweeperGlow(c, v, lvl); });
+        return;
+      }
+      if (type === 'spelltower') {
+        drawScaledArt(ctx, b, function (c, v) { drawSpellGlow(c, v, lvl); });
+        return;
+      }
+      if (type === 'monolith') {
+        drawScaledArt(ctx, b, function (c, v) { drawMonolithGlow(c, v, lvl); });
+        return;
+      }
+      if (type === 'spellfactory') {
+        drawScaledArt(ctx, b, function (c, v) { drawFactoryGlow(c, v, lvl, false); });
+        return;
+      }
+      if (type === 'darkspellfactory') {
+        drawScaledArt(ctx, b, function (c, v) { drawFactoryGlow(c, v, lvl, true); });
+        return;
+      }
+      if (type === 'firespitter') {
+        drawScaledArt(ctx, b, function (c, v) { drawFireGlow(c, v, lvl); });
+        return;
+      }
+      if (type === 'revenge') {
+        drawScaledArt(ctx, b, function (c, v) { drawRevengeGlow(c, v, lvl); });
+        return;
+      }
+      if (type === 'superwizard') {
+        drawScaledArt(ctx, b, function (c, v) { drawSuperwizardGlow(c, v, lvl); });
+        return;
+      }
+      if (type === 'spiky') {
+        drawScaledArt(ctx, b, function (c, v) { drawSpikyFx(c, v, lvl); });
+        return;
+      }
+      if (type === 'firecracker') {
+        drawScaledArt(ctx, b, function (c, v) { drawFirecrackerGlow(c, v, lvl); });
+        return;
+      }
       if (type === 'townhall') { drawTHGlow(ctx, b, lvl); return; }
     }
 
@@ -8555,6 +8588,62 @@ CC.Render = (function () {
   // 0..1 по всей лестнице 1..21: удобно для роста деталей
   function bRamp(lvl) {
     return (bLevel(lvl) - 1) / (MAX_LVL - 1);
+  }
+
+  /* ---------- масштаб арта от футпринта ----------
+     Новые постройки рисовались в расчёте на старые 3×3/4×4. После
+     уменьшения пятен их нельзя просто оставить как есть: подставка,
+     стволы и кольца вылезали за клетку. Каждый такой painter получает
+     виртуальное пятно ART_NOMINAL (его «родной» размер), а обёртка
+     масштабирует весь рисунок в b.w/b.h. Старые типы не в таблице —
+     для них коэффициент 1. */
+  const ART_NOMINAL = {
+    sweeper: 2, bombtower: 2, xbow: 2, spelltower: 2, multiarcher: 2,
+    ricochet: 2, multigear: 2, firespitter: 2,
+    revenge: 1.5, superwizard: 1.5, spiky: 1.5, firecracker: 1.5,
+    eagle: 4, scattershot: 4, monolith: 4,
+    darkdrill: 2, darkstorage: 2,
+    train: 3, darktrain: 3, spellfactory: 3, darkspellfactory: 3,
+    pethouse: 3, blacksmith: 3, workshop: 3, squadbarracks: 3,
+    clancastle: 4,
+    giantbomb: 2, tornado: 2, gigabomb: 2,
+    seekingair: 1, skeletontrap: 1
+  };
+
+  function artNominal(type) {
+    return ART_NOMINAL[type] || 0;
+  }
+
+  // Во сколько раз арт надо сжать/растянуть под фактическое пятно.
+  function artScale(b) {
+    const n = artNominal(b && b.type);
+    if (!n) return 1;
+    const w = Math.max(1, b.w || 1);
+    const h = Math.max(1, b.h || 1);
+    const k = Math.min(w, h) / n;
+    return isFinite(k) && k > 0 ? k : 1;
+  }
+
+  // Нарисовать painter в его родной системе координат и вписать в b.
+  // Центр виртуального пятна совмещается с центром фактического.
+  function drawScaledArt(ctx, b, fn) {
+    const n = artNominal(b && b.type);
+    const k = artScale(b);
+    if (!n || Math.abs(k - 1) < 0.001) {
+      fn(ctx, b);
+      return;
+    }
+    const c = P(b.x + b.w / 2, b.y + b.h / 2);
+    const cv = P(n / 2, n / 2);
+    const vb = {};
+    for (const key in b) vb[key] = b[key];
+    vb.x = 0; vb.y = 0; vb.w = n; vb.h = n;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(k, k);
+    ctx.translate(-cv.x, -cv.y);
+    fn(ctx, vb);
+    ctx.restore();
   }
 
   function bPrep(ctx, b, k) {
@@ -11686,40 +11775,60 @@ CC.Render = (function () {
     if (type === 'airmine') { drawAirMine(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
     if (type === 'ambush') { drawAmbush(ctx, b, lvl, trapVariant(b) === 'open'); return; }
     if (type === 'beam') { drawBeamTower(ctx, b, lvl); return; }
-    if (type === 'sweeper') { drawSweeper(ctx, b, lvl); return; }
-    if (type === 'bombtower') { drawBombTower(ctx, b, lvl); return; }
-    if (type === 'xbow') { drawRailgun(ctx, b, lvl); return; }
-    if (type === 'eagle') { drawEagle(ctx, b, lvl); return; }
-    if (type === 'scattershot') { drawScattershot(ctx, b, lvl); return; }
-    if (type === 'monolith') { drawMonolith(ctx, b, lvl); return; }
-    if (type === 'spelltower') { drawSpellTower(ctx, b, lvl); return; }
-    if (type === 'multiarcher') { drawMultiArcher(ctx, b, lvl); return; }
-    if (type === 'ricochet') { drawRicochet(ctx, b, lvl); return; }
-    if (type === 'multigear') { drawMultiGear(ctx, b, lvl); return; }
-    if (type === 'firespitter') { drawFireSpitter(ctx, b, lvl); return; }
-    if (type === 'revenge') { drawRevenge(ctx, b, lvl); return; }
-    if (type === 'superwizard') { drawSuperwizard(ctx, b, lvl); return; }
-    if (type === 'spiky') { drawSpiky(ctx, b, lvl); return; }
-    if (type === 'firecracker') { drawFirecracker(ctx, b, lvl); return; }
+    if (type === 'sweeper') { drawScaledArt(ctx, b, drawSweeper); return; }
+    if (type === 'bombtower') { drawScaledArt(ctx, b, drawBombTower); return; }
+    if (type === 'xbow') { drawScaledArt(ctx, b, drawRailgun); return; }
+    if (type === 'eagle') { drawScaledArt(ctx, b, drawEagle); return; }
+    if (type === 'scattershot') { drawScaledArt(ctx, b, drawScattershot); return; }
+    if (type === 'monolith') { drawScaledArt(ctx, b, drawMonolith); return; }
+    if (type === 'spelltower') { drawScaledArt(ctx, b, drawSpellTower); return; }
+    if (type === 'multiarcher') { drawScaledArt(ctx, b, drawMultiArcher); return; }
+    if (type === 'ricochet') { drawScaledArt(ctx, b, drawRicochet); return; }
+    if (type === 'multigear') { drawScaledArt(ctx, b, drawMultiGear); return; }
+    if (type === 'firespitter') { drawScaledArt(ctx, b, drawFireSpitter); return; }
+    if (type === 'revenge') { drawScaledArt(ctx, b, drawRevenge); return; }
+    if (type === 'superwizard') { drawScaledArt(ctx, b, drawSuperwizard); return; }
+    if (type === 'spiky') { drawScaledArt(ctx, b, drawSpiky); return; }
+    if (type === 'firecracker') { drawScaledArt(ctx, b, drawFirecracker); return; }
 
-    if (type === 'darkdrill') { drawDarkDrill(ctx, b, lvl); return; }
-    if (type === 'darkstorage') { drawDarkStorage(ctx, b, lvl); return; }
+    if (type === 'darkdrill') { drawScaledArt(ctx, b, drawDarkDrill); return; }
+    if (type === 'darkstorage') { drawScaledArt(ctx, b, drawDarkStorage); return; }
 
-    if (type === 'train') { drawTrainHall(ctx, b, lvl, false); return; }
-    if (type === 'darktrain') { drawTrainHall(ctx, b, lvl, true); return; }
-    if (type === 'spellfactory') { drawSpellFactory(ctx, b, lvl, false); return; }
-    if (type === 'darkspellfactory') { drawSpellFactory(ctx, b, lvl, true); return; }
-    if (type === 'pethouse') { drawPetHouse(ctx, b, lvl); return; }
-    if (type === 'blacksmith') { drawBlacksmith(ctx, b, lvl); return; }
-    if (type === 'workshop') { drawWorkshop(ctx, b, lvl); return; }
-    if (type === 'clancastle') { drawClanCastle(ctx, b, lvl); return; }
-    if (type === 'squadbarracks') { drawSquadBarracks(ctx, b, lvl); return; }
+    if (type === 'train') { drawScaledArt(ctx, b, function (c, v) { drawTrainHall(c, v, lvl, false); }); return; }
+    if (type === 'darktrain') { drawScaledArt(ctx, b, function (c, v) { drawTrainHall(c, v, lvl, true); }); return; }
+    if (type === 'spellfactory') { drawScaledArt(ctx, b, function (c, v) { drawSpellFactory(c, v, lvl, false); }); return; }
+    if (type === 'darkspellfactory') { drawScaledArt(ctx, b, function (c, v) { drawSpellFactory(c, v, lvl, true); }); return; }
+    if (type === 'pethouse') { drawScaledArt(ctx, b, drawPetHouse); return; }
+    if (type === 'blacksmith') { drawScaledArt(ctx, b, drawBlacksmith); return; }
+    if (type === 'workshop') { drawScaledArt(ctx, b, drawWorkshop); return; }
+    if (type === 'clancastle') { drawScaledArt(ctx, b, drawClanCastle); return; }
+    if (type === 'squadbarracks') { drawScaledArt(ctx, b, drawSquadBarracks); return; }
 
-    if (type === 'giantbomb') { drawGiantBomb(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
-    if (type === 'seekingair') { drawSeekingAir(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
-    if (type === 'skeletontrap') { drawSkeletonTrap(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
-    if (type === 'tornado') { drawTornado(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
-    if (type === 'gigabomb') { drawGigaBomb(ctx, b, lvl, trapVariant(b) !== 'spent'); return; }
+    if (type === 'giantbomb') {
+      const armed = trapVariant(b) !== 'spent';
+      drawScaledArt(ctx, b, function (c, v) { drawGiantBomb(c, v, lvl, armed); });
+      return;
+    }
+    if (type === 'seekingair') {
+      const armed = trapVariant(b) !== 'spent';
+      drawScaledArt(ctx, b, function (c, v) { drawSeekingAir(c, v, lvl, armed); });
+      return;
+    }
+    if (type === 'skeletontrap') {
+      const armed = trapVariant(b) !== 'spent';
+      drawScaledArt(ctx, b, function (c, v) { drawSkeletonTrap(c, v, lvl, armed); });
+      return;
+    }
+    if (type === 'tornado') {
+      const armed = trapVariant(b) !== 'spent';
+      drawScaledArt(ctx, b, function (c, v) { drawTornado(c, v, lvl, armed); });
+      return;
+    }
+    if (type === 'gigabomb') {
+      const armed = trapVariant(b) !== 'spent';
+      drawScaledArt(ctx, b, function (c, v) { drawGigaBomb(c, v, lvl, armed); });
+      return;
+    }
     if (type === 'wall') {
       drawWallRun(ctx, { x: b.x, y: b.y, w: 1, h: 1, cells: [b], lvl: lvl }, { bar: true });
       return;
@@ -11929,6 +12038,179 @@ CC.Render = (function () {
   const unitSpriteCache = new Map();
   const unitBakes = { count: 0, hits: 0 };
   const unitMv = new WeakMap();
+
+  /* ---------- 3D-биллборды первых трёх войск ----------
+     Художник отрендерил штурмовика, лазерщика и меха в восьми ракурсах
+     (dirN — покой/шаг) и в восьми кадрах удара (attackN). Ракурсы совпадают
+     с UNIT_DIRS: 0 — от камеры, 2 — вправо, 4 — на камеру, 6 — влево.
+     PNG грузятся фоном и один раз уменьшаются в канву того же размера,
+     что и векторный спрайт (U_ARTW×U_ARTH при U_BAKE). Пока картинки не
+     готовы или сломаны, unitSprite печёт прежний векторный арт — игра
+     никогда не ждёт загрузку и не падает без assets.
+
+     bb[d] — альфа-рамка кадра dirN в исходных 512×512 (сгенерирована по
+     ассетам). По ней считаем масштаб и якорь ступней: высота каждого
+     направления приводится к h, низ рамки садится в 0,0. Кадр атаки
+     использует ту же рамку, поэтому фигура не прыгает и не «дышит». */
+  const UNIT3D_ART = {
+    barb: {
+      h: 24,
+      bb: [
+        [141, 159, 370, 443], [165, 155, 391, 464],
+        [187, 146, 383, 464], [164, 161, 350, 475],
+        [141, 161, 371, 460], [121, 163, 347, 475],
+        [129, 146, 325, 464], [162, 155, 347, 464]
+      ]
+    },
+    archer: {
+      h: 22,
+      bb: [
+        [191, 184, 381, 429], [202, 181, 426, 446],
+        [201, 188, 378, 446], [186, 188, 314, 456],
+        [131, 177, 321, 443], [85, 174, 310, 455],
+        [134, 180, 311, 446], [198, 152, 326, 446]
+      ]
+    },
+    giant: {
+      h: 36,
+      bb: [
+        [84, 97, 429, 453], [112, 40, 400, 484],
+        [143, 23, 325, 484], [112, 40, 400, 496],
+        [84, 72, 428, 471], [112, 40, 400, 496],
+        [188, 23, 368, 484], [112, 40, 400, 484]
+      ]
+    }
+  };
+
+  // ready — хотя бы один тип целиком загружен; types[type].sprites —
+  // [dir][0 покой, 1 удар] с готовыми канвами.
+  const unit3d = {
+    started: false, ready: false, total: 0, loaded: 0, failed: 0,
+    readyTypes: 0, bakes: 0, types: {}
+  };
+
+  function bakeUnit3d(type) {
+    const cfg = UNIT3D_ART[type];
+    const rec = unit3d.types[type];
+    if (!cfg || !rec) return false;
+
+    const sprites = new Array(8);
+    for (let d = 0; d < 8; d++) {
+      const idle = rec.dir[d];
+      const strike = rec.atk[d];
+      const bb = cfg.bb[d];
+      if (!idle || !strike || !bb) return false;
+
+      const srcH = bb[3] - bb[1];
+      if (!(srcH > 0)) return false;
+
+      // высота направления = h мировых пикселей; канва спрайта печётся
+      // в U_BAKE раз крупнее, поэтому и цель умножаем на U_BAKE.
+      const k = (cfg.h * U_BAKE) / srcH;
+      const cx = (bb[0] + bb[2]) / 2;
+      const foot = bb[3];
+      const dx = U_AX * U_BAKE - cx * k;
+      const dy = U_AY * U_BAKE - foot * k;
+      const dw = 512 * k;
+      const dh = 512 * k;
+
+      const pair = new Array(2);
+      for (let f = 0; f < 2; f++) {
+        try {
+          const c = makeCanvas(U_ARTW * U_BAKE, U_ARTH * U_BAKE);
+          const cx2 = c.getContext('2d');
+          if (!cx2) { pair[f] = null; continue; }
+          if ('imageSmoothingEnabled' in cx2) cx2.imageSmoothingEnabled = true;
+          if ('imageSmoothingQuality' in cx2) cx2.imageSmoothingQuality = 'high';
+          cx2.drawImage(f ? strike : idle, dx, dy, dw, dh);
+          pair[f] = c;
+          unit3d.bakes++;
+        } catch (e) {
+          pair[f] = null;
+        }
+      }
+      if (!pair[0] || !pair[1]) return false;
+      sprites[d] = pair;
+    }
+
+    rec.sprites = sprites;
+    rec.ready = true;
+    // исходники больше не нужны: спрайты уже уменьшены и лежат в канвах
+    rec.dir.length = 0;
+    rec.atk.length = 0;
+    return true;
+  }
+
+  function unit3dBegin() {
+    if (unit3d.started) return;
+    unit3d.started = true;
+    // Без DOM (тесты логики) картинки не грузим — остаётся векторный арт.
+    if (typeof document === 'undefined' || typeof Image !== 'function') return;
+
+    const types = Object.keys(UNIT3D_ART);
+    unit3d.total = types.length * 16;
+
+    types.forEach(function (type) {
+      const rec = {
+        dir: new Array(8), atk: new Array(8),
+        sprites: null, ready: false, loaded: 0
+      };
+      unit3d.types[type] = rec;
+      let pending = 16;
+      let broken = false;
+
+      function done(ok) {
+        pending--;
+        if (!ok) broken = true;
+        if (pending > 0) return;
+        if (!broken && bakeUnit3d(type)) {
+          unit3d.readyTypes++;
+          unit3d.ready = true;
+        } else {
+          rec.dir.length = 0;
+          rec.atk.length = 0;
+        }
+      }
+
+      function load(name, slot, i) {
+        let img;
+        try {
+          img = new Image();
+          img.onload = function () {
+            unit3d.loaded++;
+            rec.loaded++;
+            slot[i] = img;
+            done(true);
+          };
+          img.onerror = function () {
+            unit3d.failed++;
+            done(false);
+          };
+          img.src = 'assets/units3d/' + type + '/' + name + i + '.png';
+        } catch (e) {
+          unit3d.failed++;
+          done(false);
+        }
+      }
+
+      for (let i = 0; i < 8; i++) {
+        load('dir', rec.dir, i);
+        load('attack', rec.atk, i);
+      }
+    });
+  }
+
+  // Готовая канва кадра или null (тип ещё грузится / картинки не нашлись).
+  function unit3dSprite(type, dir, frame) {
+    const rec = unit3d.types[type];
+    if (!rec || !rec.ready || !rec.sprites) return null;
+    const d = dir < 0 ? 0 : (dir & 7);
+    const pair = rec.sprites[d];
+    if (!pair) return null;
+    return pair[frame === 3 ? 1 : 0] || null;
+  }
+
+  unit3dBegin();
 
   // 0..7 → единичный вектор направления в экране. fy > 0 — на зрителя.
   const DIR_FX = [0, 0.7071, 1, 0.7071, 0, -0.7071, -1, -0.7071];
@@ -14633,7 +14915,9 @@ CC.Render = (function () {
   // Ключ включает вид: hero|barb, pet|lassi, siege|wallwrecker или
   // обычный type. Ловим попадания по LRU: Map переставляет ключ в конец,
   // поэтому в бою с 15 типами не вылетают самые нужные кадры.
-  function unitSprite(type, variant, dir, frame, lvl) {
+  // vectorOnly — для карточек интерфейса: там нужен резкий арт при
+  // увеличении, поэтому 3D-биллборд (маленькая канва) не подставляем.
+  function unitSprite(type, variant, dir, frame, lvl, vectorOnly) {
     let vk = '';
     if (type === 'hero' && typeof variant === 'string' && HERO_KINDS[variant]) vk = variant;
     else if (type === 'pet') vk = (typeof variant === 'string' && PET_ART[variant])
@@ -14646,13 +14930,30 @@ CC.Render = (function () {
     else if (SIEGE_ART[type]) vk = type;
     else if (GUARDIAN_ART[type]) vk = type;
 
-    const key = type + (vk ? '|' + vk : '') + '|' + lvl + '|' + dir + '|' + frame;
+    // Готовый 3D-кадр есть только у barb/archer/giant и только после
+    // загрузки всех 16 PNG типа. Ключ с префиксом 3d не смешивается с
+    // векторным фолбэком: когда картинки придут, начнут печься новые ключи.
+    const raster = vectorOnly ? null : unit3dSprite(type, dir, frame);
+    const key = (raster ? '3d|' : '') + type + (vk ? '|' + vk : '') +
+      '|' + lvl + '|' + dir + '|' + frame;
     const hit = unitSpriteCache.get(key);
     if (hit) {
       unitBakes.hits++;
       unitSpriteCache.delete(key);
       unitSpriteCache.set(key, hit);
       return hit;
+    }
+
+    // Биллборд уже уменьшен до габаритов обычного спрайта — в кадре
+    // остаётся тот же drawImage, что и у векторной канвы.
+    if (raster) {
+      const rsp = { canvas: raster, ax: U_AX, ay: U_AY, w: U_ARTW, h: U_ARTH };
+      if (unitSpriteCache.size >= 448) {
+        const firstKey = unitSpriteCache.keys().next().value;
+        if (firstKey !== undefined) unitSpriteCache.delete(firstKey);
+      }
+      unitSpriteCache.set(key, rsp);
+      return rsp;
     }
 
     // Старый герой без heroKind остаётся на своей крупной канве; новые
@@ -18005,10 +18306,13 @@ CC.Render = (function () {
   function crown(b, lvl) {
     const arr = CROWN[b.type];
     const l = Math.max(1, Math.min(MAX_LVL, Math.round(lvl || 1)));
-    if (!arr) return 40 + Math.max(0, l - 10) * 2.4;
+    // у новых типов арт вписан в уменьшенное пятно: индикатор и HP-бар
+    // должны висеть над фактической верхушкой, а не над старой 3×3/4×4
+    const k = artScale(b);
+    if (!arr) return (40 + Math.max(0, l - 10) * 2.4) * k;
     const base = arr[Math.min(arr.length - 1, l - 1)];
     // L11-21: детали верхних ступеней добавляют ~2.2 px на уровень
-    return base + Math.max(0, l - arr.length) * 2.2;
+    return (base + Math.max(0, l - arr.length) * 2.2) * k;
   }
 
   function plate(ctx, x, y, w, h, fill) {
@@ -19543,8 +19847,9 @@ CC.Render = (function () {
       const key = 't|' + type + '|' + s + '|' + lvl;
       if (cardArtCache.has(key)) return cardArtCache.get(key);
 
-      // кадр покоя, взгляд на зрителя (юг): лучший ракурс для карточки
-      const sp = unitSprite(type, '', 4, 0, lvl);
+      // кадр покоя, взгляд на зрителя (юг): лучший ракурс для карточки.
+      // Векторный арт: он резче 3D-биллборда при увеличении в интерфейсе.
+      const sp = unitSprite(type, '', 4, 0, lvl, true);
       if (!sp || !sp.canvas) return null;
       const url = cardFit(sp.canvas, s);
       if (!url) return null;
@@ -19642,6 +19947,20 @@ CC.Render = (function () {
     __unitInfo: function (u) {
       const m = unitMv.get(u);
       return m ? { dir: m.dir, frame: m.frame, walking: m.walking } : null;
+    },
+    // загрузка 3D-биллбордов barb/archer/giant: сколько PNG пришло/не нашлось
+    // и у скольких типов готовы канвы. scene-check/unit-shots ждут ready.
+    __unit3d: function () {
+      const types = {};
+      Object.keys(unit3d.types).forEach(function (k) {
+        const r = unit3d.types[k];
+        types[k] = { ready: !!r.ready, loaded: r.loaded };
+      });
+      return {
+        ready: unit3d.ready, total: unit3d.total, loaded: unit3d.loaded,
+        failed: unit3d.failed, readyTypes: unit3d.readyTypes,
+        bakes: unit3d.bakes, types: types
+      };
     },
     // сброс кэша войск при смене сцены: canvas'ы не должны копиться между боями
     __resetUnitSprites: function () {

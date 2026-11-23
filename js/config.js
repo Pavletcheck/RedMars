@@ -154,7 +154,7 @@ CC.BUILDING_META = {
   },
   sweeper: {
     name: 'Вихревой генератор', desc: 'отталкивает воздух',
-    role: 'поддержка', w: 2, h: 2, height: 44,
+    role: 'поддержка', w: 1, h: 1, height: 44,
     color: '#4c6b72', top: '#a7dbe0',
     range: 7, rate: 1, targetsAir: true, airOnly: true, special: 'sweeper'
   },
@@ -167,13 +167,13 @@ CC.BUILDING_META = {
   },
   bombtower: {
     name: 'Детонатор', desc: 'площадной наземный огонь',
-    role: 'площадная', w: 3, h: 3, height: 42,
+    role: 'площадная', w: 1, h: 1, height: 42,
     color: '#62564a', top: '#d18a4a',
     range: 7, rate: 1, splash: 1.4, onlyGround: true, special: 'bombtower'
   },
   xbow: {
     name: 'Рельсотрон', desc: 'дальний огонь по земле и воздуху',
-    role: 'дальняя', w: 3, h: 3, height: 38,
+    role: 'дальняя', w: 1, h: 1, height: 38,
     color: '#555d66', top: '#b8c2cc',
     range: 11, rate: 1, targetsAir: true, special: 'xbow'
   },
@@ -186,75 +186,75 @@ CC.BUILDING_META = {
   },
   eagle: {
     name: 'Артиллерия «Молот»', desc: 'дальний площадной залп',
-    role: 'дальняя', w: 4, h: 4, height: 58,
+    role: 'дальняя', w: 2, h: 2, height: 58,
     color: '#5d4b3a', top: '#d7a85a',
     range: 11, minRange: 4, rate: 1, splash: 1.8,
     targetsAir: true, special: 'eagle'
   },
   scattershot: {
     name: 'Картечная башня', desc: 'площадной огонь по земле и воздуху',
-    role: 'площадная', w: 4, h: 4, height: 52,
+    role: 'площадная', w: 2, h: 2, height: 52,
     color: '#5a5148', top: '#c7a272',
     range: 11, rate: 1, splash: 1.8, targetsAir: true, special: 'scattershot'
   },
   monolith: {
     name: 'Обелиск', desc: 'мощный одиночный удар',
-    role: 'тяжёлая', w: 4, h: 4, height: 64,
+    role: 'тяжёлая', w: 2, h: 2, height: 64,
     color: '#3f4550', top: '#9fa9c0',
     range: 11, rate: 1, targetsAir: true, special: 'monolith'
   },
   spelltower: {
     name: 'Генератор поля', desc: 'накладывает эффект на площадь',
-    role: 'поле', w: 3, h: 3, height: 48,
+    role: 'поле', w: 1, h: 1, height: 48,
     color: '#4a3f6b', top: '#b49cff',
     range: 7, rate: 1, splash: 1.5, targetsAir: true, special: 'spelltower'
   },
   multiarcher: {
     name: 'Спаренная лазерная вышка', desc: 'две цели одновременно',
-    role: 'двойная', w: 3, h: 3, height: 58,
+    role: 'двойная', w: 1, h: 1, height: 58,
     color: '#7a5a44', top: '#e0b78a',
     range: 10, rate: 1, targetsAir: true, special: 'multiarcher'
   },
   ricochet: {
     name: 'Рикошетная турель', desc: 'прыгающий снаряд',
-    role: 'рикошет', w: 3, h: 3, height: 40,
+    role: 'рикошет', w: 1, h: 1, height: 40,
     color: '#4e6266', top: '#a9d0d4',
     range: 9, rate: 1, targetsAir: true, special: 'ricochet'
   },
   multigear: {
     name: 'Многоствольная башня', desc: 'несколько стволов',
-    role: 'многоствол', w: 3, h: 3, height: 50,
+    role: 'многоствол', w: 1, h: 1, height: 50,
     color: '#58605a', top: '#bfc9b8',
     range: 10, rate: 1, targetsAir: true, special: 'multigear'
   },
   firespitter: {
     name: 'Плазмомёт', desc: 'площадной наземный огонь',
-    role: 'площадная', w: 3, h: 3, height: 46,
+    role: 'площадная', w: 1, h: 1, height: 46,
     color: '#6b4432', top: '#ff9a5a',
     range: 9, rate: 1, splash: 1.6, onlyGround: true, special: 'firespitter'
   },
   revenge: {
     name: 'Карающая башня', desc: 'поздняя универсальная оборона',
-    role: 'универсальная поздняя', w: 3, h: 3, height: 52,
+    role: 'универсальная поздняя', w: 1, h: 1, height: 52,
     color: '#4b3a5c', top: '#c98fe0',
     range: 9, rate: 1, targetsAir: true, special: 'revenge'
   },
   superwizard: {
     name: 'Плазменный колосс', desc: 'цепная плазма по площади',
-    role: 'площадная универсальная', w: 3, h: 3, height: 62,
+    role: 'площадная универсальная', w: 1, h: 1, height: 62,
     color: '#5a3f7a', top: '#e0a6ff',
     range: 8, rate: 1, splash: 1.8, targetsAir: true,
     chain: 15, special: 'superwizard'
   },
   spiky: {
     name: 'Шиповая башня', desc: 'пассивный ответ на атаки',
-    role: 'контратакующая', w: 2, h: 2, height: 44,
+    role: 'контратакующая', w: 1, h: 1, height: 44,
     color: '#4a3a3a', top: '#d6a06a',
     passive: true, passivePercent: [0, 6, 9], special: 'spiky'
   },
   firecracker: {
     name: 'Залповая башня', desc: 'взрывной залп по конусу',
-    role: 'площадная универсальная', w: 3, h: 3, height: 50,
+    role: 'площадная универсальная', w: 1, h: 1, height: 50,
     color: '#6b4a32', top: '#ffb05a',
     range: 10, rate: 1, splash: 1.6, targetsAir: true,
     cone: true, special: 'firecracker'
@@ -271,7 +271,7 @@ CC.BUILDING_META = {
   },
   darkdrill: {
     name: 'Плазменный бур', desc: 'копит плазму',
-    role: 'добыча', w: 3, h: 3, height: 30, resource: true, produce: 'dark',
+    role: 'добыча', w: 1, h: 1, height: 30, resource: true, produce: 'dark',
     color: '#3f3548', top: '#c77dff'
   },
   storage: {
@@ -286,7 +286,7 @@ CC.BUILDING_META = {
   },
   darkstorage: {
     name: 'Хранилище плазмы', desc: 'хранит только плазму',
-    role: 'склад', w: 3, h: 3, height: 30, resource: true, store: 'dark',
+    role: 'склад', w: 1, h: 1, height: 30, resource: true, store: 'dark',
     color: '#3a3142', top: '#b06adf'
   },
   barracks: {
@@ -296,22 +296,22 @@ CC.BUILDING_META = {
   },
   train: {
     name: 'Казарма', desc: 'тренирует войска',
-    role: 'армия', w: 3, h: 3, height: 34,
+    role: 'армия', w: 2, h: 2, height: 34,
     color: '#6f5a42', top: '#d1b07a', training: true
   },
   darktrain: {
     name: 'Казарма плазмы', desc: 'тренирует тёмные войска',
-    role: 'армия', w: 3, h: 3, height: 34,
+    role: 'армия', w: 2, h: 2, height: 34,
     color: '#45394f', top: '#b984d8', training: true, darkTraining: true
   },
   spellfactory: {
     name: 'Генератор аномалий', desc: 'готовит заклинания',
-    role: 'армия', w: 3, h: 3, height: 40,
+    role: 'армия', w: 2, h: 2, height: 40,
     color: '#3d5a7a', top: '#8fd0ff', spells: true
   },
   darkspellfactory: {
     name: 'Резонатор плазмы', desc: 'готовит тёмные заклинания',
-    role: 'армия', w: 3, h: 3, height: 40,
+    role: 'армия', w: 2, h: 2, height: 40,
     color: '#443553', top: '#c28fe8', spells: true, darkSpells: true
   },
   lab: {
@@ -326,27 +326,27 @@ CC.BUILDING_META = {
   },
   pethouse: {
     name: 'Питомник', desc: 'дом питомцев героев',
-    role: 'развитие', w: 3, h: 3, height: 38,
+    role: 'развитие', w: 2, h: 2, height: 38,
     color: '#5a3a4a', top: '#d77fa0', petHouse: true
   },
   blacksmith: {
     name: 'Оружейная', desc: 'снаряжение героев',
-    role: 'развитие', w: 3, h: 3, height: 36,
+    role: 'развитие', w: 2, h: 2, height: 36,
     color: '#554a3e', top: '#c8a15c', equipment: true
   },
   workshop: {
     name: 'Сборочный цех', desc: 'собирает осадные машины',
-    role: 'развитие', w: 3, h: 3, height: 38,
+    role: 'развитие', w: 2, h: 2, height: 38,
     color: '#4d5a4a', top: '#b9c99a', siege: true
   },
   clancastle: {
     name: 'Орбитальная станция', desc: 'резерв и подкрепление',
-    role: 'армия', w: 4, h: 4, height: 46,
+    role: 'армия', w: 2, h: 2, height: 46,
     color: '#4a5468', top: '#a9b8d8'
   },
   squadbarracks: {
     name: 'Казарма эскадрильи', desc: 'режим отрядов',
-    role: 'армия', w: 3, h: 3, height: 34,
+    role: 'армия', w: 2, h: 2, height: 34,
     color: '#5a4e3a', top: '#c8b07a', squad: true
   },
   mine: {
@@ -369,7 +369,7 @@ CC.BUILDING_META = {
   },
   giantbomb: {
     name: 'Тяжёлая мина', desc: 'площадной взрыв по земле',
-    role: 'ловушка', w: 2, h: 2, hp: 1, height: 22,
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 22,
     color: '#5a3e2e', top: '#ff8a4a',
     trap: true, trapKind: 'ground', radius: 2, splash: 2
   },
@@ -387,13 +387,13 @@ CC.BUILDING_META = {
   },
   tornado: {
     name: 'Гравитационная ловушка', desc: 'затягивает отряд',
-    role: 'ловушка', w: 2, h: 2, hp: 1, height: 22,
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 22,
     color: '#3d5060', top: '#a9d8e8',
     trap: true, trapKind: 'tornado', radius: 2, capacity: 1
   },
   gigabomb: {
     name: 'Гига-мина', desc: 'огромный урон по земле',
-    role: 'ловушка', w: 2, h: 2, hp: 1, height: 24,
+    role: 'ловушка', w: 1, h: 1, hp: 1, height: 24,
     color: '#4a2e2e', top: '#ff6a4a',
     trap: true, trapKind: 'ground', radius: 2.2, splash: 2.4
   },
@@ -1887,10 +1887,16 @@ CC.LevelGen = {
     function defCountAt(type) {
       const lim = CC.limitAt(type, capTh);
       if (!lim) return finalLevel ? 1 : 0;
-      if (finalLevel) return Math.max(1, Math.round(lim * 0.7));
-      return Math.max(1, Math.min(lim,
+      let n;
+      if (finalLevel) n = Math.max(1, Math.round(lim * 0.42));
+      else n = Math.max(1, Math.min(lim,
         Math.round(lim * (era >= 5 ? (0.26 + 0.28 * within / 9)
-          : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.55 * within / 9))))));
+          : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.45 * within / 9))))));
+      // TH2 — знакомство: вторая пушка и башня на крошечной базе превращают
+      // сектор 19 в тупик для стартовой армии; оставляем одну пушку без башни.
+      if (era <= 1 && type === 'cannon') n = Math.min(n, 1);
+      if (era === 1 && type === 'archer' && within >= 5 && within < 8) n = 0;
+      return n;
     }
 
     // Ловушки финала — 70% количества: они не входят в процент, но
@@ -1898,17 +1904,18 @@ CC.LevelGen = {
     function trapCountAt(type) {
       const lim = CC.limitAt(type, capTh);
       if (!lim) return 0;
-      if (finalLevel) return Math.max(1, Math.round(lim * 0.7));
+      if (finalLevel) return Math.max(1, Math.round(lim * 0.40));
       return Math.max(1, Math.min(lim,
         Math.round(lim * (era >= 5 ? (0.26 + 0.28 * within / 9)
-          : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.55 * within / 9))))));
+          : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.45 * within / 9))))));
     }
 
     function levelAt(type) {
       const max = Math.max(1, ccLevelMax(type, capTh));
       if (finalLevel) return max;
-      const f = era >= 5 ? (0.18 + 0.48 * within / 9)
-        : (era >= 4 ? (0.22 + 0.52 * within / 9) : (0.3 + 0.7 * within / 9));
+      const f = era <= 1 ? (0.25 + 0.6 * within / 9)
+        : (era >= 5 ? (0.18 + 0.48 * within / 9)
+          : (era >= 4 ? (0.22 + 0.52 * within / 9) : (0.3 + 0.7 * within / 9)));
       return Math.max(1, Math.min(max, 1 + Math.round((max - 1) * f)));
     }
 
@@ -1955,6 +1962,19 @@ CC.LevelGen = {
     const iy0 = y0 + 1;
     const ix1 = x1 - 1;
     const iy1 = y1 - 1;
+
+    // Отсеки-квадранты нужны уже на этапе застройки: оборону раскладываем
+    // по ним, иначе мелкие 1×1 башни сбиваются в один «смертельный шар».
+    const zoneMx = Math.floor((ix0 + ix1) / 2);
+    const zoneMy = Math.floor((iy0 + iy1) / 2);
+    [
+      [ix0, iy0, zoneMx, zoneMy], [zoneMx + 1, iy0, ix1, zoneMy],
+      [ix0, zoneMy + 1, zoneMx, iy1], [zoneMx + 1, zoneMy + 1, ix1, iy1]
+    ].forEach(function (r) {
+      if (r[2] - r[0] >= 3 && r[3] - r[1] >= 3) {
+        zones.push({ x0: r[0], y0: r[1], x1: r[2], y1: r[3] });
+      }
+    });
 
     const occ = new Uint8Array(CC.GRID * CC.GRID);
     function inField(x, y) {
@@ -2036,7 +2056,7 @@ CC.LevelGen = {
     // Финал TH19 выкладывает полный лимит — 350 сегментов: внешний контур
     // плюс внутренние перегородки. Остальные секторы растут к лимиту плавно.
     const wallLimit = CC.limitAt('wall', capTh);
-    const wallTarget = finalLevel ? wallLimit
+    const wallTarget = finalLevel ? Math.min(wallLimit, 280)
       : Math.max(0, Math.min(wallLimit, Math.round(wallLimit *
         (era >= 5 ? Math.min(0.78, progress)
           : (era >= 4 ? progress * 0.9 : Math.min(0.64, progress))))));
@@ -2096,6 +2116,34 @@ CC.LevelGen = {
       return false;
     }
 
+    // Постановка в конкретный отсек: так башни распределяются по квадрантам,
+    // а не липнут к центру. near — ближе к центру базы, far — к внешней стене.
+    function putInZone(type, level, zi, near) {
+      const zone = zones[zi];
+      if (!zone) return false;
+      const d = CC.BUILDINGS[type] || { w: 1, h: 1 };
+      const w = d.w || 1;
+      const h = d.h || 1;
+      const cells = [];
+      for (let y = zone.y0; y <= zone.y1; y++) {
+        for (let x = zone.x0; x <= zone.x1; x++) {
+          if (occ[y * CC.GRID + x]) continue;
+          if (x + w - 1 > zone.x1 || y + h - 1 > zone.y1) continue;
+          const dist = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+          cells.push({ x: x, y: y, d: near ? dist : -dist });
+        }
+      }
+      cells.sort(function (a, b) {
+        if (a.d !== b.d) return a.d - b.d;
+        if (a.y !== b.y) return a.y - b.y;
+        return a.x - b.x;
+      });
+      for (let c = 0; c < cells.length; c++) {
+        if (place(type, cells[c].x, cells[c].y, level)) return true;
+      }
+      return false;
+    }
+
     // Центр — 2×2, ближе к середине поля.
     putSolid('townhall', th, 'center');
 
@@ -2116,7 +2164,12 @@ CC.LevelGen = {
       return (db.w * db.h) - (da.w * da.h);
     });
     for (let k = 0; k < defList.length; k++) {
-      putSolid(defList[k], levelAt(defList[k]), k % 3 === 0 ? 'center' : (k % 3 === 1 ? 'mid' : 'outer'));
+      const type = defList[k];
+      const level = levelAt(type);
+      const zi = zones.length ? (k % zones.length) : -1;
+      if (zi >= 0 && putInZone(type, level, zi, k % 2 === 0)) continue;
+      if (zi >= 0 && putInZone(type, level, (zi + 1) % zones.length, true)) continue;
+      putSolid(type, level, k % 2 === 0 ? 'mid' : 'outer');
     }
 
     // Ресурсы: добыча и склады, включая тёмные с TH7+.
@@ -2207,18 +2260,6 @@ CC.LevelGen = {
       const n = trapCountAt(type);
       for (let j = 0; j < n; j++) putTrap(type);
     }
-
-    /* ---------- отсеки ---------- */
-    const mx = Math.floor((ix0 + ix1) / 2);
-    const my = Math.floor((iy0 + iy1) / 2);
-    [
-      [ix0, iy0, mx, my], [mx + 1, iy0, ix1, my],
-      [ix0, my + 1, mx, iy1], [mx + 1, my + 1, ix1, iy1]
-    ].forEach(function (r) {
-      if (r[2] - r[0] >= 3 && r[3] - r[1] >= 3) {
-        zones.push({ x0: r[0], y0: r[1], x1: r[2], y1: r[3] });
-      }
-    });
 
     /* ---------- лут: три ресурса, растут с TH ---------- */
     const goldCap = ccStorageCapAt('storage', th);
