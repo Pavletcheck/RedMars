@@ -8599,7 +8599,20 @@ CC.Render = (function () {
     mortar: { max: 18, foot: 1 },
     airdef: { max: 17, foot: 1 },
     mage: { max: 17, foot: 1 },
-    spring: { max: 14, foot: 1 }
+    spring: { max: 14, foot: 1 },
+    sweeper: { max: 7, foot: 1 },
+    ambush: { max: 18, foot: 1 },
+    bombtower: { max: 13, foot: 1 },
+    xbow: { max: 14, foot: 1 },
+    beam: { max: 12, foot: 1 },
+    firespitter: { max: 3, foot: 1 },
+    spelltower: { max: 4, foot: 1 },
+    multiarcher: { max: 5, foot: 1 },
+    ricochet: { max: 5, foot: 1 },
+    multigear: { max: 4, foot: 1 },
+    eagle: { max: 7, foot: 2 },
+    scattershot: { max: 7, foot: 2 },
+    monolith: { max: 5, foot: 2 }
   };
   // Стена — связная конструкция из пролётов и столбов: её рисует
   // drawWallRun. Одиночный 3D-сегмент ломал бы стыки и повороты.
@@ -8748,8 +8761,10 @@ CC.Render = (function () {
     // Ловушки в сработавшем состоянии остаются на 2.5D-арте: 3D снят
     // только для взведённых.
     const cfg3d = BUILDING3D_ART[type];
-    const trapOk = (type !== 'mine' && type !== 'spring') ||
-      trapVariant(b) !== 'spent';
+    const variant = trapVariant(b);
+    const trapOk = type === 'ambush'
+      ? variant !== 'open'
+      : ((type !== 'mine' && type !== 'spring') || variant !== 'spent');
     const use3d = !!cfg3d && !site && trapOk &&
       (b.w || 1) === cfg3d.foot && (b.h || 1) === cfg3d.foot;
     const sp = !use3d && spritesOn && type !== 'cannon' && tilePx <= 96
