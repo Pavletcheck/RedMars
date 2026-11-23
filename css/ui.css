@@ -9378,11 +9378,20 @@ html:root {
   #app .info-stat dd { white-space: nowrap; }
 }
 
-/* 11. Победа/поражение: amber primary + ghost, без переноса строк. */
+/* 11. Победа/поражение: amber primary + ghost. Основная кнопка может
+   переноситься на две строки: «Натренировать отряд» не влезает в 148 px
+   на узком результате. */
 #app .result-actions__main,
 #app .result-actions__second {
-  min-width: 150px;
+  min-width: 0;
   white-space: nowrap;
+}
+#app .result-actions__main {
+  white-space: normal;
+  min-width: 138px;
+  line-height: 1.15;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 #app .result-actions__main {
   border-color: #8a5a12;

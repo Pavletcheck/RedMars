@@ -8624,7 +8624,26 @@ CC.Render = (function () {
   // почти одинаковое, поэтому доля общая — 0.664.
   const BUILDING3D_AY = 0.664;
 
-  const building3d = { images: {}, tops: {}, failed: {} };
+  const building3d = { images: {}, tops: {}, failed: {}, order: [] };
+  // Ограничение декодированных PNG: в длинной кампании типов/уровней много,
+  // 391 кадр по ~0,26 МБ — это ~100 МБ. Держим последние 120 использованных.
+  const BUILDING3D_CACHE = 120;
+
+  function building3dTouch(key) {
+    const order = building3d.order;
+    const i = order.indexOf(key);
+    if (i >= 0) order.splice(i, 1);
+    order.push(key);
+    while (order.length > BUILDING3D_CACHE) {
+      const old = order.shift();
+      if (old === key) {
+        order.push(old);
+        break;
+      }
+      delete building3d.images[old];
+      delete building3d.tops[old];
+    }
+  }
 
   // Верх прозрачности в долях кадра: нужен, чтобы HP-бар и значки висели
   // над 3D-моделью, а не над старым вектором. При file:// canvas может быть
@@ -8668,7 +8687,11 @@ CC.Render = (function () {
     const key = type + '|' + level;
     const known = building3d.images[key];
     if (known) {
-      return (known.complete && known.naturalWidth > 0) ? known : null;
+      if (known.complete && known.naturalWidth > 0) {
+        building3dTouch(key);
+        return known;
+      }
+      return null;
     }
     if (building3d.failed[key]) return null;
     if (typeof document === 'undefined' || typeof Image !== 'function') return null;
@@ -8683,6 +8706,7 @@ CC.Render = (function () {
       if (img.naturalWidth > 0) {
         building3d.images[key] = img;
         building3d.tops[key] = building3dMeasureTop(img);
+        building3dTouch(key);
       } else {
         building3d.failed[key] = true;
       }
@@ -12561,6 +12585,74 @@ CC.Render = (function () {
     return sp;
   }
 
+  /* ---------- 3D-войска на крупном зуме ----------
+     Запечённая канва — 2× и рассчитана на 1×–2×. На 4×/8× она мылится,
+     поэтому для кадра берём исходный PNG 256 px и рисуем его напрямую:
+     под мировым трансформом браузер сэмплирует источник в экранное
+     разрешение. Держим только последние 64 кадра (~16 МБ), остальные
+     догружаются по мере надобности (HTTP-кэш уже прогретый). */
+  const UNIT3D_V2_HI_CAP = 64;
+  const UNIT3D_V2_HI_ZOOM = 120;   // tilePx, после которого нужен 256 px
+  const unit3dV2Hi = new Map();
+  const unit3dV2HiWait = {};
+
+  function unit3dV2HiFrame(type, anim, dir, frame) {
+    if (tilePx <= UNIT3D_V2_HI_ZOOM) return null;
+    const cfg = UNIT3D_V2[type];
+    if (!cfg || !unit3dV2Ready(type)) return null;
+
+    const key = type + '|' + anim + '|' + dir + '|' + frame;
+    const hit = unit3dV2Hi.get(key);
+    if (hit) {
+      if (hit.complete && hit.naturalWidth > 0) {
+        unit3dV2Hi.delete(key);
+        unit3dV2Hi.set(key, hit);
+        return hit;
+      }
+      return null;
+    }
+    if (unit3dV2HiWait[key]) return null;
+    if (typeof Image !== 'function') return null;
+
+    unit3dV2HiWait[key] = 1;
+    let img;
+    try {
+      img = new Image();
+    } catch (e) {
+      delete unit3dV2HiWait[key];
+      return null;
+    }
+    img.onload = function () {
+      delete unit3dV2HiWait[key];
+      if (!(img.naturalWidth > 0)) return;
+      unit3dV2Hi.set(key, img);
+      while (unit3dV2Hi.size > UNIT3D_V2_HI_CAP) {
+        const first = unit3dV2Hi.keys().next().value;
+        if (first === undefined) break;
+        unit3dV2Hi.delete(first);
+      }
+    };
+    img.onerror = function () { delete unit3dV2HiWait[key]; };
+    try {
+      img.src = 'assets/units3d-v2/' + type + '/' + anim +
+        '/dir' + dir + '_' + frame + '.png';
+    } catch (e) {
+      delete unit3dV2HiWait[key];
+      return null;
+    }
+    return null;
+  }
+
+  // Рисуем исходный кадр 256 px с тем же якорем, что у запечённой канвы.
+  function drawUnit3dV2Hi(ctx, type, img) {
+    const cfg = UNIT3D_V2[type];
+    if (!cfg || !img) return false;
+    const k = cfg.frame / UNIT3D_V2_SRC;
+    ctx.drawImage(img,
+      -UNIT3D_V2_GX * k, -UNIT3D_V2_GY * k, cfg.frame, cfg.frame);
+    return true;
+  }
+
   // 0..7 → единичный вектор направления в экране. fy > 0 — на зрителя.
   const DIR_FX = [0, 0.7071, 1, 0.7071, 0, -0.7071, -1, -0.7071];
   const DIR_FY = [-1, -0.7071, 0, 0.7071, 1, 0.7071, 0, -0.7071];
@@ -15709,7 +15801,8 @@ CC.Render = (function () {
 
     // Анимированный 3D-кадр доступен, когда тип загружен целиком.
     // До этого (или при ошибке ассетов) работает прежний векторный арт.
-    const v2Ready = spritesOn && tilePx <= 120 &&
+    // На крупном зуме кадр берётся из исходного PNG 256 px (см. ниже).
+    const v2Ready = spritesOn &&
       !!UNIT3D_V2[u.type] && unit3dV2Ready(u.type);
 
     // лёгкий кивок корпуса на шаге: не «прыжок», а перенос веса.
@@ -15757,14 +15850,18 @@ CC.Render = (function () {
       ? unitSprite(u.type, artKind, dir, frame, lvl)
       : null;
     let v2sp = null;
+    let v2hi = null;
     if (v2Ready) {
       const a = unit3dV2Anim(u, m);
-      v2sp = unitSpriteV2(u.type, dir, a.anim, a.frame);
+      v2hi = unit3dV2HiFrame(u.type, a.anim, dir, a.frame);
+      if (!v2hi) v2sp = unitSpriteV2(u.type, dir, a.anim, a.frame);
     }
     ctx.save();
     ctx.translate(sx, sy);
     ctx.scale(UNIT_DRAW_SCALE, UNIT_DRAW_SCALE);
-    if (v2sp) {
+    if (v2hi) {
+      drawUnit3dV2Hi(ctx, u.type, v2hi);
+    } else if (v2sp) {
       ctx.drawImage(v2sp.canvas, -v2sp.ax, -v2sp.ay, v2sp.w, v2sp.h);
     } else if (sp) {
       ctx.drawImage(sp.canvas, -sp.ax, -sp.ay, sp.w, sp.h);
@@ -16962,6 +17059,7 @@ CC.Render = (function () {
     const frame = Math.min(3, Math.floor(d.t * UNIT_DEATH_FPS));
     const canvas = unit3dV2Sprite(d.type, 'death', d.dir, frame);
     if (!cfg || !canvas) return;
+    const hi = unit3dV2HiFrame(d.type, 'death', d.dir, frame);
 
     const p = P(d.x, d.y);
     const q = Math.min(1, d.t / UNIT_DEATH_DUR);
@@ -16982,7 +17080,8 @@ CC.Render = (function () {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.scale(UNIT_DRAW_SCALE, UNIT_DRAW_SCALE);
-    ctx.drawImage(canvas, -cfg.ax, -cfg.ay, cfg.w, cfg.h);
+    if (hi) drawUnit3dV2Hi(ctx, d.type, hi);
+    else ctx.drawImage(canvas, -cfg.ax, -cfg.ay, cfg.w, cfg.h);
     ctx.restore();
     ctx.globalAlpha = prev;
   }
@@ -18751,10 +18850,18 @@ CC.Render = (function () {
 
   function crown(b, lvl) {
     // 3D-модель выше/ниже старого вектора: полоска здоровья и значки
-    // должны висеть над её фактической верхушкой.
+    // должны висеть над её фактической верхушкой. Если 3D-кадр в этом
+    // состоянии не рисуется (открытая ambush, сработавшая мина/пружина),
+    // берём прежнюю векторную высоту, иначе бар ляжет на модель.
     if (b && BUILDING3D_ART[b.type]) {
-      const h3d = building3dCrown(b.type, lvl);
-      if (h3d > 0) return h3d;
+      const variant = trapVariant(b);
+      const drawn3d = b.type === 'ambush'
+        ? variant !== 'open'
+        : ((b.type !== 'mine' && b.type !== 'spring') || variant !== 'spent');
+      if (drawn3d) {
+        const h3d = building3dCrown(b.type, lvl);
+        if (h3d > 0) return h3d;
+      }
     }
     const arr = CROWN[b.type];
     const l = Math.max(1, Math.min(MAX_LVL, Math.round(lvl || 1)));
@@ -20446,7 +20553,9 @@ CC.Render = (function () {
         ready: unit3dV2.ready, source: 'units3d-v2',
         total: unit3dV2.total, loaded: unit3dV2.loaded,
         failed: unit3dV2.failed, readyTypes: unit3dV2.readyTypes,
-        frames: unit3dV2.frames, types: types
+        frames: unit3dV2.frames, types: types,
+        hi: unit3dV2Hi.size, hiWait: Object.keys(unit3dV2HiWait).length,
+        tilePx: tilePx, sprites: !!spritesOn
       };
     },
     // состояние 3D-фона карты: плитка и спрайты (для инструментов)
