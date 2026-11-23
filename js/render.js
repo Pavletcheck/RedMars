@@ -12039,178 +12039,228 @@ CC.Render = (function () {
   const unitBakes = { count: 0, hits: 0 };
   const unitMv = new WeakMap();
 
-  /* ---------- 3D-биллборды первых трёх войск ----------
-     Художник отрендерил штурмовика, лазерщика и меха в восьми ракурсах
-     (dirN — покой/шаг) и в восьми кадрах удара (attackN). Ракурсы совпадают
-     с UNIT_DIRS: 0 — от камеры, 2 — вправо, 4 — на камеру, 6 — влево.
-     PNG грузятся фоном и один раз уменьшаются в канву того же размера,
-     что и векторный спрайт (U_ARTW×U_ARTH при U_BAKE). Пока картинки не
-     готовы или сломаны, unitSprite печёт прежний векторный арт — игра
-     никогда не ждёт загрузку и не падает без assets.
+  /* ---------- 3D-биллборды v2: штурмовик, лазерщик, мех ----------
+     Второе поколение: 13 кадров × 8 направлений на тип, 256×256 RGBA.
+     idle 2, walk 4, attack 3, death 4. Направления те же, что UNIT_DIRS:
+     0 — от камеры, 2 — вправо, 4 — на камеру, 6 — влево.
+     Якорь земли в исходнике фиксирован — (128, 206); bbox не обрезаем,
+     поэтому фигура не «дышит» и не прыгает между направлениями.
 
-     bb[d] — альфа-рамка кадра dirN в исходных 512×512 (сгенерирована по
-     ассетам). По ней считаем масштаб и якорь ступней: высота каждого
-     направления приводится к h, низ рамки садится в 0,0. Кадр атаки
-     использует ту же рамку, поэтому фигура не прыгает и не «дышит». */
-  const UNIT3D_ART = {
-    barb: {
-      h: 24,
-      bb: [
-        [141, 159, 370, 443], [165, 155, 391, 464],
-        [187, 146, 383, 464], [164, 161, 350, 475],
-        [141, 161, 371, 460], [121, 163, 347, 475],
-        [129, 146, 325, 464], [162, 155, 347, 464]
-      ]
-    },
-    archer: {
-      h: 22,
-      bb: [
-        [191, 184, 381, 429], [202, 181, 426, 446],
-        [201, 188, 378, 446], [186, 188, 314, 456],
-        [131, 177, 321, 443], [85, 174, 310, 455],
-        [134, 180, 311, 446], [198, 152, 326, 446]
-      ]
-    },
-    giant: {
-      h: 36,
-      bb: [
-        [84, 97, 429, 453], [112, 40, 400, 484],
-        [143, 23, 325, 484], [112, 40, 400, 496],
-        [84, 72, 428, 471], [112, 40, 400, 496],
-        [188, 23, 368, 484], [112, 40, 400, 484]
-      ]
-    }
+     PNG грузятся фоном по 12 штук и сразу уменьшаются в маленькую канву
+     (w×h при U_BAKE). Канвы живут всё время игры, исходные Image после
+     запекания отпускаются. Пока тип не загрузился целиком или если любая
+     картинка сломалась, unitSprite рисует прежний векторный арт. */
+  const UNIT3D_V2 = {
+    // frame — сторона кадра в мировых пикселях. Видимая фигура занимает
+    // ~0.66/0.695/0.754 кадра, то есть прежние 24/22/36 px.
+    barb: { frame: 36, w: 40, h: 40, ax: 20, ay: 31 },
+    archer: { frame: 32, w: 38, h: 36, ax: 19, ay: 27 },
+    giant: { frame: 48, w: 54, h: 56, ax: 27, ay: 43 }
   };
+  const UNIT3D_V2_ANIMS = { idle: 2, walk: 4, attack: 3, death: 4 };
+  const UNIT3D_V2_SRC = 256;       // сторона исходного PNG
+  const UNIT3D_V2_GX = 128;        // якорь земли в исходнике
+  const UNIT3D_V2_GY = 206;
+  const UNIT3D_V2_LOAD = 12;       // одновременных запросов
 
-  // ready — хотя бы один тип целиком загружен; types[type].sprites —
-  // [dir][0 покой, 1 удар] с готовыми канвами.
-  const unit3d = {
+  const unit3dV2 = {
     started: false, ready: false, total: 0, loaded: 0, failed: 0,
-    readyTypes: 0, bakes: 0, types: {}
+    readyTypes: 0, frames: 0, types: {}
   };
 
-  function bakeUnit3d(type) {
-    const cfg = UNIT3D_ART[type];
-    const rec = unit3d.types[type];
-    if (!cfg || !rec) return false;
-
-    const sprites = new Array(8);
-    for (let d = 0; d < 8; d++) {
-      const idle = rec.dir[d];
-      const strike = rec.atk[d];
-      const bb = cfg.bb[d];
-      if (!idle || !strike || !bb) return false;
-
-      const srcH = bb[3] - bb[1];
-      if (!(srcH > 0)) return false;
-
-      // высота направления = h мировых пикселей; канва спрайта печётся
-      // в U_BAKE раз крупнее, поэтому и цель умножаем на U_BAKE.
-      const k = (cfg.h * U_BAKE) / srcH;
-      const cx = (bb[0] + bb[2]) / 2;
-      const foot = bb[3];
-      const dx = U_AX * U_BAKE - cx * k;
-      const dy = U_AY * U_BAKE - foot * k;
-      const dw = 512 * k;
-      const dh = 512 * k;
-
-      const pair = new Array(2);
-      for (let f = 0; f < 2; f++) {
-        try {
-          const c = makeCanvas(U_ARTW * U_BAKE, U_ARTH * U_BAKE);
-          const cx2 = c.getContext('2d');
-          if (!cx2) { pair[f] = null; continue; }
-          if ('imageSmoothingEnabled' in cx2) cx2.imageSmoothingEnabled = true;
-          if ('imageSmoothingQuality' in cx2) cx2.imageSmoothingQuality = 'high';
-          cx2.drawImage(f ? strike : idle, dx, dy, dw, dh);
-          pair[f] = c;
-          unit3d.bakes++;
-        } catch (e) {
-          pair[f] = null;
-        }
-      }
-      if (!pair[0] || !pair[1]) return false;
-      sprites[d] = pair;
-    }
-
-    rec.sprites = sprites;
-    rec.ready = true;
-    // исходники больше не нужны: спрайты уже уменьшены и лежат в канвах
-    rec.dir.length = 0;
-    rec.atk.length = 0;
-    return true;
+  function unit3dV2Ready(type) {
+    const rec = unit3dV2.types[type];
+    return !!(rec && rec.ready);
   }
 
-  function unit3dBegin() {
-    if (unit3d.started) return;
-    unit3d.started = true;
+  // Готовая канва кадра или null (тип ещё грузится / ассет сломан).
+  function unit3dV2Sprite(type, anim, dir, frame) {
+    const rec = unit3dV2.types[type];
+    if (!rec || !rec.ready) return null;
+    const list = rec.sprites[anim];
+    if (!list) return null;
+    const byDir = list[dir < 0 ? 0 : (dir & 7)];
+    if (!byDir) return null;
+    return byDir[frame] || null;
+  }
+
+  function bakeUnit3dV2(type, anim, dir, frame, img) {
+    const cfg = UNIT3D_V2[type];
+    const rec = unit3dV2.types[type];
+    if (!cfg || !rec || !img) return false;
+    try {
+      const c = makeCanvas(cfg.w * U_BAKE, cfg.h * U_BAKE);
+      const cx = c.getContext('2d');
+      if (!cx) return false;
+      if ('imageSmoothingEnabled' in cx) cx.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in cx) cx.imageSmoothingQuality = 'high';
+
+      // Кадр 256px садится якорем (128,206) в точку (ax,ay) канвы.
+      // Масштаб одинаков для всех кадров типа — размер не «дышит».
+      const k = (cfg.frame * U_BAKE) / UNIT3D_V2_SRC;
+      cx.drawImage(img,
+        cfg.ax * U_BAKE - UNIT3D_V2_GX * k,
+        cfg.ay * U_BAKE - UNIT3D_V2_GY * k,
+        UNIT3D_V2_SRC * k, UNIT3D_V2_SRC * k);
+
+      rec.sprites[anim][dir][frame] = c;
+      unit3dV2.frames++;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function unit3dV2Begin() {
+    if (unit3dV2.started) return;
+    unit3dV2.started = true;
     // Без DOM (тесты логики) картинки не грузим — остаётся векторный арт.
     if (typeof document === 'undefined' || typeof Image !== 'function') return;
 
-    const types = Object.keys(UNIT3D_ART);
-    unit3d.total = types.length * 16;
+    const types = Object.keys(UNIT3D_V2);
+    const queue = [];
 
     types.forEach(function (type) {
-      const rec = {
-        dir: new Array(8), atk: new Array(8),
-        sprites: null, ready: false, loaded: 0
-      };
-      unit3d.types[type] = rec;
-      let pending = 16;
-      let broken = false;
-
-      function done(ok) {
-        pending--;
-        if (!ok) broken = true;
-        if (pending > 0) return;
-        if (!broken && bakeUnit3d(type)) {
-          unit3d.readyTypes++;
-          unit3d.ready = true;
-        } else {
-          rec.dir.length = 0;
-          rec.atk.length = 0;
+      const rec = { sprites: {}, ready: false, broken: false, loaded: 0, total: 0 };
+      Object.keys(UNIT3D_V2_ANIMS).forEach(function (anim) {
+        const n = UNIT3D_V2_ANIMS[anim];
+        const dirs = new Array(8);
+        for (let d = 0; d < 8; d++) dirs[d] = new Array(n).fill(null);
+        rec.sprites[anim] = dirs;
+        rec.total += n * 8;
+        for (let d = 0; d < 8; d++) {
+          for (let f = 0; f < n; f++) queue.push({ type: type, anim: anim, dir: d, frame: f });
         }
-      }
-
-      function load(name, slot, i) {
-        let img;
-        try {
-          img = new Image();
-          img.onload = function () {
-            unit3d.loaded++;
-            rec.loaded++;
-            slot[i] = img;
-            done(true);
-          };
-          img.onerror = function () {
-            unit3d.failed++;
-            done(false);
-          };
-          img.src = 'assets/units3d/' + type + '/' + name + i + '.png';
-        } catch (e) {
-          unit3d.failed++;
-          done(false);
-        }
-      }
-
-      for (let i = 0; i < 8; i++) {
-        load('dir', rec.dir, i);
-        load('attack', rec.atk, i);
-      }
+      });
+      unit3dV2.types[type] = rec;
+      unit3dV2.total += rec.total;
     });
+
+    let next = 0;
+    let active = 0;
+
+    function release(rec) {
+      Object.keys(rec.sprites).forEach(function (anim) {
+        const dirs = rec.sprites[anim];
+        for (let d = 0; d < dirs.length; d++) dirs[d].length = 0;
+      });
+    }
+
+    function finish(task, ok) {
+      const rec = unit3dV2.types[task.type];
+      active--;
+      if (!ok) rec.broken = true;
+      rec.loaded++;
+      if (rec.loaded >= rec.total) {
+        if (!rec.broken) {
+          rec.ready = true;
+          unit3dV2.readyTypes++;
+          unit3dV2.ready = true;
+        } else {
+          release(rec);
+        }
+      }
+      pump();
+    }
+
+    function start(task) {
+      active++;
+      let img;
+      try {
+        img = new Image();
+      } catch (e) {
+        unit3dV2.failed++;
+        finish(task, false);
+        return;
+      }
+
+      img.onload = function () {
+        unit3dV2.loaded++;
+        // пустой onload (0×0) считаем ошибкой: рисовать нечего
+        const baked = img.width > 0 && img.height > 0 &&
+          bakeUnit3dV2(task.type, task.anim, task.dir, task.frame, img);
+        if (!baked) unit3dV2.failed++;
+        finish(task, baked);
+      };
+      img.onerror = function () {
+        unit3dV2.failed++;
+        finish(task, false);
+      };
+
+      try {
+        img.src = 'assets/units3d-v2/' + task.type + '/' + task.anim +
+          '/dir' + task.dir + '_' + task.frame + '.png';
+      } catch (e) {
+        unit3dV2.failed++;
+        finish(task, false);
+      }
+    }
+
+    function pump() {
+      while (active < UNIT3D_V2_LOAD && next < queue.length) {
+        start(queue[next++]);
+      }
+    }
+
+    pump();
   }
 
-  // Готовая канва кадра или null (тип ещё грузится / картинки не нашлись).
-  function unit3dSprite(type, dir, frame) {
-    const rec = unit3d.types[type];
-    if (!rec || !rec.ready || !rec.sprites) return null;
-    const d = dir < 0 ? 0 : (dir & 7);
-    const pair = rec.sprites[d];
-    if (!pair) return null;
-    return pair[frame === 3 ? 1 : 0] || null;
+  unit3dV2Begin();
+
+  // Кадр анимации для живого юнита. Удар — окно u.atk (0.18 с), шаг —
+  // фаза unitMotion, покой — медленное дыхание 2 кадра. Мёртвый юнит
+  // держит последний кадр падения (в бою смерть рисуется отдельно).
+  const UNIT3D_V2_ATTACK = 0.18;
+  function unit3dV2Anim(u, m) {
+    // инструментам: принудительный кадр для контактных листов и сцены-чека
+    if (typeof u.__v2anim === 'string' && UNIT3D_V2_ANIMS[u.__v2anim] != null) {
+      const n = UNIT3D_V2_ANIMS[u.__v2anim];
+      const f = Math.max(0, Math.min(n - 1, u.__v2frame | 0));
+      return { anim: u.__v2anim, frame: f };
+    }
+    if (u.dead === true) {
+      const dt = Number(u.deathT);
+      return { anim: 'death', frame: isFinite(dt) && dt > 0
+        ? Math.min(3, Math.floor(dt * 8)) : 3 };
+    }
+    if (u.atk > 0) {
+      const q = Math.max(0, Math.min(1, 1 - u.atk / UNIT3D_V2_ATTACK));
+      return { anim: 'attack', frame: Math.min(2, Math.floor(q * 3)) };
+    }
+    if (m && m.walking) {
+      // 4 кадра на тот же шаг, что раньше занимали 2: полный цикл — две
+      // единицы phase, поэтому двойка сохраняет прежнюю длину шага.
+      const f = Math.floor(m.phase * 2) % 4;
+      return { anim: 'walk', frame: f < 0 ? f + 4 : f };
+    }
+    const f = Math.floor(t * 2.4 + ((u.id || 0) % 7) * 0.37) % 2;
+    return { anim: 'idle', frame: f < 0 ? f + 2 : f };
   }
 
-  unit3dBegin();
+  // Обёртка-кэш: drawUnit ждёт { canvas, ax, ay, w, h }. Сами кадры уже
+  // уменьшены при загрузке; здесь один объект на сочетание кадр+направление.
+  function unitSpriteV2(type, dir, anim, frame) {
+    const canvas = unit3dV2Sprite(type, anim, dir, frame);
+    const cfg = UNIT3D_V2[type];
+    if (!canvas || !cfg) return null;
+
+    const key = '3dv2|' + type + '|' + dir + '|' + anim + '|' + frame;
+    const hit = unitSpriteCache.get(key);
+    if (hit) {
+      unitBakes.hits++;
+      unitSpriteCache.delete(key);
+      unitSpriteCache.set(key, hit);
+      return hit;
+    }
+
+    const sp = { canvas: canvas, ax: cfg.ax, ay: cfg.ay, w: cfg.w, h: cfg.h };
+    if (unitSpriteCache.size >= 448) {
+      const first = unitSpriteCache.keys().next().value;
+      if (first !== undefined) unitSpriteCache.delete(first);
+    }
+    unitSpriteCache.set(key, sp);
+    return sp;
+  }
 
   // 0..7 → единичный вектор направления в экране. fy > 0 — на зрителя.
   const DIR_FX = [0, 0.7071, 1, 0.7071, 0, -0.7071, -1, -0.7071];
@@ -14915,9 +14965,7 @@ CC.Render = (function () {
   // Ключ включает вид: hero|barb, pet|lassi, siege|wallwrecker или
   // обычный type. Ловим попадания по LRU: Map переставляет ключ в конец,
   // поэтому в бою с 15 типами не вылетают самые нужные кадры.
-  // vectorOnly — для карточек интерфейса: там нужен резкий арт при
-  // увеличении, поэтому 3D-биллборд (маленькая канва) не подставляем.
-  function unitSprite(type, variant, dir, frame, lvl, vectorOnly) {
+  function unitSprite(type, variant, dir, frame, lvl) {
     let vk = '';
     if (type === 'hero' && typeof variant === 'string' && HERO_KINDS[variant]) vk = variant;
     else if (type === 'pet') vk = (typeof variant === 'string' && PET_ART[variant])
@@ -14930,30 +14978,13 @@ CC.Render = (function () {
     else if (SIEGE_ART[type]) vk = type;
     else if (GUARDIAN_ART[type]) vk = type;
 
-    // Готовый 3D-кадр есть только у barb/archer/giant и только после
-    // загрузки всех 16 PNG типа. Ключ с префиксом 3d не смешивается с
-    // векторным фолбэком: когда картинки придут, начнут печься новые ключи.
-    const raster = vectorOnly ? null : unit3dSprite(type, dir, frame);
-    const key = (raster ? '3d|' : '') + type + (vk ? '|' + vk : '') +
-      '|' + lvl + '|' + dir + '|' + frame;
+    const key = type + (vk ? '|' + vk : '') + '|' + lvl + '|' + dir + '|' + frame;
     const hit = unitSpriteCache.get(key);
     if (hit) {
       unitBakes.hits++;
       unitSpriteCache.delete(key);
       unitSpriteCache.set(key, hit);
       return hit;
-    }
-
-    // Биллборд уже уменьшен до габаритов обычного спрайта — в кадре
-    // остаётся тот же drawImage, что и у векторной канвы.
-    if (raster) {
-      const rsp = { canvas: raster, ax: U_AX, ay: U_AY, w: U_ARTW, h: U_ARTH };
-      if (unitSpriteCache.size >= 448) {
-        const firstKey = unitSpriteCache.keys().next().value;
-        if (firstKey !== undefined) unitSpriteCache.delete(firstKey);
-      }
-      unitSpriteCache.set(key, rsp);
-      return rsp;
     }
 
     // Старый герой без heroKind остаётся на своей крупной канве; новые
@@ -15377,11 +15408,17 @@ CC.Render = (function () {
     const lvl = unitLevel(u);
     const hero = u.type === 'hero';
 
+    // Анимированный 3D-кадр доступен, когда тип загружен целиком.
+    // До этого (или при ошибке ассетов) работает прежний векторный арт.
+    const v2Ready = spritesOn && tilePx <= 120 &&
+      !!UNIT3D_V2[u.type] && unit3dV2Ready(u.type);
+
     // лёгкий кивок корпуса на шаге: не «прыжок», а перенос веса.
     // Сержант тяжелее: качается меньше, но заметнее оседает на шаге.
-    const bob = (!flying && m.walking)
+    // У 3D-кадров шаг/дыхание уже в анимации — процедурный кивок не нужен.
+    const bob = v2Ready ? 0 : ((!flying && m.walking)
       ? Math.sin(m.phase * Math.PI) * (hero ? 0.62 : 0.45)
-      : Math.sin(t * 1.7 + ((u.id || 0) % 7)) * 0.18;
+      : Math.sin(t * 1.7 + ((u.id || 0) % 7)) * 0.18);
 
     // удар: короткий замах и выпад, без телепорта позиции
     const dirv = faceDir(u);
@@ -15417,13 +15454,20 @@ CC.Render = (function () {
     const sx = p.x + dirv.x * lunge;
     const sy = p.y - bob - lift + dirv.y * lunge;
 
-    const sp = spritesOn && tilePx <= 120
+    const sp = (!v2Ready && spritesOn && tilePx <= 120)
       ? unitSprite(u.type, artKind, dir, frame, lvl)
       : null;
+    let v2sp = null;
+    if (v2Ready) {
+      const a = unit3dV2Anim(u, m);
+      v2sp = unitSpriteV2(u.type, dir, a.anim, a.frame);
+    }
     ctx.save();
     ctx.translate(sx, sy);
     ctx.scale(UNIT_DRAW_SCALE, UNIT_DRAW_SCALE);
-    if (sp) {
+    if (v2sp) {
+      ctx.drawImage(v2sp.canvas, -v2sp.ax, -v2sp.ay, v2sp.w, v2sp.h);
+    } else if (sp) {
       ctx.drawImage(sp.canvas, -sp.ax, -sp.ay, sp.w, sp.h);
     } else {
       // векторный запасной путь: те же формы, без канвы (крупный зум и tools)
@@ -15442,8 +15486,8 @@ CC.Render = (function () {
       }
     }
 
-    // полоска здоровья — тонкая, только у раненых
-    if (typeof u.maxHp === 'number' && u.hp < u.maxHp && u.maxHp > 0) {
+    // полоска здоровья — тонкая, только у раненых живых
+    if (!u.dead && typeof u.maxHp === 'number' && u.hp < u.maxHp && u.maxHp > 0) {
       const ratio = Math.max(0, u.hp / u.maxHp);
       // У новых героев полоска пропорциональна силуэту: у главаря она
       // не шире самого героя и не висит на пол-экрана выше головы.
@@ -16558,6 +16602,92 @@ CC.Render = (function () {
     ctx.globalAlpha = 1;
   }
 
+  /* ---------- 3D-смерть первых трёх войск ----------
+     Бой удаляет погибшего из S.units сразу, поэтому падение нельзя
+     рисовать в drawUnit. Ловим пропажу в trackBattle и кладём запись
+     в unitDeaths: 4 кадра death с 8 fps, затем короткая задержка на
+     последнем кадре и плавное растворение. Такие тела попадают в общий
+     список глубины drawEntities, поэтому сортируются с постройками. */
+
+  const UNIT_DEATH_MAX = 12;
+  const UNIT_DEATH_DUR = 0.9;
+  const UNIT_DEATH_FPS = 8;
+  const unitDeaths = [];
+  for (let i = 0; i < UNIT_DEATH_MAX; i++) {
+    unitDeaths.push({
+      on: false, type: '', dir: 4, x: 0, y: 0, t: 0, w: 1, h: 24
+    });
+  }
+  let unitDeathNext = 0;
+
+  function clearUnitDeaths() {
+    for (let i = 0; i < unitDeaths.length; i++) unitDeaths[i].on = false;
+  }
+
+  // true — падение нарисовано 3D-кадрами; false — нужен старый труп.
+  function startUnitDeath(e) {
+    if (!e || !UNIT3D_V2[e.type] || !unit3dV2Ready(e.type)) return false;
+
+    const dir = e.dir == null ? 4 : (e.dir & 7);
+    if (!unit3dV2Sprite(e.type, 'death', dir, 0)) return false;
+
+    const spec = unitSpecOf(e);
+    const d = unitDeaths[unitDeathNext];
+    unitDeathNext = (unitDeathNext + 1) % UNIT_DEATH_MAX;
+
+    d.on = true;
+    d.type = e.type;
+    d.dir = dir;
+    d.x = e.x;
+    d.y = e.y;
+    d.t = 0;
+    d.w = spec.w || 1;
+    d.h = spec.h || 24;
+
+    const p = P(e.x, e.y);
+    burst(p.x, p.y - 4, e.type === 'giant' ? 5 : 4, 1, e.type === 'giant' ? 34 : 26);
+    return true;
+  }
+
+  function updateUnitDeaths(dt) {
+    for (let i = 0; i < unitDeaths.length; i++) {
+      const d = unitDeaths[i];
+      if (!d.on) continue;
+      d.t += dt;
+      if (d.t >= UNIT_DEATH_DUR) d.on = false;
+    }
+  }
+
+  function drawUnitDeath(ctx, d) {
+    const cfg = UNIT3D_V2[d.type];
+    const frame = Math.min(3, Math.floor(d.t * UNIT_DEATH_FPS));
+    const canvas = unit3dV2Sprite(d.type, 'death', d.dir, frame);
+    if (!cfg || !canvas) return;
+
+    const p = P(d.x, d.y);
+    const q = Math.min(1, d.t / UNIT_DEATH_DUR);
+    const fade = d.t > UNIT_DEATH_DUR - 0.18
+      ? Math.max(0, (UNIT_DEATH_DUR - d.t) / 0.18) : 1;
+    const prev = ctx.globalAlpha;
+
+    // оседающая тень: тело ложится, пятно чуть растёт и гаснет
+    const shR = 7.5 * d.w * (d.h / 24) * UNIT_DRAW_SCALE;
+    ctx.globalAlpha = prev * 0.22 * (1 - q * 0.45) * fade;
+    ctx.fillStyle = 'rgba(34,52,24,1)';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, shR * (1 + q * 0.25), shR * GQ * (1 + q * 0.25),
+      0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = prev * fade;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(UNIT_DRAW_SCALE, UNIT_DRAW_SCALE);
+    ctx.drawImage(canvas, -cfg.ax, -cfg.ay, cfg.w, cfg.h);
+    ctx.restore();
+    ctx.globalAlpha = prev;
+  }
+
   /* ---------- отслеживание боя ---------- */
 
   /* ---------- тряска, вспышки, обломки ---------- */
@@ -16762,6 +16892,7 @@ CC.Render = (function () {
     flashList.length = 0;
     final.t = -1;
     for (let i = 0; i < collapses.length; i++) collapses[i].on = false;
+    clearUnitDeaths();
   }
 
   // ловим начало удара (для искр), гибель юнита и разрушение постройки
@@ -16825,7 +16956,8 @@ CC.Render = (function () {
       const e = track.list[i];
       if (alive[e.id]) continue;
       lost++;
-      if (lost <= 3) addCorpse(e);
+      // трём первым — полноценное падение, остальным хватает пыли/старого трупа
+      if (lost <= 3 && !startUnitDeath(e)) addCorpse(e);
     }
 
     // разрушения построек: один раз на каждую
@@ -16858,6 +16990,10 @@ CC.Render = (function () {
       e.y = u.y;
       e.type = u.type;
       e.def = u.def;
+      // последнее направление нужно для кадров смерти: юнит исчезает из
+      // S.units до следующего кадра, и unitMotion для него уже не вызовут.
+      const mm = unitMv.get(u);
+      e.dir = (mm && mm.dir >= 0) ? mm.dir : 4;
     }
     track.list.length = units.length;
 
@@ -17745,6 +17881,15 @@ CC.Render = (function () {
       list.push({ d: u.x + u.y, kind: 'u', ref: u });
     }
 
+    // падающие тела 3D-войск — в общем списке глубины, а не поверх сцены
+    for (let i = 0; i < unitDeaths.length; i++) {
+      const d = unitDeaths[i];
+      if (!d.on) continue;
+      const wp = P(d.x, d.y);
+      if (!pointVisible(wp.x, wp.y, 90)) continue;
+      list.push({ d: d.x + d.y, kind: 'd', ref: d });
+    }
+
     list.sort(function (a, b) {
       if (a.d !== b.d) return a.d - b.d;
       return a.kind === b.kind ? 0 : (a.kind === 'w' ? -1 : (b.kind === 'w' ? 1 : 0));
@@ -17786,6 +17931,8 @@ CC.Render = (function () {
           if (f > k) k = f;
         }
         if (k > 0) drawFlashFaces(ctx, r.x, r.y, r.x + r.w, r.y + r.h, 18, k);
+      } else if (list[i].kind === 'd') {
+        drawUnitDeath(ctx, list[i].ref);
       } else {
         drawUnit(ctx, list[i].ref);
       }
@@ -18450,6 +18597,7 @@ CC.Render = (function () {
       trackBattle(S, 1 / 60);
       updateParticles(1 / 60);
       updateCorpses(1 / 60);
+      updateUnitDeaths(1 / 60);
 
       drawDeployZone(ctx, S);
       drawCollapses(ctx);
@@ -18464,6 +18612,7 @@ CC.Render = (function () {
       drawEnemyStandard(ctx, S);
     } else {
       const list = CC.Base.renderList();
+      clearUnitDeaths();
       updateWalkers(1 / 60);
       drawCoreApron(ctx, list);
       drawPlacement(ctx);
@@ -19847,9 +19996,8 @@ CC.Render = (function () {
       const key = 't|' + type + '|' + s + '|' + lvl;
       if (cardArtCache.has(key)) return cardArtCache.get(key);
 
-      // кадр покоя, взгляд на зрителя (юг): лучший ракурс для карточки.
-      // Векторный арт: он резче 3D-биллборда при увеличении в интерфейсе.
-      const sp = unitSprite(type, '', 4, 0, lvl, true);
+      // кадр покоя, взгляд на зрителя (юг): лучший ракурс для карточки
+      const sp = unitSprite(type, '', 4, 0, lvl);
       if (!sp || !sp.canvas) return null;
       const url = cardFit(sp.canvas, s);
       if (!url) return null;
@@ -19948,19 +20096,27 @@ CC.Render = (function () {
       const m = unitMv.get(u);
       return m ? { dir: m.dir, frame: m.frame, walking: m.walking } : null;
     },
-    // загрузка 3D-биллбордов barb/archer/giant: сколько PNG пришло/не нашлось
-    // и у скольких типов готовы канвы. scene-check/unit-shots ждут ready.
+    // загрузка 3D-биллбордов v2 barb/archer/giant: сколько PNG пришло/не
+    // нашлось и у скольких типов готовы все 104 кадра. Может быть ready
+    // по одному типу — остальные пока живут на векторном арте.
     __unit3d: function () {
       const types = {};
-      Object.keys(unit3d.types).forEach(function (k) {
-        const r = unit3d.types[k];
-        types[k] = { ready: !!r.ready, loaded: r.loaded };
+      Object.keys(unit3dV2.types).forEach(function (k) {
+        const r = unit3dV2.types[k];
+        types[k] = { ready: !!r.ready, loaded: r.loaded, total: r.total };
       });
       return {
-        ready: unit3d.ready, total: unit3d.total, loaded: unit3d.loaded,
-        failed: unit3d.failed, readyTypes: unit3d.readyTypes,
-        bakes: unit3d.bakes, types: types
+        ready: unit3dV2.ready, source: 'units3d-v2',
+        total: unit3dV2.total, loaded: unit3dV2.loaded,
+        failed: unit3dV2.failed, readyTypes: unit3dV2.readyTypes,
+        frames: unit3dV2.frames, types: types
       };
+    },
+    // сколько 3D-тел сейчас падает (для сцены-чека и отладки)
+    __deaths: function () {
+      let n = 0;
+      for (let i = 0; i < unitDeaths.length; i++) if (unitDeaths[i].on) n++;
+      return n;
     },
     // сброс кэша войск при смене сцены: canvas'ы не должны копиться между боями
     __resetUnitSprites: function () {
