@@ -410,6 +410,123 @@ CC.Render = (function () {
   };
   const BG_TILE = 1024;
 
+  /* ---------- 3D-фон карты ----------
+     Бесшовный реголит, отрендеренный в Blender (1024×1024), и дальние
+     скалы/дюны вокруг поля. Пока PNG не загрузился, работает прежняя
+     процедурная плитка, поэтому фон не «мигает» и не ломается. */
+  const BG3D_TILE_SRC = 'assets/bg3d/ground/regolith-1024.png';
+  const bg3d = {
+    tile: null,
+    tileState: 0,           // 0 — ещё нет, 1 — грузится, 2 — готово, 3 — нет файла
+    images: {},
+    failed: {}
+  };
+
+  function bg3dTile() {
+    if (bg3d.tileState === 2) return bg3d.tile;
+    if (bg3d.tileState !== 0) return null;
+    if (typeof document === 'undefined' || typeof Image !== 'function') {
+      bg3d.tileState = 3;
+      return null;
+    }
+    bg3d.tileState = 1;
+    let img;
+    try {
+      img = new Image();
+    } catch (e) {
+      bg3d.tileState = 3;
+      return null;
+    }
+    img.onload = function () {
+      if (img.naturalWidth > 0) {
+        bg3d.tile = img;
+        bg3d.tileState = 2;
+      } else {
+        bg3d.tileState = 3;
+      }
+    };
+    img.onerror = function () { bg3d.tileState = 3; };
+    try {
+      img.src = BG3D_TILE_SRC;
+    } catch (e) {
+      bg3d.tileState = 3;
+    }
+    return null;
+  }
+
+  // Дальние спрайты: размеры и якоря — из manifest.json (drawAt1x/anchor).
+  // x/y — центр футпринта в клетках; поле 0…G, спрайты стоят снаружи.
+  const BG3D_PROPS = [
+    { f: 'rocks/arch-a.png', x: 22, y: -12, w: 178, h: 178, ax: 0.5, ay: 0.66 },
+    { f: 'ridges/ridge-a.png', x: 12, y: -6, w: 614, h: 307, ax: 0.5, ay: 0.56 },
+    { f: 'ridges/dune-a.png', x: 33, y: -8, w: 601, h: 300, ax: 0.5, ay: 0.53 },
+    { f: 'rocks/mesa-b.png', x: 4, y: -9, w: 164, h: 164, ax: 0.5, ay: 0.64 },
+    { f: 'rocks/mesa-a.png', x: 41, y: -10, w: 146, h: 146, ax: 0.5, ay: 0.66 },
+    { f: 'ridges/ridge-b.png', x: -7, y: 12, w: 614, h: 307, ax: 0.5, ay: 0.56, mx: 1 },
+    { f: 'ridges/dune-b.png', x: -8, y: 36, w: 601, h: 300, ax: 0.5, ay: 0.53, mx: 1 },
+    { f: 'rocks/mesa-c.png', x: -10, y: 22, w: 198, h: 198, ax: 0.5, ay: 0.64 },
+    { f: 'rocks/boulders-b.png', x: -5, y: 3, w: 111, h: 111, ax: 0.5, ay: 0.67 },
+    { f: 'rocks/boulders-c.png', x: -6, y: 46, w: 102, h: 102, ax: 0.5, ay: 0.74 },
+    { f: 'ridges/ridge-b.png', x: 30, y: 50, w: 614, h: 307, ax: 0.5, ay: 0.56, mx: 1 },
+    { f: 'ridges/dune-b.png', x: 12, y: 52, w: 601, h: 300, ax: 0.5, ay: 0.53, mx: 1 },
+    { f: 'rocks/mesa-c.png', x: 52, y: 12, w: 198, h: 198, ax: 0.5, ay: 0.64 },
+    { f: 'rocks/boulders-a.png', x: 49, y: 32, w: 106, h: 106, ax: 0.5, ay: 0.75 },
+    { f: 'rocks/mesa-a.png', x: 50, y: 49, w: 146, h: 146, ax: 0.5, ay: 0.66 },
+    { f: 'rocks/boulders-c.png', x: 3, y: 52, w: 102, h: 102, ax: 0.5, ay: 0.74 }
+  ];
+
+  function bg3dPropImage(file) {
+    const known = bg3d.images[file];
+    if (known) {
+      return (known.complete && known.naturalWidth > 0) ? known : null;
+    }
+    if (bg3d.failed[file]) return null;
+    if (typeof document === 'undefined' || typeof Image !== 'function') return null;
+    let img;
+    try {
+      img = new Image();
+    } catch (e) {
+      bg3d.failed[file] = true;
+      return null;
+    }
+    img.onload = function () {
+      if (img.naturalWidth > 0) bg3d.images[file] = img;
+      else bg3d.failed[file] = true;
+    };
+    img.onerror = function () {
+      bg3d.failed[file] = true;
+      try { delete bg3d.images[file]; } catch (e) {}
+    };
+    bg3d.images[file] = img;
+    try {
+      img.src = 'assets/bg3d/' + file;
+    } catch (e) {
+      bg3d.failed[file] = true;
+      return null;
+    }
+    return null;
+  }
+
+  function drawBg3dProps(ctx) {
+    for (let i = 0; i < BG3D_PROPS.length; i++) {
+      const p = BG3D_PROPS[i];
+      const img = bg3dPropImage(p.f);
+      if (!img) continue;
+      const cx = (p.x - p.y) * TW / 2;
+      const cy = (p.x + p.y) * TH / 2;
+      if (!pointVisible(cx, cy, p.h)) continue;
+      if (p.mx) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, -p.w * p.ax, -p.h * p.ay, p.w, p.h);
+        ctx.restore();
+      } else {
+        ctx.drawImage(img, cx - p.w * p.ax, cy - p.h * p.ay, p.w, p.h);
+      }
+    }
+  }
+
   function paintRegolithTile(ctx) {
     const S = BG_TILE;
     ctx.fillStyle = PAL.regolith;
@@ -697,7 +814,8 @@ CC.Render = (function () {
   // пикселями с перекрытием, чтобы при дробном масштабе камеры не было
   // волосяных швов. Поверх — непериодический макро-слой.
   function drawGroundTexture(ctx) {
-    const tile = ensureRegolithTile();
+    const art = bg3dTile();
+    const tile = art || ensureRegolithTile();
     if (!tile) return;
     const T = BG_TILE;
     const overlap = 2;
@@ -18761,6 +18879,7 @@ CC.Render = (function () {
 
     drawGroundTexture(ctx);
     drawGround(ctx);
+    drawBg3dProps(ctx);
     drawEdgeProps(ctx, battle);
     drawBuildGrid(ctx);
 
@@ -20313,6 +20432,15 @@ CC.Render = (function () {
         total: unit3dV2.total, loaded: unit3dV2.loaded,
         failed: unit3dV2.failed, readyTypes: unit3dV2.readyTypes,
         frames: unit3dV2.frames, types: types
+      };
+    },
+    // состояние 3D-фона карты: плитка и спрайты (для инструментов)
+    __bg3d: function () {
+      return {
+        tile: bg3d.tileState,
+        images: Object.keys(bg3d.images).length,
+        failed: Object.keys(bg3d.failed),
+        props: BG3D_PROPS.length
       };
     },
     // состояние 3D-зданий: какие уровни в памяти/сломаны (для инструментов)
