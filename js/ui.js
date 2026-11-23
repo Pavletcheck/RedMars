@@ -14,6 +14,7 @@ CC.UI = (function () {
   const shopNote = document.getElementById('shop-note');
   const shopX = document.getElementById('shop-x');
   const shopCats = document.getElementById('shop-cats');
+  const shopSub = document.getElementById('shop-sub');
   const shopResGold = document.getElementById('shop-res-gold');
   const shopResGoldCap = document.getElementById('shop-res-gold-cap');
   const shopResElixir = document.getElementById('shop-res-elixir');
@@ -2680,8 +2681,8 @@ CC.UI = (function () {
     const current = CC.Game.currentLevel();
     if (levelsHint) {
       const line = (CC.LEVEL_ERAS || 10) + ' эпох, ' + CC.LEVELS.length +
-        ' узлов. Звёзды — лучший результат. Для прохода хватит одной: ' +
-        '50% построек, снос центра или 100%.';
+        ' узлов. Центры 1–' + CC.MAX_TH + '. Звёзды — лучший результат. ' +
+        'Для прохода хватит одной: 50% построек, снос центра или 100%.';
       if (levelsHint.textContent !== line) levelsHint.textContent = line;
     }
     const sig = current + '|' + cleared.join(',') + '|' + (mapSelected === null ? '' : mapSelected) + '|' +
@@ -2813,6 +2814,7 @@ CC.UI = (function () {
     if (mapCardName) mapCardName.textContent = lvl.name;
     if (mapCardTh) {
       mapCardTh.textContent = 'Командный центр ' + lvl.th + ' · TH ' + lvl.th +
+        ' / ' + CC.MAX_TH +
         (lvl.boss || lvl.final ? ' · финал' : '');
     }
     if (mapCardChapter) {
@@ -3054,7 +3056,8 @@ CC.UI = (function () {
       types: ['cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper',
         'ambush', 'bombtower', 'xbow', 'beam', 'eagle', 'scattershot',
         'monolith', 'spelltower', 'multiarcher', 'ricochet', 'multigear',
-        'firespitter', 'wall'] },
+        'firespitter', 'revenge', 'superwizard', 'spiky', 'firecracker',
+        'wall'] },
     { id: 'resources', name: 'Ресурсы', icon: '⛏', asset: 'cat-resources',
       types: ['goldmine', 'elixir', 'darkdrill', 'storage', 'estorage',
         'darkstorage'] },
@@ -3070,8 +3073,16 @@ CC.UI = (function () {
   // «Стены» — не шестая вкладка рейла, а отдельный режим-счётчик.
   const WALLS_CAT = { id: 'walls', name: 'Стены', icon: '🧱', asset: 'cat-defense' };
 
+  // «Стражи» — тоже отдельная кнопка без data-shop-cat: это не постройки,
+  // а боевая категория поздних центров. Счётчик с пробелами, чтобы старый
+  // тест на пять числовых счётчиков рейла не сломался.
+  const GUARDIANS_CAT = {
+    id: 'guardians', name: 'Стражи', icon: '🛡️', asset: 'cat-army'
+  };
+
   function shopCatTypes(id) {
     if (id === 'walls') return ['wall'];
+    if (id === GUARDIANS_CAT.id) return [];
     if (id === 'all') return CC.PALETTE.slice();
     const cat = SHOP_CATS.find(function (c) { return c.id === id; });
     return cat && cat.types ? cat.types.slice() : CC.PALETTE.slice();
@@ -3178,6 +3189,14 @@ CC.UI = (function () {
     const statusEl = status
       ? '<span class="shop-card__req term-card__status">' + status + '</span>'
       : '<span class="term-card__status term-card__status_empty"></span>';
+    // У пассивной обороны вместо DPS честный процент ответа.
+    let descText = d.desc || '';
+    if (d.passive) {
+      const pst = CC.BuildingStats && CC.BuildingStats.at
+        ? CC.BuildingStats.at(type, 1) : null;
+      const pct = pst && pst.passivePercent != null ? pst.passivePercent : 0;
+      descText += ' · ответ ' + pct + '%';
+    }
     let title;
     if (locked) title = lockReason;
     else if (full) title = 'Лимит исчерпан';
@@ -3205,9 +3224,70 @@ CC.UI = (function () {
         '<span class="' + iconCls + '" data-type="' + type + '">' +
           (art || icon) + '</span>' +
       '</span>' +
-      '<span class="shop-card__desc term-card__desc">' + (d.desc || '') + '</span>' +
+      '<span class="shop-card__desc term-card__desc">' + (descText || '') + '</span>' +
       statusEl + cost +
       '</button>';
+  }
+
+  /* Карточка стража в терминале: это не постановка, а ярлык на окно армии.
+     Карточка честно показывает уровень/цену/замок и не попадает в
+     data-type, чтобы не включить режим установки. */
+  function guardianShopCardHtml(id) {
+    const g = CC.GUARDIANS && CC.GUARDIANS[id];
+    if (!g) return '';
+    const th = CC.Game.townhallLevel();
+    const need = g.minTh || (CC.GUARDIAN_UNLOCK && CC.GUARDIAN_UNLOCK[id]) || 18;
+    const locked = !guardianUnlocked(id);
+    const lvl = guardianLevel(id);
+    const capTh = locked ? CC.MAX_TH : th;
+    const max = (CC.guardianMaxLevel(id, capTh) || lvl);
+    const st = CC.guardianStats ? (CC.guardianStats(id, lvl) || {}) : {};
+    const picked = guardianPicked(id);
+    const price = locked ? null : guardianPrice(id);
+    const priceText = price
+      ? fmtNum(price.cost) + ' ' + resWord(price.currency) +
+        (price.time > 0 ? ' · ' + formatTime(price.time) : '')
+      : (locked ? 'Не занимает армию' : 'Максимальный уровень');
+    const status = locked
+      ? '🔒 С командного центра ' + need
+      : (picked ? '✓ выбран на бой' : 'Не занимает армию · открыть армию');
+    const art = cardArt('troop', id, 180, 1,
+      'shop-card__art term-card__art');
+    const iconCls = 'shop-card__icon cc-icon term-card__art-fallback' +
+      (art ? ' has-art' : '');
+    const cls = 'shop-card term-card term-card_guardian' +
+      (art ? ' has-art' : '') +
+      (locked ? ' is-locked' : '') + (picked ? ' is-picked' : '');
+    return '<button class="' + cls + '" type="button" data-guardian-open="' +
+      escHtml(id) + '" data-guardian="' + escHtml(id) + '"' +
+      (locked ? ' data-locked="1" aria-disabled="true"' : '') +
+      ' data-level="' + (locked ? need : lvl) + '" data-state="' +
+      (locked ? 'locked' : 'available') + '"' +
+      ' title="' + escHtml(g.name + ' · ' + g.role +
+        (locked ? ' · с центра ' + need : ' · не занимает армию')) + '">' +
+      '<span class="term-card__banner">' +
+        '<b class="shop-card__name term-card__name">' + escHtml(g.name) + '</b>' +
+        '<span class="shop-card__count term-card__limit">Ур. ' + lvl + ' / ' +
+          Math.max(1, max) + '</span>' +
+      '</span>' +
+      '<span class="term-card__art-wrap">' +
+        (locked ? '<span class="term-card__lock" aria-hidden="true">🔒</span>' : '') +
+        '<span class="' + iconCls + '" ' +
+          'data-type="' + escHtml(id) + '">' +
+          (art || GUARDIAN_ICONS[id] || '🛡️') +
+        '</span>' +
+      '</span>' +
+      '<span class="shop-card__desc term-card__desc">' +
+        'HP ' + fmtNum(st.hp || 0) + ' · DPS ' + fmtNum(st.dps || 0) +
+        ' · место 0</span>' +
+      '<span class="shop-card__req term-card__status">' + status + '</span>' +
+      '<span class="shop-card__cost term-card__cost">' + escHtml(priceText) +
+      '</span>' +
+      '</button>';
+  }
+
+  function guardianShopCardsHtml() {
+    return (CC.GUARDIAN_ORDER || []).map(guardianShopCardHtml).join('');
   }
 
   // Карточка-счётчик стен: стена ставится сегментами, а не одной постройкой.
@@ -3522,6 +3602,10 @@ CC.UI = (function () {
   function syncShop() {
     if (!shopOpen || !shopGrid) return;
 
+    if (shopSub) {
+      shopSub.textContent = 'Строительство · центры 1–' + CC.MAX_TH;
+    }
+
     // Подсказка терминала: сначала — про нулевой лимит ресурса (нет склада),
     // затем — обычный онбординг TH1.
     if (shopNote) {
@@ -3567,7 +3651,7 @@ CC.UI = (function () {
 
     const tutor = CC.Game.tutorial ? CC.Game.tutorial() : null;
     if (SHOP_CATS.findIndex(function (c) { return c.id === shopCat; }) === -1 &&
-        shopCat !== WALLS_CAT.id) {
+        shopCat !== WALLS_CAT.id && shopCat !== GUARDIANS_CAT.id) {
       shopCat = 'all';
     }
 
@@ -3580,6 +3664,7 @@ CC.UI = (function () {
       '|gc' + Math.round(CC.Game.cap('gold')) + '|ec' + Math.round(CC.Game.cap('elixir')) +
       '|dc' + Math.round(CC.Game.cap('dark')) +
       '|cat' + shopCat +
+      '|gu' + guardianBattleValue().join(',') +
       '|lesson' + (tutor && tutor.active ? tutor.id : '-');
     if (cache.shopSig === sig) return;
     cache.shopSig = sig;
@@ -3621,19 +3706,53 @@ CC.UI = (function () {
         '<span class="term-cat__name">Стены</span>' +
         '<span class="term-cat__count">' + wallHave + ' / ' + wallLimit + '</span>' +
         '</button>';
+
+      const guardActive = shopCat === GUARDIANS_CAT.id ? ' is-active' : '';
+      const guardPicked = guardianBattleValue().length;
+      rail += '<button class="term-cat term-cat_guardians' + guardActive +
+        '" type="button" data-shop-guardian="1" role="tab" aria-selected="' +
+        (shopCat === GUARDIANS_CAT.id ? 'true' : 'false') + '"' +
+        ' onclick="CC.UI.setShopCategory(\'' + GUARDIANS_CAT.id + '\')">' +
+        '<span class="term-cat__icon term-cat__icon_guardian" aria-hidden="true">' +
+          GUARDIANS_CAT.icon + '</span>' +
+        '<span class="term-cat__name">Стражи</span>' +
+        '<span class="term-cat__count">' + guardPicked + ' / ' +
+          (CC.GUARDIAN_ORDER || []).length + '</span>' +
+        '</button>';
       shopCats.innerHTML = rail;
     }
 
     const shopScroll = shopGrid.scrollTop || 0;
-    const types = shopSortedTypes(shopCat);
-    shopGrid.innerHTML = types.map(function (type) {
-      return shopCat === WALLS_CAT.id ? wallCardHtml() : shopCardHtml(type);
-    }).join('');
+    if (shopCat === GUARDIANS_CAT.id) {
+      shopGrid.innerHTML = guardianShopCardsHtml();
+    } else {
+      const types = shopSortedTypes(shopCat);
+      shopGrid.innerHTML = types.map(function (type) {
+        return shopCat === WALLS_CAT.id ? wallCardHtml() : shopCardHtml(type);
+      }).join('');
+    }
     shopGrid.scrollLeft = 0;
     if (shopScroll) shopGrid.scrollTop = shopScroll;
   }
 
   function onShopClick(e) {
+    const guardianCard = e.target.closest('[data-guardian-open]');
+    if (guardianCard) {
+      if (guardianCard.dataset.locked === '1') {
+        toast(guardianCard.title || 'Стражи откроются позже');
+        return;
+      }
+      const id = guardianCard.dataset.guardianOpen;
+      closeShop();
+      const opened = openRecruit(null);
+      if (opened && opened.error) return;
+      openRecruitTab('guardians');
+      recruitSel = 'u:' + id;
+      cache.recruitSig = null;
+      if (recruitOpen) syncRecruit();
+      return;
+    }
+
     const card = e.target.closest('[data-type]');
     if (!card) return;
 
@@ -4566,7 +4685,7 @@ CC.UI = (function () {
     cache.extraSig = sig;
 
     selExtra.innerHTML = '<div class="selextra__head"><span>' + escHtml(title) +
-      '</span><span class="selextra__tag">данные CoC</span></div>' +
+      '</span><span class="selextra__tag">данные справочник</span></div>' +
       '<div class="selextra__list">' + rows + '</div>';
   }
 
@@ -4697,16 +4816,25 @@ CC.UI = (function () {
       rows.push({ label: label, value: String(value) });
     };
     const d = CC.BUILDINGS[type] || {};
+    // Game.stats() отдаёт боевые поля, но не пассивный ответ: берём его
+    // из BuildingStats, чтобы spiky честно показывал процент вместо DPS.
+    const bstat = CC.BuildingStats && CC.BuildingStats.at
+      ? CC.BuildingStats.at(type, s.level || 1) : null;
+    const passive = s.passive || (bstat && bstat.passive);
+    const passivePct = s.passivePercent != null
+      ? s.passivePercent : (bstat ? bstat.passivePercent : null);
 
     if (s.hp) add('Прочность', fmtNum(s.hp));
-    if (s.dps) add('Урон (DPS)', fmtNum(s.dps));
+    if (passive) {
+      add('Пассивный ответ', (Number(passivePct) || 0) + '% урона атакующему');
+    } else if (s.dps) add('Урон (DPS)', fmtNum(s.dps));
     else if (s.dmg) add('Урон', fmtNum(s.dmg));
     if (s.range) add('Дальность', s.range + ' кл.');
     if (s.minRange) add('Мин. дальность', s.minRange + ' кл.');
     if (s.rate) add('Скорость', s.rate.toFixed(2) + '/с');
     if (s.splash) add('Площадь', s.splash + ' кл.');
 
-    // Добыча — в час, как в таблице CoC.
+    // Добыча — в час, как в таблице справочник.
     if (s.production) {
       add('Добыча в час', fmtNum(Math.round(s.production * 3600)) + ' ' +
         resWord(s.res));
@@ -4773,6 +4901,11 @@ CC.UI = (function () {
     const out = [];
     const cap = rowCap(type, s.level);
     const perHour = s.production ? Math.round(s.production * 3600) : 0;
+    const bstat = CC.BuildingStats && CC.BuildingStats.at
+      ? CC.BuildingStats.at(type, s.level || 1) : null;
+    const passive = s.passive || (bstat && bstat.passive);
+    const passivePct = s.passivePercent != null
+      ? s.passivePercent : (bstat ? bstat.passivePercent : null);
 
     if (type === 'townhall') {
       out.push('Открывает постройки и новые уровни');
@@ -4828,6 +4961,11 @@ CC.UI = (function () {
     } else if (s.hidden) {
       out.push('Оборона из засады');
       out.push('Скрыта до ' + (s.revealRange || 2.5) + ' кл.');
+    } else if (passive) {
+      out.push('Оборона базы');
+      out.push('Пассивный ответ: ' + (Number(passivePct) || 0) +
+        '% урона атакующему');
+      out.push('Не тратит выстрел и не выбирает цель');
     } else if (s.dmg) {
       out.push('Оборона базы');
       out.push('Урон ' + fmtNum(s.dmg) + ', дальность ' + s.range + ' кл.');
@@ -4849,6 +4987,16 @@ CC.UI = (function () {
     };
 
     if (next.hp && next.hp !== s.hp) add('Прочность', fmtNum(s.hp), fmtNum(next.hp));
+    const bstatNow = CC.BuildingStats && CC.BuildingStats.at
+      ? CC.BuildingStats.at(type, s.level || 1) : null;
+    const bstatNext = CC.BuildingStats && CC.BuildingStats.at
+      ? CC.BuildingStats.at(type, (s.level || 1) + 1) : null;
+    if (bstatNow && bstatNow.passive && bstatNext &&
+        bstatNext.passivePercent != null &&
+        bstatNext.passivePercent !== bstatNow.passivePercent) {
+      add('Пассивный ответ', (Number(bstatNow.passivePercent) || 0) + '%',
+        bstatNext.passivePercent + '%');
+    }
     if (next.dps && next.dps !== s.dps) add('DPS', fmtNum(s.dps), fmtNum(next.dps));
     else if (next.dmg && next.dmg !== s.dmg) {
       add('Урон', fmtNum(s.dmg), fmtNum(next.dmg));
@@ -6148,6 +6296,12 @@ CC.UI = (function () {
     battledrill: '⛏️', trooplauncher: '🚀', skywagon: '🛸'
   };
 
+  // Стражи — отдельная категория поздних центров. PNG-портретов нет,
+  // поэтому у карточек только эмодзи: запросов к assets/portraits не будет.
+  const GUARDIAN_ICONS = {
+    longshot: '🏹', smasher: '💢', logger: '🪓'
+  };
+
   let loadout = null;
 
   function storageGet(key) {
@@ -6198,7 +6352,7 @@ CC.UI = (function () {
       raw = null;
     }
 
-    const out = { spells: {}, pets: {}, siege: null };
+    const out = { spells: {}, pets: {}, siege: null, guardians: [] };
     if (raw && typeof raw === 'object') {
       if (raw.spells && typeof raw.spells === 'object') {
         for (const id in raw.spells) {
@@ -6217,6 +6371,11 @@ CC.UI = (function () {
         }
       }
       if (raw.siege && CC.SIEGE && CC.SIEGE[raw.siege]) out.siege = raw.siege;
+      if (Array.isArray(raw.guardians)) {
+        out.guardians = raw.guardians.filter(function (id) {
+          return !!(CC.GUARDIANS && CC.GUARDIANS[id]);
+        });
+      }
     }
 
     loadout = out;
@@ -6247,12 +6406,26 @@ CC.UI = (function () {
       seen[pet] = 1;
     });
     if (ld.siege && !siegeUnlocked(ld.siege)) ld.siege = null;
+    // Стражи не занимают армию, но закрытые на текущем центре не должны
+    // уезжать в бой. Дубликаты тоже убираем.
+    if (Array.isArray(ld.guardians)) {
+      const seenG = {};
+      ld.guardians = ld.guardians.filter(function (id) {
+        if (!CC.GUARDIANS || !CC.GUARDIANS[id] || seenG[id]) return false;
+        if (!guardianUnlocked(id)) return false;
+        seenG[id] = 1;
+        return true;
+      });
+    } else {
+      ld.guardians = [];
+    }
   }
 
   function saveLoadout() {
     const ld = loadoutData();
     trimLoadout();
     storageSet(LOADOUT_KEY, JSON.stringify(ld));
+    installLoadoutHooks();
     cache.recruitSig = null;
     cache.kitSig = null;
     return ld;
@@ -6379,6 +6552,64 @@ CC.UI = (function () {
     return (s.minTh || 0) <= CC.Game.townhallLevel();
   }
 
+  /* ---------- стражи ---------- */
+
+  function guardianUnlocked(id) {
+    const g = CC.GUARDIANS && CC.GUARDIANS[id];
+    if (!g) return false;
+    const th = CC.Game.townhallLevel();
+    const need = g.minTh || (CC.GUARDIAN_UNLOCK && CC.GUARDIAN_UNLOCK[id]) || 18;
+    if (th < need) return false;
+    const max = CC.guardianMaxLevel ? CC.guardianMaxLevel(id, th) : 0;
+    return max > 0;
+  }
+
+  // Уровень стража в сейве пока не ведётся: интерфейс честно показывает
+  // первый уровень, а поле guardianLevel появится у игровой модели позже.
+  function guardianLevel(id) {
+    if (CC.Game.guardianLevel) {
+      return Math.max(1, Math.floor(Number(CC.Game.guardianLevel(id)) || 1));
+    }
+    return 1;
+  }
+
+  function guardianPicked(id) {
+    return loadoutData().guardians.indexOf(id) !== -1;
+  }
+
+  // Верхняя ступень прокачки: цена/время/валюта следующего уровня.
+  function guardianPrice(id) {
+    const lvl = guardianLevel(id);
+    const max = CC.guardianMaxLevel ? CC.guardianMaxLevel(id, CC.Game.townhallLevel()) : 0;
+    if (max <= lvl || !CC.guardianStats) return null;
+    const next = CC.guardianStats(id, lvl + 1);
+    if (!next || !next.cost) return null;
+    return { cost: next.cost, time: next.time, currency: next.currency };
+  }
+
+  function pickGuardian(id) {
+    if (!CC.GUARDIANS || !CC.GUARDIANS[id]) return { error: 'Неизвестный страж' };
+    if (!guardianUnlocked(id)) {
+      return { error: 'Страж откроется с центра ' + (CC.GUARDIANS[id].minTh || 18) };
+    }
+    const ld = loadoutData();
+    const at = ld.guardians.indexOf(id);
+    if (at !== -1) {
+      ld.guardians.splice(at, 1);
+      saveLoadout();
+      return { ok: true, id: null, cleared: true };
+    }
+    ld.guardians.push(id);
+    saveLoadout();
+    return { ok: true, id: id };
+  }
+
+  function guardianBattleValue() {
+    const ld = loadoutData();
+    trimLoadout();
+    return ld.guardians.slice();
+  }
+
   function pickSiege(id) {
     if (!CC.SIEGE[id]) return { error: 'Неизвестная осадная машина' };
     if (!siegeUnlocked(id)) {
@@ -6424,6 +6655,9 @@ CC.UI = (function () {
     if (typeof CC.Game.siegeBattleArmy !== 'function') {
       CC.Game.siegeBattleArmy = function () { return siegeBattleValue(); };
     }
+    if (typeof CC.Game.guardianBattleArmy !== 'function') {
+      CC.Game.guardianBattleArmy = function () { return guardianBattleValue(); };
+    }
   }
 
   // Снимок армии для Арены: Pvp.attack переносит spells/pets/siege как есть.
@@ -6433,9 +6667,11 @@ CC.UI = (function () {
     const spells = spellLoadoutMap();
     const pets = petBattleMap();
     const siege = siegeBattleValue();
+    const guardians = guardianBattleValue();
     if (Object.keys(spells).length) snap.spells = spells;
     if (Object.keys(pets).length) snap.pets = pets;
     if (siege && siege.length) snap.siege = siege;
+    if (guardians.length) snap.guardians = guardians;
     return snap;
   }
 
@@ -6464,14 +6700,15 @@ CC.UI = (function () {
       '</span>';
   }
 
-  // Иконка для заклинаний, питомцев и осад. PNG-портретов у них нет,
-  // поэтому <img> не создаём вообще — только эмодзи из карты выше.
+  // Иконка для заклинаний, питомцев, осад и стражей. PNG-портретов у них
+  // нет, поэтому <img> не создаём вообще — canvas-арт или эмодзи.
   // В консоли не будет 404 на assets/portraits/<id>.png.
   function genericPortrait(id, icon, size, cls) {
-    // Для войск CC.Render.troopArt умеет рисовать canvas; для заклинаний,
-    // питомцев и осад он вернёт null, и останется эмодзи.
-    const art = CC.TROOPS && CC.TROOPS[id]
-      ? cardArt('troop', id, size, 1, cls + '__art') : null;
+    // Для войск и стражей CC.Render.troopArt умеет рисовать canvas;
+    // для заклинаний, питомцев и осад он вернёт null, и останется эмодзи.
+    const drawable = (CC.TROOPS && CC.TROOPS[id]) ||
+      (CC.GUARDIANS && CC.GUARDIANS[id]);
+    const art = drawable ? cardArt('troop', id, size, 1, cls + '__art') : null;
     return '<span class="' + cls + '">' +
       '<span class="' + cls + '__icon cc-icon" data-fallback="1">' +
         (art || icon || '❔') + '</span>' +
@@ -6487,6 +6724,9 @@ CC.UI = (function () {
     const max = locked ? 1 : (CC.troopMaxLevel(type, th) || lvl);
     const bad = locked ? null : CC.Game.canTrain(type).error;
     const space = d.space || 1;
+    const speed = d.speed != null ? d.speed : 1;
+    const range = d.range != null ? d.range : 1;
+    const rate = d.attackSpeed || 1;
     const selected = state.trainSel === type ? ' is-selected' : '';
     const cls = 'recruit-card' + (locked ? ' is-locked' : '') +
       (bad ? ' is-off' : '') + selected;
@@ -6500,10 +6740,58 @@ CC.UI = (function () {
         '<span class="recruit-card__lvl">Ур. ' + lvl + ' / ' + Math.max(1, max) + '</span>' +
         '<span class="recruit-card__meta">⚡' + fmtNum(d.cost) + ' · ' +
           space + ' ' + spaceWord(space) + ' · ' + d.time + 'с</span>' +
+        '<span class="recruit-card__stats" title="Скорость · дальность · темп атаки">' +
+          speed + ' · ' + range + ' · ' + rate + '/с</span>' +
       '</span>' +
       (locked
         ? '<span class="recruit-card__lock">🔒 С центра ' + need + '</span>'
         : (bad ? '<span class="recruit-card__off">' + escHtml(bad) + '</span>' : '')) +
+      '</button>';
+  }
+
+  /* Карточка стража: уровень, максимум на текущем центре, цена следующего
+     уровня и замок «с центра 18». Место в армии — 0: это отдельная
+     категория боевого набора, а не войско из очереди. */
+  function guardianCardHtml(id) {
+    const g = CC.GUARDIANS[id];
+    if (!g) return '';
+    const th = CC.Game.townhallLevel();
+    const need = g.minTh || (CC.GUARDIAN_UNLOCK && CC.GUARDIAN_UNLOCK[id]) || 18;
+    const locked = !guardianUnlocked(id);
+    const lvl = guardianLevel(id);
+    const capTh = locked ? CC.MAX_TH : th;
+    const max = (CC.guardianMaxLevel(id, capTh) || lvl);
+    const st = CC.guardianStats ? (CC.guardianStats(id, lvl) || {}) : {};
+    const sel = recruitSel === 'u:' + id ? ' is-selected' : '';
+    const picked = guardianPicked(id);
+    const price = locked ? null : guardianPrice(id);
+    const meta = locked
+      ? 'С центра ' + need
+      : ('HP ' + fmtNum(st.hp || 0) + ' · DPS ' + fmtNum(st.dps || 0));
+    const priceText = locked
+      ? 'Не занимает армию'
+      : (price
+        ? fmtNum(price.cost) + ' ' + resWord(price.currency) +
+          (price.time > 0 ? ' · ' + formatTime(price.time) : '')
+        : 'Максимальный уровень');
+    return '<button class="recruit-card recruit-card_guardian' + sel +
+      (picked ? ' is-picked' : '') + (locked ? ' is-locked' : '') +
+      '" type="button" data-recruit-guardian="' + escHtml(id) + '"' +
+      ' title="' + escHtml(g.name + ' · ' + g.role +
+        (locked ? ' · с центра ' + need : ' · не занимает армию')) + '">' +
+      genericPortrait(id, GUARDIAN_ICONS[id] || '🛡️', 84,
+        'recruit-card__portrait') +
+      '<span class="recruit-card__body">' +
+        '<b class="recruit-card__name">' + escHtml(g.name) + '</b>' +
+        '<span class="recruit-card__lvl">Ур. ' + lvl + ' / ' +
+          Math.max(1, max) + '</span>' +
+        '<span class="recruit-card__meta">' + meta + '</span>' +
+        '<span class="recruit-card__stats">' + escHtml(priceText) + '</span>' +
+      '</span>' +
+      (locked
+        ? '<span class="recruit-card__lock">🔒 С центра ' + need + '</span>'
+        : '<span class="recruit-card__off' + (picked ? ' is-on' : '') + '">' +
+          (picked ? '✓ на бой' : 'Выбрать на бой') + '</span>') +
       '</button>';
   }
 
@@ -6544,9 +6832,10 @@ CC.UI = (function () {
      питомцы и осадные машины в P2 ещё без механик: показываем полные
      карточки данных и честную кнопку «В разработке». */
 
-  const RECRUIT_TABS = ['troops', 'spells', 'pets', 'siege'];
+  const RECRUIT_TABS = ['troops', 'guardians', 'spells', 'pets', 'siege'];
 
   function recruitTabIds(tab) {
+    if (tab === 'guardians') return (CC.GUARDIAN_ORDER || []).slice();
     if (tab === 'spells') return Object.keys(CC.SPELLS || {});
     if (tab === 'pets') return Object.keys(CC.PETS || {});
     if (tab === 'siege') return Object.keys(CC.SIEGE || {});
@@ -6658,6 +6947,9 @@ CC.UI = (function () {
   }
 
   function recruitTabGridHtml() {
+    if (recruitTab === 'guardians') {
+      return (CC.GUARDIAN_ORDER || []).map(guardianCardHtml).join('');
+    }
     if (recruitTab === 'spells') {
       return Object.keys(CC.SPELLS || {}).map(spellCardHtml).join('');
     }
@@ -6672,6 +6964,53 @@ CC.UI = (function () {
 
   function recruitSideSpecialHtml() {
     const th = CC.Game.townhallLevel();
+
+    if (recruitTab === 'guardians') {
+      const ids = (CC.GUARDIAN_ORDER || []).slice();
+      const id = ids.indexOf(String(recruitSel).slice(2)) !== -1
+        ? String(recruitSel).slice(2) : ids[0];
+      if (!id) return '';
+      const g = CC.GUARDIANS[id] || {};
+      const locked = !guardianUnlocked(id);
+      const lvl = guardianLevel(id);
+      const capTh = locked ? CC.MAX_TH : th;
+      const max = (CC.guardianMaxLevel(id, capTh) || lvl);
+      const st = CC.guardianStats ? (CC.guardianStats(id, lvl) || {}) : {};
+      const picked = guardianPicked(id);
+      const price = locked ? null : guardianPrice(id);
+      const priceText = locked
+        ? 'С центра ' + (g.minTh || 18)
+        : (price
+          ? fmtNum(price.cost) + ' ' + resWord(price.currency) +
+            (price.time > 0 ? ' · ' + formatTime(price.time) : '')
+          : 'Максимальный уровень');
+      const action = locked
+        ? '<button class="recruit-hire" type="button" disabled>С центра ' +
+          (g.minTh || 18) + '</button>'
+        : '<button class="recruit-hire" type="button" data-guardian-pick="' +
+          escHtml(id) + '">' + (picked ? 'Убрать с боя' : 'Выбрать на бой') +
+          '</button>';
+      return '<div class="recruit-hero' + (locked ? ' is-locked' : '') + '">' +
+          genericPortrait(id, GUARDIAN_ICONS[id] || '🛡️', 156,
+            'recruit-hero__portrait') +
+          '<div class="recruit-hero__who">' +
+            '<b class="recruit-hero__name">' + escHtml(g.name || id) + '</b>' +
+            '<span class="recruit-hero__role">' + escHtml(g.role || '') + '</span>' +
+            '<span class="recruit-hero__lvl">Ур. ' + lvl + ' / ' +
+              Math.max(1, max) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="recruit-stats">' +
+          '<span class="recruit-stat"><b>' + fmtNum(st.hp || 0) + '</b><i>HP</i></span>' +
+          '<span class="recruit-stat"><b>' + fmtNum(st.dps || 0) + '</b><i>DPS</i></span>' +
+          '<span class="recruit-stat"><b>0</b><i>Место</i></span>' +
+        '</div>' +
+        '<p class="recruit-price">' + escHtml(priceText) + '</p>' +
+        '<p class="recruit-hint">Страж идёт в бой отдельной категорией и не ' +
+          'занимает места в армии. Открывается с командного центра ' +
+          (g.minTh || 18) + '.</p>' +
+        '<div class="recruit-actions">' + action + '</div>';
+    }
 
     if (recruitTab === 'spells') {
       const ids = Object.keys(CC.SPELLS || {});
@@ -6868,7 +7207,8 @@ CC.UI = (function () {
     if (recruitTab !== 'troops') {
       const ids = recruitTabIds(recruitTab);
       const prefix = recruitTab === 'spells' ? 's:'
-        : (recruitTab === 'pets' ? 'p:' : 'g:');
+        : (recruitTab === 'pets' ? 'p:'
+          : (recruitTab === 'guardians' ? 'u:' : 'g:'));
       if (!recruitSel || String(recruitSel).slice(0, 2) !== prefix ||
           ids.indexOf(String(recruitSel).slice(2)) === -1) {
         recruitSel = ids.length ? prefix + ids[0] : null;
@@ -6891,7 +7231,11 @@ CC.UI = (function () {
       cache.recruitSig = sig;
       if (recruitSub) {
         let line = 'Армия ' + CC.Game.armyUsed() + '/' + CC.Game.capacity();
-        if (recruitTab === 'spells') {
+        if (recruitTab === 'guardians') {
+          const picked = guardianBattleValue();
+          line += ' · стражей на бой: ' + picked.length +
+            ' · места в армии не занимают';
+        } else if (recruitTab === 'spells') {
           line += ' · слоты ' + spellUsed() + '/' + spellSlots();
         } else if (recruitTab === 'pets') {
           line += ' · питомцев в наборе: ' + Object.keys(ld.pets).length +
@@ -6991,6 +7335,14 @@ CC.UI = (function () {
         '<span class="recruit-stat"><b>' + fmtNum(st.dmg) + '</b><i>Урон</i></span>' +
         '<span class="recruit-stat"><b>' + (d.space || 1) + '</b><i>Место</i></span>' +
       '</div>' +
+      '<div class="recruit-stats recruit-stats_extra">' +
+        '<span class="recruit-stat"><b>' + (st.speed != null ? st.speed : 1) +
+          '</b><i>Скорость</i></span>' +
+        '<span class="recruit-stat"><b>' + (st.range != null ? st.range : 1) +
+          '</b><i>Дальность</i></span>' +
+        '<span class="recruit-stat"><b>' + (st.attackSpeed || 1) +
+          '</b><i>Темп</i></span>' +
+      '</div>' +
       '<div class="recruit-limits">' +
         '<div class="recruit-limit">' +
           '<span>Армия <b id="recruit-army">' + used + '/' + cap + '</b></span>' +
@@ -7076,6 +7428,25 @@ CC.UI = (function () {
         cache.recruitSig = null;
         syncRecruit();
       }
+      return;
+    }
+
+    const guardianCard = e.target.closest('[data-recruit-guardian]');
+    if (guardianCard) {
+      recruitSel = 'u:' + guardianCard.dataset.recruitGuardian;
+      cache.recruitSig = null;
+      syncRecruit();
+      return;
+    }
+
+    const guardianPick = e.target.closest('[data-guardian-pick]');
+    if (guardianPick) {
+      const out = pickGuardian(guardianPick.dataset.guardianPick);
+      if (out.error) toast(out.error);
+      else if (out.cleared) toast('Страж снят с боя');
+      else toast('Страж выбран на бой');
+      cache.recruitSig = null;
+      syncRecruit();
       return;
     }
 
@@ -10829,9 +11200,19 @@ CC.UI = (function () {
     petAssign: assignPetHero,
     petClear: clearPet,
     siegePick: pickSiege,
+    guardianPick: pickGuardian,
+    guardianUnlocked: guardianUnlocked,
+    guardianLevel: guardianLevel,
+    guardianBattle: guardianBattleValue,
+    guardianPrice: guardianPrice,
     loadout: function () {
       const ld = loadoutData();
-      return { spells: spellLoadoutMap(), pets: petBattleMap(), siege: loadoutData().siege };
+      return {
+        spells: spellLoadoutMap(),
+        pets: petBattleMap(),
+        siege: ld.siege,
+        guardians: guardianBattleValue()
+      };
     },
     syncRecruit: syncRecruit,
     syncSectorBadge: syncSectorBadge,
@@ -10886,7 +11267,9 @@ CC.UI = (function () {
     isShopOpen: function () { return shopOpen; },
     setShopCategory: function (id) {
       const found = SHOP_CATS.find(function (c) { return c.id === id; });
-      shopCat = found ? found.id : (id === WALLS_CAT.id ? WALLS_CAT.id : 'all');
+      shopCat = found ? found.id
+        : (id === WALLS_CAT.id ? WALLS_CAT.id
+          : (id === GUARDIANS_CAT.id ? GUARDIANS_CAT.id : 'all'));
       cache.shopSig = null;
       resetShopScroll();
       if (shopOpen) syncShop();

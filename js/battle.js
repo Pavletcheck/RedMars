@@ -15,6 +15,22 @@ CC.Battle = (function () {
   const PETS = CC.PETS || {};
   const SPELLS = CC.SPELLS || {};
   const SIEGE = CC.SIEGE || {};
+  const GUARDIANS = CC.GUARDIANS || {};
+  const GUARDIAN_ORDER = CC.GUARDIAN_ORDER || [];
+
+  // Боевые роли стражей: HP/DPS строго из CC.guardianStats, а дальность,
+  // скорость и темп — наша мета (в таблицах этих полей нет).
+  const GUARDIAN_READY = {
+    longshot: { range: 6, speed: 2.2, attackSpeed: 1.1, target: 'defense',
+      color: '#d8c07a', icon: '🏹' },
+    smasher: { range: 1, speed: 1.7, attackSpeed: 2, target: 'any',
+      splash: 1.8, color: '#b06a4a', icon: '🔨' },
+    logger: { range: 2, speed: 1.5, attackSpeed: 2.4, target: 'any',
+      splash: 1.4, wallBonus: 6, color: '#9a8a5a', icon: '🪓' }
+  };
+
+  // Аура шиповой башни: пассивный ответ в процентах от нанесённого урона.
+  const SPIKY_RADIUS = 6;
 
   // Все 19 заклинаний имеют боевой эффект. Флаг оставлен для UI: если
   // появится новый id из будущего среза, он честно попадёт в «нет данных».
@@ -24,8 +40,8 @@ CC.Battle = (function () {
     if (SPELLS[id]) SPELL_READY[id] = true;
   });
 
-  // Девять осадных машин: у каждой своя роль. HP/DPS в справочнике CoC
-  // для осад не заполнены, поэтому числа наши (док. COC-BATTLE-SPEC §7).
+  // Девять осадных машин: у каждой своя роль. HP/DPS в справочнике справочник
+  // для осад не заполнены, поэтому числа наши (док. BATTLE-SPEC §7).
   const SIEGE_READY = {
     wallwrecker: { hp: 3200, dmg: 140, speed: 1.4, range: 1,
       target: 'wall', wallBonus: 8, space: 0, role: 'стены' },
@@ -163,6 +179,153 @@ CC.Battle = (function () {
     return out;
   }
 
+  /* ---------- стражи ---------- */
+
+  // Уровень стража из сейва. П1 пока стражей не сохраняет, поэтому
+  // поддерживаем сразу три формы: guardianLevel(id), guardianLevels —
+  // функция или карта, и state.guardianLevels. Нет данных — уровень 1.
+  function guardianSavedLevel(id) {
+    const g = CC.Game;
+    if (!g) return 0;
+    let v = 0;
+    if (typeof g.guardianLevel === 'function') v = g.guardianLevel(id);
+    if (!(Number(v) > 0) && typeof g.guardianLevels === 'function') {
+      v = g.guardianLevels(id);
+    }
+    if (!(Number(v) > 0) && g.guardianLevels && typeof g.guardianLevels === 'object') {
+      v = g.guardianLevels[id];
+    }
+    if (!(Number(v) > 0) && g.state && g.state.guardianLevels &&
+        typeof g.state.guardianLevels === 'object') {
+      v = g.state.guardianLevels[id];
+    }
+    return Math.max(0, Math.floor(Number(v) || 0));
+  }
+
+  // Уровень стража в бою. Арена, набег ИИ, повтор и произвольная база —
+  // всегда 1; кампания берёт уровень из сейва (иначе 1) и режет потолком
+  // своего командного центра.
+  function guardianLevelFor(id) {
+    if (!GUARDIANS[id]) return 0;
+    const th = (CC.Game && CC.Game.townhallLevel)
+      ? clamp(Math.round(CC.Game.townhallLevel()), 1, CC.MAX_TH || 19)
+      : 1;
+    const max = CC.guardianMaxLevel ? CC.guardianMaxLevel(id, th) : 0;
+    if (!max) return 0;
+    if (!S || S.kind !== 'campaign') return 1;
+    const saved = guardianSavedLevel(id);
+    return clamp(saved > 0 ? saved : 1, 1, max);
+  }
+
+  // Доступные стражи в начале боя. Явная карта/массив (opts.guardians)
+  // главнее сейва: так Арена и тесты задают уровень 1, не трогая деревню.
+  function copyGuardians(src) {
+    const out = {};
+    const explicit = src !== undefined && src !== null;
+
+    function add(id, level) {
+      id = String(id || '');
+      if (!GUARDIANS[id]) return;
+      const max = CC.guardianMaxLevel
+        ? CC.guardianMaxLevel(id, (CC.MAX_TH || 19))
+        : 1;
+      if (max <= 0) return;
+      let lv = Math.floor(Number(level) || 0);
+      if (!(lv > 0)) lv = 1;
+      out[id] = clamp(lv, 1, max);
+    }
+
+    if (typeof src === 'string') {
+      add(src, 1);
+    } else if (Array.isArray(src)) {
+      for (let i = 0; i < src.length; i++) {
+        const e = src[i];
+        if (typeof e === 'string') add(e, 1);
+        else if (e && typeof e === 'object') add(e.id, e.level);
+      }
+    } else if (src && typeof src === 'object') {
+      for (const id in src) add(id, src[id]);
+    }
+
+    if (!explicit) {
+      for (let i = 0; i < GUARDIAN_ORDER.length; i++) {
+        const id = GUARDIAN_ORDER[i];
+        const lv = guardianLevelFor(id);
+        if (lv > 0) out[id] = lv;
+      }
+    }
+    return out;
+  }
+
+  // Боевой профиль стража: HP/DPS из таблицы, остальное — наша мета.
+  function guardianDef(id) {
+    const stats = CC.guardianStats ? CC.guardianStats(id, 1) : null;
+    if (!stats) return null;
+    const meta = GUARDIAN_READY[id] || {};
+    return {
+      id: id,
+      name: stats.name || id,
+      role: stats.role || '',
+      guardian: true,
+      hp: Math.max(1, Number(stats.hp) || 1),
+      dmg: Number(stats.dmg || stats.dps) || 0,
+      speed: meta.speed || 2,
+      range: meta.range || 1,
+      attackSpeed: meta.attackSpeed || 1,
+      target: meta.target || 'any',
+      splash: meta.splash || 0,
+      wallBonus: meta.wallBonus || 0,
+      space: 0,
+      fly: false,
+      color: meta.color || '#c8b06a',
+      icon: meta.icon || '🛡️'
+    };
+  }
+
+  function makeGuardianUnit(id, level, x, y) {
+    const lv = Math.max(1, Math.floor(Number(level) || 1));
+    const stats = CC.guardianStats ? CC.guardianStats(id, lv) : null;
+    const def = guardianDef(id);
+    if (!def || !stats) return null;
+    def.hp = Math.max(1, Number(stats.hp) || def.hp);
+    def.dmg = Number(stats.dmg || stats.dps) || def.dmg;
+    const u = {
+      id: S.uid++,
+      type: id,
+      def: def,
+      x: clamp(x, 0, G - 0.001),
+      y: clamp(y, 0, G - 0.001),
+      hp: def.hp,
+      maxHp: def.hp,
+      dmg: def.dmg,
+      level: lv,
+      cd: 0,
+      atk: 0,
+      target: null,
+      path: null,
+      isGuardian: true,
+      guardianKind: id,
+      guardianLevel: lv,
+      spawnCd: 0,
+      expireAt: 0,
+      buffUntil: 0,
+      rageUntil: 0,
+      hasteUntil: 0,
+      totemUntil: 0,
+      heroicUntil: 0,
+      angryUntil: 0,
+      invisibleUntil: 0,
+      slowUntil: 0,
+      freezeUntil: 0,
+      poisonUntil: 0,
+      jumpUntil: 0
+    };
+    S.units.push(u);
+    if (!S.guardiansDeployed) S.guardiansDeployed = {};
+    S.guardiansDeployed[id] = true;
+    return u;
+  }
+
   // Полное описание войска: таблица HP/DPS + ручная мета (стены, цепь,
   // призыв, лечение). CC.troopStats отдаёт только табличные поля.
   function troopDef(type, level) {
@@ -277,6 +440,13 @@ CC.Battle = (function () {
       siegeDeployed: false,
       siegeUnit: null,
       selectedSiege: null,
+      // Стражи: не занимают места в армии, по одному каждого вида.
+      // Уровень берётся из сейва только в кампании, иначе 1.
+      guardians: {},
+      guardiansDeployed: {},
+      guardiansSummoned: false,
+      selectedGuardian: null,
+      guardianLog: [],
       // Павшие герои: нужны заклинанию revive.
       fallenHeroes: [],
       // Прыжковое поле: на время стены становятся проходимыми для всех.
@@ -312,6 +482,8 @@ CC.Battle = (function () {
       deployLog: [],
       deployedCount: 0,
       autoDeploy: false,
+      // Стражи выходят вместе с первой волной (можно отключить в desc).
+      autoGuardians: o.autoGuardians !== false,
       // 0 — свободная высадка по всему полю. Поле оставлено для рендера:
       // художник может подсветить свободные клетки, не зная деталей боя.
       deployBand: 0,
@@ -328,6 +500,10 @@ CC.Battle = (function () {
 
     // Снимок армии на входе: по нему считаем, сколько войск израсходовано.
     S.armyStart = copyArmy(S.army);
+
+    // Стражи не входят в армию и не списываются: это отдельный слот боя.
+    // kind уже известен, поэтому уровень 1/из сейва решается здесь.
+    S.guardians = copyGuardians(o.guardians);
 
     // В бою герои приходят отдельным полем снимка. Каждый вид — максимум
     // одна штука за бой; army.hero остаётся старым флагом совместимости.
@@ -470,7 +646,9 @@ CC.Battle = (function () {
       pets: (CC.Game && CC.Game.petBattleArmy)
         ? CC.Game.petBattleArmy() : null,
       siege: (CC.Game && CC.Game.siegeBattleArmy)
-        ? CC.Game.siegeBattleArmy() : null
+        ? CC.Game.siegeBattleArmy() : null,
+      guardians: (CC.Game && CC.Game.guardianBattleArmy)
+        ? CC.Game.guardianBattleArmy() : undefined
     });
     // Десант проверяет не сегодняшний TH игрока, а уровень, под который
     // действительно собрана эта армия (важно для баланс-симулятора).
@@ -496,7 +674,9 @@ CC.Battle = (function () {
       deployPlan: d.deployPlan || [],
       spells: d.spells || null,
       pets: d.pets || null,
-      siege: d.siege || null
+      siege: d.siege || null,
+      guardians: d.guardians,
+      autoGuardians: d.autoGuardians
     });
   }
 
@@ -535,6 +715,25 @@ CC.Battle = (function () {
     if (stats.minRange !== undefined) def.minRange = stats.minRange;
     if (stats.rate !== undefined) def.rate = stats.rate;
     if (stats.splash !== undefined) def.splash = stats.splash;
+    // Темп обороны: если таблица/мета задаёт attackSpeed (секунды между
+    // выстрелами), он главнее старого rate (выстрелов в секунду).
+    if (def.attackSpeed) def.attackSpeed = Number(def.attackSpeed) || 0;
+    if (CC.buildingLevel) {
+      const row = CC.buildingLevel(type, stats.level);
+      if (row && Number(row.attackSpeed) > 0) {
+        def.attackSpeed = Number(row.attackSpeed);
+      }
+    }
+    // Шиповая башня: пассивный ответ в процентах. Статы уровня считает
+    // BuildingStats, здесь переносим их в боевой профиль.
+    if (stats.passive) {
+      def.passive = true;
+      def.passivePercent = stats.passivePercent;
+      def.passiveShare = stats.passiveShare;
+    }
+    // Пассивной башне дальность нужна не для стрельбы, а для ауры ответа
+    // и приоритета целей атакующего.
+    if (def.passive && !def.range) def.range = SPIKY_RADIUS;
     // Табличный DPS не подменяем: у spell_tower его нет намеренно (поле).
     if (!isFinite(Number(def.dmg))) def.dmg = 0;
 
@@ -868,6 +1067,13 @@ CC.Battle = (function () {
     if (b.dead) return;
     b.hp -= amount;
 
+    // Карающая башня копит ответ: каждый полученный урон усиливает её
+    // следующий выстрел (до +60% DPS), заряд медленно остывает.
+    if (b.def && b.def.special === 'revenge' && amount > 0) {
+      const share = amount / Math.max(1, b.maxHp || 1);
+      b.revenge = clamp((b.revenge || 0) + share * 1.5, 0, 1);
+    }
+
     // Модуль центра просыпается от первого попадания по ратуше.
     if (b.type === 'townhall' && b.def.thweapon) b.thActive = true;
 
@@ -954,7 +1160,7 @@ CC.Battle = (function () {
   }
 
   // Лекарь/друид: лечим союзников в радиусе, а не бьём постройки.
-  // Сила лечения — 4% максимального HP в секунду: табличного лечения в CoC
+  // Сила лечения — 4% максимального HP в секунду: табличного лечения в справочник
   // нет, это наше решение под текущий движок.
   function healAllies(u, dt) {
     const radius = Math.max(2.5, Number(u.def.range) || 0);
@@ -1208,6 +1414,38 @@ CC.Battle = (function () {
     return n;
   }
 
+  // Шиповая башня: пассивный ответный урон. Считаем процент от урона,
+  // который атакующий нанёс постройке в ауре башни, и возвращаем его
+  // самому атакующему. Несколько башен складываются, но не больше 60%
+  // удара — иначе пассивка превращалась бы в основную оборону.
+  function spikyRetaliate(attacker, target, amount) {
+    if (!attacker || !target || attacker.hp <= 0) return 0;
+    if (!(amount > 0)) return 0;
+    const tx = target.x + target.w / 2;
+    const ty = target.y + target.h / 2;
+    let total = 0;
+
+    for (let i = 0; i < S.buildings.length; i++) {
+      const b = S.buildings[i];
+      if (b.dead || !b.def || b.def.special !== 'spiky') continue;
+      const share = Number(b.def.passiveShare);
+      if (!(share > 0)) continue;
+      const bx = b.x + b.w / 2;
+      const by = b.y + b.h / 2;
+      if (Math.hypot(bx - tx, by - ty) > (b.def.range || SPIKY_RADIUS)) continue;
+      total += amount * share;
+    }
+
+    if (!(total > 0)) return 0;
+    total = Math.min(total, amount * 0.6);
+    hitUnit(attacker, total);
+    if (S.fx.length < 40) {
+      S.fx.push({ x: attacker.x, y: attacker.y, t: 0, dur: 0.25,
+        kind: 'shot', size: 0.6 });
+    }
+    return total;
+  }
+
   function attackBuilding(u, target, amount) {
     if (!target || target.dead) return;
     const d = u.def;
@@ -1221,6 +1459,9 @@ CC.Battle = (function () {
 
     if (d.splash) bombBuildings(target, dmg, d.splash);
     else damageBuilding(target, dmg);
+
+    // Шиповая башня отвечает процентом от урона по постройкам в своей ауре.
+    spikyRetaliate(u, target, dmg);
 
     if (d.chain > 1) chainBuildings(target, dmg * 0.6, d.chain - 1);
     if (d.freeze && u.type === 'icegolem') {
@@ -1271,7 +1512,9 @@ CC.Battle = (function () {
     if (u.target && distToBuilding(u.x, u.y, u.target) <= range) {
       u.path = null;
       if (u.cd <= 0) {
-        u.cd = 1;
+        // Темп атаки — табличный attackSpeed (секунды между ударами).
+        const as = Number(d.attackSpeed);
+        u.cd = isFinite(as) && as > 0 ? as : 1;
         u.atk = 0.18;
         attackBuilding(u, u.target, dmg);
       }
@@ -1548,8 +1791,10 @@ CC.Battle = (function () {
       const u = S.units[i];
       if (u.hp <= 0) continue;
       if ((u.invisibleUntil || 0) > S.time) continue;
-      // Турели и гаубицы по воздуху не стреляют.
+      // Турели и гаубицы по воздуху не стреляют. Флаг targetsAir: false
+      // тоже означает «только земля» — на случай новых табличных типов.
       if (b.def.onlyGround && u.def.fly) continue;
+      if (b.def.targetsAir === false && u.def.fly) continue;
       if (b.def.airOnly && !u.def.fly) continue;
       const d = Math.hypot(u.x - cx, u.y - cy);
       if (d > b.def.range) continue;
@@ -1577,6 +1822,36 @@ CC.Battle = (function () {
     if (u.hp <= 0) {
       S.fx.push({ x: u.x, y: u.y, t: 0, dur: 0.4, kind: 'poof' });
     }
+  }
+
+  // Секунды между выстрелами обороны: attackSpeed из таблицы главнее
+  // старого rate (выстрелов в секунду).
+  function defenseInterval(def) {
+    const as = Number(def && def.attackSpeed);
+    if (isFinite(as) && as > 0) return as;
+    return 1 / Math.max(0.05, Number(def && def.rate) || 1);
+  }
+
+  // Цепь по юнитам рядом с точкой: каждая следующая цель слабее на 40%.
+  function chainUnits(x, y, radius, count, dmg, skip, minDist) {
+    const hit = [];
+    const near = Math.max(0, Number(minDist) || 0);
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (!u || u === skip || u.hp <= 0) continue;
+      const d = Math.hypot(u.x - x, u.y - y);
+      if (d < near) continue;
+      if (d > radius) continue;
+      hit.push({ u: u, d: d });
+    }
+    hit.sort(function (a, b) { return a.d - b.d; });
+    const n = Math.min(hit.length, Math.max(0, count || 0));
+    let cur = dmg;
+    for (let i = 0; i < n; i++) {
+      hitUnit(hit[i].u, cur);
+      cur *= 0.6;
+    }
+    return n;
   }
 
   // Вихревой генератор: без урона отталкивает воздух на 1.5 тайла.
@@ -1633,7 +1908,15 @@ CC.Battle = (function () {
   }
 
   function updateDefense(b, dt) {
-    if (b.dead || !b.def.range) return;
+    if (b.dead) return;
+    // Шиповая башня не стреляет: её урон — пассивный ответ в attackBuilding.
+    if (b.def.passive) return;
+    if (!b.def.range) return;
+
+    // Карающая башня: заряд от полученного урона медленно остывает.
+    if (b.def.special === 'revenge' && b.revenge > 0) {
+      b.revenge = Math.max(0, b.revenge - dt * 0.02);
+    }
 
     // Заморозка заклинанием/криополем: оборона не стреляет.
     if ((b.freezeUntil || 0) > S.time) return;
@@ -1685,7 +1968,7 @@ CC.Battle = (function () {
     if (!targets.length) return;
     const best = targets[0].u;
 
-    b.cd = 1 / (b.def.rate || 1);
+    b.cd = defenseInterval(b.def);
     b.aim = Math.atan2(best.y - cy, best.x - cx);
 
     if (!S.silent && CC.Sound) {
@@ -1720,6 +2003,38 @@ CC.Battle = (function () {
           onlyGround: !!b.def.onlyGround
         });
       }
+      return;
+    }
+
+    // Залповая башня: три снаряда конусом от цели, каждый накрывает площадь.
+    if (special === 'firecracker') {
+      const base = Math.atan2(best.y - cy, best.x - cx);
+      const dist = Math.max(1, Math.hypot(best.x - cx, best.y - cy));
+      for (let i = -1; i <= 1; i++) {
+        const a = base + i * 0.3;
+        S.shots.push({
+          x1: cx, y1: cy,
+          x2: clamp(cx + Math.cos(a) * dist, 0, G),
+          y2: clamp(cy + Math.sin(a) * dist, 0, G),
+          t: 0, dur: 0.55, kind: 'firecracker',
+          dmg: (b.def.dmg || 0) * 0.65,
+          splash: b.def.splash || 1.4,
+          onlyGround: !!b.def.onlyGround
+        });
+      }
+      return;
+    }
+
+    // Плазменный колосс: площадь вокруг цели плюс цепь по соседям.
+    if (special === 'superwizard') {
+      const power = b.def.dmg || 0;
+      const radius = b.def.splash || 1.8;
+      splashDamage(best.x, best.y, power, radius, false, false);
+      chainUnits(best.x, best.y, 4.2, 3, power * 0.6, best, radius);
+      S.shots.push({
+        x1: cx, y1: cy, x2: best.x, y2: best.y,
+        t: 0, dur: 0.2, kind: 'superwizard'
+      });
       return;
     }
 
@@ -1772,6 +2087,11 @@ CC.Battle = (function () {
     if (special === 'multigear' && !best.def.fly) power *= 2;
     // Рельсотрон в воздушном режиме слабее на 40%.
     if (special === 'xbow' && best.def.fly) power *= 0.6;
+    // Карающая башня: заряд от полученного урона уходит в этот выстрел.
+    if (special === 'revenge') {
+      power *= 1 + 0.6 * clamp(b.revenge || 0, 0, 1);
+      b.revenge = 0;
+    }
 
     // Гаубица/плазмомёт/картечь не бьют сразу: снаряд летит в точку.
     if (b.def.splash) {
@@ -1824,7 +2144,7 @@ CC.Battle = (function () {
     else CC.Game.setArmy(S.army);
   }
 
-  // Звёзды по правилам CoC: 50% построек, снос центра и 100% — по звезде.
+  // Звёзды по правилам справочник: 50% построек, снос центра и 100% — по звезде.
   // Для прохода достаточно одной: победа больше не требует «центр + 50%».
   function starsFor(percent, thDead) {
     const pct = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -1941,6 +2261,8 @@ CC.Battle = (function () {
       lootTaken: lootTaken,
       lootedBuildings: S.lootedBuildings.slice(),
       emptyLoot: emptyLoot,
+      // Стражи, вышедшие в этом бою (уровень/точка); армию не тратят.
+      guardians: S.guardianLog ? S.guardianLog.slice() : [],
       // Совместимость со старыми окнами: бонусов и «недобора» больше нет.
       lootCut: { gold: 0, elixir: 0, dark: 0 },
       lootBonus: { gold: 0, elixir: 0, dark: 0 },
@@ -2210,7 +2532,8 @@ CC.Battle = (function () {
     let used = 0;
     let made = 0;
     const srcs = unitsInRadius(x, y, radius).filter(function (u) {
-      return !u.isHero && !u.isPet && !u.isSiege && !u.summoned && !u.isClone;
+      return !u.isHero && !u.isPet && !u.isSiege && !u.isGuardian &&
+        !u.summoned && !u.isClone;
     });
     for (let i = 0; i < srcs.length && used < max; i++) {
       const src = srcs[i];
@@ -2260,7 +2583,8 @@ CC.Battle = (function () {
     for (let i = S.units.length - 1; i >= 0; i--) {
       const u = S.units[i];
       if (u.hp <= 0) continue;
-      if (u.isHero || u.isPet || u.isSiege || u.summoned || u.isClone) continue;
+      if (u.isHero || u.isPet || u.isSiege || u.isGuardian ||
+          u.summoned || u.isClone) continue;
       if (Math.hypot(u.x - x, u.y - y) > radius) continue;
       if (!S.army[u.type]) S.army[u.type] = 0;
       S.army[u.type]++;
@@ -2319,7 +2643,7 @@ CC.Battle = (function () {
 
 
   // Высадка заклинания в точку. Реализованы все 19 эффектов из
-  // COC-BATTLE-SPEC §6. Экзотика (clone/revive/invisibility) упрощена,
+  // BATTLE-SPEC §6. Экзотика (clone/revive/invisibility) упрощена,
   // но работает в текущем движке.
   function deploySpell(id, gx, gy) {
     if (!S) return { error: 'Бой не начат' };
@@ -2346,7 +2670,7 @@ CC.Battle = (function () {
     const radius = (st && st.radius) || 3;
     const dmg = (st && st.dmg) || 0;
     const dur = (st && st.dur) || 8;
-    // Лечение в таблице CoC не оцифровано: базовая скорость 40%/с растёт
+    // Лечение в таблице справочник не оцифровано: базовая скорость 40%/с растёт
     // на 2% за уровень заклинания, чтобы прокачка ощущалась в бою.
     const healRate = Math.min(0.65, 0.4 + (lv - 1) * 0.02);
     const healBurst = Math.min(0.2, 0.1 + (lv - 1) * 0.01);
@@ -2357,13 +2681,15 @@ CC.Battle = (function () {
     }
     if (type === 'clone') {
       const has = unitsInRadius(x, y, radius).some(function (u) {
-        return !u.isHero && !u.isPet && !u.isSiege && !u.summoned;
+        return !u.isHero && !u.isPet && !u.isSiege && !u.isGuardian &&
+          !u.summoned;
       });
       if (!has) return { error: 'Нет войск для клонирования', id: type };
     }
     if (type === 'recall') {
       const has = unitsInRadius(x, y, radius).some(function (u) {
-        return !u.isHero && !u.isPet && !u.isSiege && !u.summoned;
+        return !u.isHero && !u.isPet && !u.isSiege && !u.isGuardian &&
+          !u.summoned;
       });
       if (!has) return { error: 'Нет войск для эвакуации', id: type };
     }
@@ -2878,6 +3204,115 @@ CC.Battle = (function () {
     return u;
   }
 
+  // Стражи выходят в бой «призывом»: до трёх штук вокруг точки, каждый
+  // вид один раз. Место в армии не тратится, заряд не списывается.
+  function summonGuardians(gx, gy) {
+    if (!S || S.over) return 0;
+    if (!S.guardians) return 0;
+    const bx = isFinite(Number(gx)) ? Number(gx) : G / 2;
+    const by = isFinite(Number(gy)) ? Number(gy) : G / 2;
+    let placed = 0;
+    for (let i = 0; i < GUARDIAN_ORDER.length; i++) {
+      const id = GUARDIAN_ORDER[i];
+      const level = S.guardians[id];
+      if (!level) continue;
+      if (S.guardiansDeployed && S.guardiansDeployed[id]) continue;
+      const spot = freeSpotNear(bx, by, 4 + i);
+      if (!spot) continue;
+      const u = makeGuardianUnit(id, level, spot.x + 0.5, spot.y + 0.5);
+      if (!u) continue;
+      placed++;
+      S.guardianLog.push({
+        t: Math.round(S.time * 100) / 100,
+        type: 'guardian',
+        guardianKind: id,
+        level: level,
+        x: spot.x,
+        y: spot.y
+      });
+    }
+    if (placed) {
+      S.guardiansSummoned = true;
+      S.fx.push({ x: bx, y: by, t: 0, dur: 0.7, kind: 'spell', size: 2 });
+      if (!S.silent && CC.Sound) CC.Sound.play('upgradeDone');
+    }
+    return placed;
+  }
+
+  // Точечная высадка одного стража: та же клеточная проверка, что у войск.
+  function deployGuardian(id, gx, gy) {
+    if (!S) return { error: 'Бой не начат' };
+    if (S.over) return { error: 'Бой окончен' };
+    if (S.viewReplay && !S.autoDeploy) return { error: 'Повтор без управления' };
+    const gid = String(id || '');
+    if (!GUARDIANS[gid]) return { error: 'Неизвестный страж' };
+    if (!S.guardians || !S.guardians[gid]) {
+      return { error: 'Страж не открыт', id: gid };
+    }
+    if (S.guardiansDeployed && S.guardiansDeployed[gid]) {
+      return { error: 'Страж уже в бою', id: gid };
+    }
+    const x = Math.floor(Number(gx));
+    const y = Math.floor(Number(gy));
+    if (!isFinite(x) || !isFinite(y) ||
+        x < 0 || y < 0 || x >= G || y >= G) {
+      return { error: 'За пределами поля' };
+    }
+    if (S.occ[cell(x, y)] >= 0) return { error: 'Здесь стоит постройка' };
+
+    const level = S.guardians[gid];
+    const u = makeGuardianUnit(gid, level, x + 0.5, y + 0.5);
+    if (!u) return { error: 'Нет данных стража', id: gid };
+    S.guardianLog.push({
+      t: Math.round(S.time * 100) / 100,
+      type: 'guardian',
+      guardianKind: gid,
+      level: level,
+      x: x,
+      y: y
+    });
+    return { ok: true, id: gid, level: level, unit: u,
+      hp: u.maxHp, dmg: u.dmg };
+  }
+
+  function selectGuardian(id) {
+    if (!S) return { error: 'Бой не начат' };
+    const gid = String(id || '');
+    if (!GUARDIANS[gid]) return { error: 'Неизвестный страж' };
+    if (!S.guardians || !S.guardians[gid]) {
+      return { error: 'Страж не открыт', id: gid };
+    }
+    S.selectedGuardian = gid;
+    S.selected = gid;
+    return { ok: true, id: gid };
+  }
+
+  // Список стражей для панели: уровень, статы, высажен ли.
+  function guardianList() {
+    const out = [];
+    if (!S) return out;
+    for (let i = 0; i < GUARDIAN_ORDER.length; i++) {
+      const id = GUARDIAN_ORDER[i];
+      const level = S.guardians && S.guardians[id] ? S.guardians[id] : 0;
+      if (!level) continue;
+      const stats = CC.guardianStats ? CC.guardianStats(id, level) : null;
+      const u = GUARDIAN_READY[id] || {};
+      out.push({
+        id: id,
+        name: (stats && stats.name) || (GUARDIANS[id] && GUARDIANS[id].name) || id,
+        role: (stats && stats.role) || (GUARDIANS[id] && GUARDIANS[id].role) || '',
+        level: level,
+        hp: (stats && stats.hp) || 0,
+        dmg: (stats && (stats.dmg || stats.dps)) || 0,
+        space: 0,
+        range: u.range || 1,
+        deployed: !!(S.guardiansDeployed && S.guardiansDeployed[id]),
+        selected: !!(S.selectedGuardian === id)
+      });
+    }
+    return out;
+  }
+
   function update(dt) {
     if (!S) return;
 
@@ -2991,7 +3426,7 @@ CC.Battle = (function () {
       : 0;
 
     // Победа по звёздам: 50% построек, снос центра или 100% — любая звезда.
-    // Звезда не останавливает бой: как в CoC, отряд добивает процент и может
+    // Звезда не останавливает бой: как в справочник, отряд добивает процент и может
     // дойти до 2★/3★ и полной добычи. Бой заканчивается только на 100%,
     // по таймеру или когда армия кончилась.
     const thDead = !!(hall && hall.dead);
@@ -3015,6 +3450,12 @@ CC.Battle = (function () {
     if (S.over) return { error: 'Бой окончен' };
     // В просмотре повтора управление выключено: высадкой занимается план.
     if (S.viewReplay && !S.autoDeploy) return { error: 'Повтор без управления' };
+
+    // Выбранный страж высаживается тем же тапом, что и войско.
+    const sel = S.selected;
+    if (sel && S.guardians && S.guardians[sel]) {
+      return deployGuardian(sel, gx, gy);
+    }
 
     // Сначала проверяем клетку: свободная высадка разрешена в любом месте
     // поля, кроме клеток, занятых постройкой (у зданий — все w×h клетки).
@@ -3181,6 +3622,13 @@ CC.Battle = (function () {
     });
     S.deployedCount++;
 
+    // Стражи выходят вместе с первой волной: не занимают армию и не
+    // списываются, но сразу участвуют в бою (TH18+).
+    if (S.autoGuardians && !S.guardiansSummoned && !S.headless &&
+        (S.kind === 'campaign' || S.kind === 'pvp')) {
+      summonGuardians(unit.x, unit.y);
+    }
+
     return { ok: true, hp: hp, dmg: dmg, level: isHero ? heroLevel : troopLevel };
   }
 
@@ -3231,6 +3679,13 @@ CC.Battle = (function () {
     }
     if (TROOPS[type]) {
       S.selected = type;
+      S.selectedHero = firstHeroKind();
+      return;
+    }
+    // Страж выбирается как отдельный «род войск» без места в армии.
+    if (S && S.guardians && S.guardians[type]) {
+      S.selected = type;
+      S.selectedGuardian = type;
       S.selectedHero = firstHeroKind();
     }
   }
@@ -3347,6 +3802,13 @@ CC.Battle = (function () {
         placed++;
         k++;
       }
+    }
+
+    // Headless-набег/симуляция: стражи (уровень 1) выходят сразу и не
+    // попадают в записанный план — повтор строится по обычным войскам.
+    if (S.autoGuardians && !S.guardiansSummoned) {
+      const spot0 = lane[0] || { x: (G / 2) | 0, y: (G / 2) | 0 };
+      summonGuardians(spot0.x + 0.5, spot0.y + 0.5);
     }
 
     if (schedule) {
@@ -3505,6 +3967,10 @@ CC.Battle = (function () {
     spellList: spellList,
     petList: petList,
     siegeList: siegeList,
+    guardianList: guardianList,
+    selectGuardian: selectGuardian,
+    deployGuardian: deployGuardian,
+    summonGuardians: summonGuardians,
     selectPet: selectPet,
     selectSiege: selectSiege,
     deploySiege: function (gx, gy) {

@@ -1,6 +1,6 @@
 /* Локальный асинхронный PvP: пул «призраков», подбор соперника и награды.
    Всё без DOM и без сети: пул строится детерминированно из seed, бой идёт
-   через CC.Battle.start(), а состояние живёт в прогрессе clash-village-v1. */
+   через CC.Battle.start(), а состояние живёт в прогрессе деревни. */
 window.CC = window.CC || {};
 
 CC.Pvp = (function () {
@@ -20,7 +20,8 @@ CC.Pvp = (function () {
   const DEF_TYPES = [
     'cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper', 'ambush',
     'bombtower', 'xbow', 'beam', 'eagle', 'scattershot', 'monolith',
-    'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter'
+    'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter',
+    'revenge', 'superwizard', 'spiky', 'firecracker'
   ];
   // Склад руды и склад энергии обязательны: на них держится добыча Арены.
   const RES_TYPES = [
@@ -391,6 +392,12 @@ CC.Pvp = (function () {
       return !!s && (s.minTh || 0) > 0 && (s.minTh || 0) <= th;
     });
 
+    // Стражи поздних центров: для карточки Арены. В бой они идут
+    // атакующей стороной, но соперник TH18+ тоже показывает свой состав.
+    const guardians = (CC.GUARDIAN_ORDER || []).filter(function (id) {
+      return CC.guardianMaxLevel ? CC.guardianMaxLevel(id, th) > 0 : false;
+    });
+
     return {
       id: 'g' + ghostSeed.toString(36),
       name: ghostName(rnd, index),
@@ -412,6 +419,7 @@ CC.Pvp = (function () {
       heroes: heroes,
       pets: pets,
       siege: siege,
+      guardians: guardians,
       seed: ghostSeed
     };
   }
@@ -686,6 +694,16 @@ CC.Pvp = (function () {
       }
     }
 
+    // Стражи на Арене — уровень 1: уровни из деревни здесь не применяются,
+    // но состав ограничен открытием TH18.
+    const guardians = {};
+    if (CC.Game && CC.Game.townhallLevel && CC.guardianMaxLevel) {
+      const th = CC.Game.townhallLevel();
+      (CC.GUARDIAN_ORDER || []).forEach(function (id) {
+        if (CC.guardianMaxLevel(id, th) > 0) guardians[id] = 1;
+      });
+    }
+
     const built = ghostRows(g);
     const rows = built.rows;
     const pool = built.pool;
@@ -697,6 +715,8 @@ CC.Pvp = (function () {
       rating: Math.max(0, Math.floor(num(g.rating, 1000))),
       buildings: rows,
       army: army,
+      guardians: guardians,
+      autoGuardians: true,
       loot: {
         gold: Math.max(0, Math.floor(num(g.loot && g.loot.gold, 0))),
         elixir: Math.max(0, Math.floor(num(g.loot && g.loot.elixir, 0))),

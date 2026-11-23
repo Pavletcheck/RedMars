@@ -1,11 +1,12 @@
 /* Настройки и баланс. */
 window.CC = window.CC || {};
 
-CC.GRID = 44;          // поле 44x44: футпринты CoC не влезают в 36x36
+CC.GRID = 44;          // поле 44x44: футпринты справочник не влезают в 36x36
 CC.TW = 54;            // ширина тайла (ромб)
 CC.TH = 40;            // высота тайла (54:40 ≈ 48°, −7° от 55°)
 CC.TIME_LIMIT = 180;   // секунд на бой
-CC.MAX_TH = 17;        // потолок справочника CoC на этот этап
+// Потолок берём из таблиц: сейчас 19.
+CC.MAX_TH = (CC.DATA && CC.DATA.meta && CC.DATA.meta.maxTh) || 19;
 
 /* Стартовая заставка «Колония»: посадочный модуль падает, врезается
    в грунт, раскрывается в командный центр, вспыхивают огни, поднимается
@@ -51,15 +52,15 @@ CC.SERGEANT = {
   ]
 };
 
-/* ---------- данные CoC ----------
-   Единственное место, где CoC-id превращаются в наши id, имена, роли,
+/* ---------- данные справочник ----------
+   Единственное место, где справочник-id превращаются в наши id, имена, роли,
    размеры и боевое поведение. Числа HP/DPS/цены/времени берутся из
-   CC.COC (js/cocdata.js), здесь — только мета и маппинг. */
-const CC_COC = CC.COC || { details: {}, counts: {}, maxlv: {}, walls: [], th: [] };
+   CC.DATA (js/tables.js), здесь — только мета и маппинг. */
+const CC_DATA = CC.DATA || { details: {}, counts: {}, maxlv: {}, walls: [], th: [] };
 
-// CoC-id зданий. Ключи CC.COC.details смешаны с войсками/героями, поэтому
-// список зданий собираем явно из CC.COC.counts (минус стены и оружие центра).
-CC.BUILDING_COC = {
+// справочник-id зданий. Ключи CC.DATA.details смешаны с войсками/героями, поэтому
+// список зданий собираем явно из CC.DATA.counts (минус стены и оружие центра).
+CC.BUILDING_TABLE = {
   townhall: 'townhall',
   wall: 'wall',
   cannon: 'cannon',
@@ -80,6 +81,10 @@ CC.BUILDING_COC = {
   ricochet: 'ricochet',
   multigear: 'multi_gear',
   firespitter: 'firespitter',
+  revenge: 'revenge_tower',
+  superwizard: 'super_wizard',
+  spiky: 'spiky_tower',
+  firecracker: 'firecracker',
   goldmine: 'gold_mine',
   elixir: 'elixir_collector',
   darkdrill: 'dark_drill',
@@ -228,6 +233,32 @@ CC.BUILDING_META = {
     color: '#6b4432', top: '#ff9a5a',
     range: 9, rate: 1, splash: 1.6, onlyGround: true, special: 'firespitter'
   },
+  revenge: {
+    name: 'Карающая башня', desc: 'поздняя универсальная оборона',
+    role: 'универсальная поздняя', w: 3, h: 3, height: 52,
+    color: '#4b3a5c', top: '#c98fe0',
+    range: 9, rate: 1, targetsAir: true, special: 'revenge'
+  },
+  superwizard: {
+    name: 'Плазменный колосс', desc: 'цепная плазма по площади',
+    role: 'площадная универсальная', w: 3, h: 3, height: 62,
+    color: '#5a3f7a', top: '#e0a6ff',
+    range: 8, rate: 1, splash: 1.8, targetsAir: true,
+    chain: 15, special: 'superwizard'
+  },
+  spiky: {
+    name: 'Шиповая башня', desc: 'пассивный ответ на атаки',
+    role: 'контратакующая', w: 2, h: 2, height: 44,
+    color: '#4a3a3a', top: '#d6a06a',
+    passive: true, passivePercent: [0, 6, 9], special: 'spiky'
+  },
+  firecracker: {
+    name: 'Залповая башня', desc: 'взрывной залп по конусу',
+    role: 'площадная универсальная', w: 3, h: 3, height: 50,
+    color: '#6b4a32', top: '#ffb05a',
+    range: 10, rate: 1, splash: 1.6, targetsAir: true,
+    cone: true, special: 'firecracker'
+  },
   goldmine: {
     name: 'Бур', desc: 'копит руду',
     role: 'добыча', w: 1, h: 1, height: 28, resource: true, produce: 'gold',
@@ -373,16 +404,30 @@ CC.BUILDING_META = {
   }
 };
 
-// Список зданий: только ключи CC.COC.counts (кроме стены и оружия центра)
+// Роль и описание берём из путеводителя таблиц, имя остаётся нашим.
+Object.keys(CC.BUILDING_META).forEach(function (id) {
+  const tableId = CC.BUILDING_TABLE[id];
+  const guide = tableId && (CC_DATA.buildingGuide || {})[tableId];
+  if (!guide) return;
+  const clean = function (text) {
+    return String(text)
+      .replace(/\bTH(\d+)\b/g, 'центр $1')
+      .replace(/\bTH\b/g, 'центра');
+  };
+  if (guide.role) CC.BUILDING_META[id].role = clean(guide.role);
+  if (guide.what) CC.BUILDING_META[id].desc = clean(guide.what);
+});
+
+// Список зданий: только ключи CC.DATA.counts (кроме стены и оружия центра)
 // плюс сам центр и стена. Никаких войск/героев/питомцев из details.
 CC.BUILDING_ORDER = Object.keys(CC.BUILDING_META);
 
-// Уровни CoC не выше потолка 17. Строки TH18–19 в справочнике есть,
-// но в игру не попадают.
-CC._cocLevels = function (coc) {
+// Уровни справочника не выше потолка 19. Строки TH18–19 входят в игру,
+// более высокие отсекаются фильтром.
+CC._tableLevels = function (coc) {
   let rows = [];
   if (coc === 'townhall') {
-    rows = (CC_COC.th || []).filter(function (r) {
+    rows = (CC_DATA.th || []).filter(function (r) {
       return !r.th || r.th <= CC.MAX_TH;
     }).map(function (r) {
       // У строк центра уровень называется th, а не lv.
@@ -392,26 +437,26 @@ CC._cocLevels = function (coc) {
       return row;
     });
   } else if (coc === 'wall') {
-    rows = (CC_COC.walls || []).filter(function (r) { return !r.th || r.th <= CC.MAX_TH; });
+    rows = (CC_DATA.walls || []).filter(function (r) { return !r.th || r.th <= CC.MAX_TH; });
   } else {
-    const e = (CC_COC.details || {})[coc];
+    const e = (CC_DATA.details || {})[coc];
     rows = (e && e.levels) || [];
     rows = rows.filter(function (r) { return !r.th || r.th <= CC.MAX_TH; });
   }
   return rows.slice().sort(function (a, b) { return (a.lv || 0) - (b.lv || 0); });
 };
 
-CC._cocEntity = function (coc) {
+CC._tableEntity = function (coc) {
   if (coc === 'townhall') return { coc: 'townhall', name: 'Ратуша', currency: 'gold' };
   if (coc === 'wall') return { coc: 'wall', name: 'Стена', currency: 'gold' };
-  return (CC_COC.details || {})[coc] || null;
+  return (CC_DATA.details || {})[coc] || null;
 };
 
 // Строка таблицы построек по нашему id и уровню. У стен и центра — свои
 // таблицы, поэтому хелпер один для всех.
 CC.buildingLevel = function (id, lv) {
-  const coc = CC.BUILDING_COC[id] || id;
-  const rows = CC._cocLevels(coc);
+  const coc = CC.BUILDING_TABLE[id] || id;
+  const rows = CC._tableLevels(coc);
   if (!rows.length) return {};
   let n = Math.floor(Number(lv) || 1);
   if (n < 1) n = 1;
@@ -424,7 +469,7 @@ CC.buildingLevel = function (id, lv) {
 };
 
 CC.buildingMaxLevel = function (id) {
-  const rows = CC._cocLevels(CC.BUILDING_COC[id] || id);
+  const rows = CC._tableLevels(CC.BUILDING_TABLE[id] || id);
   return rows.length ? (rows[rows.length - 1].lv || 1) : 0;
 };
 
@@ -433,14 +478,14 @@ CC.buildingMaxLevel = function (id) {
 CC.LIMIT_OVERRIDES = { archer: { 1: 1 } };
 CC.MAXLV_OVERRIDES = { archer: { 1: 1 } };
 
-// Лимит количества по уровню центра. Значения уже массивы 1..17.
+// Лимит количества по уровню центра. Значения уже массивы 1..19.
 CC.limitAt = function (type, th) {
   if (type === 'townhall') return 1;
   const n = Math.round(Number(th) || 1);
   const ov = (CC.LIMIT_OVERRIDES[type] || {})[n];
   if (ov !== undefined) return ov;
-  const coc = CC.BUILDING_COC[type] || type;
-  const row = (CC_COC.counts || {})[coc];
+  const coc = CC.BUILDING_TABLE[type] || type;
+  const row = (CC_DATA.counts || {})[coc];
   if (!row) return 0;
   const i = n < 1 ? 0 : (n > CC.MAX_TH ? CC.MAX_TH - 1 : n - 1);
   const v = Array.isArray(row) ? row[i] : Number(row[String(i + 1)]);
@@ -451,13 +496,13 @@ CC.limitAt = function (type, th) {
 // массивом или объектом с ключами TH; "6 + 2" генератор уже свёл к 6.
 CC.maxLevelAt = function (id, th) {
   if (id === 'townhall') return CC.MAX_TH;
-  const coc = CC.BUILDING_COC[id] || id;
+  const coc = CC.BUILDING_TABLE[id] || id;
   const max = CC.buildingMaxLevel(id);
   if (!max) return 0;
   const n = Math.round(Number(th) || 1);
   const ov = (CC.MAXLV_OVERRIDES[id] || {})[n];
   if (ov !== undefined) return Math.min(max, ov);
-  const row = (CC_COC.maxlv || {})[coc];
+  const row = (CC_DATA.maxlv || {})[coc];
   if (!row) return max;
   const i = n < 1 ? 0 : (n > CC.MAX_TH ? CC.MAX_TH - 1 : n - 1);
   const v = Array.isArray(row) ? row[i] : Number(row[String(i + 1)]);
@@ -467,11 +512,11 @@ CC.maxLevelAt = function (id, th) {
 
 CC.buildingRow = function (id, lv) { return CC.buildingLevel(id, lv); };
 
-// Цена перехода НА уровень to. Валюта — из сущности CoC.
+// Цена перехода НА уровень to. Валюта — из сущности справочник.
 CC.upgradeCost = function (id, to) {
-  const coc = CC.BUILDING_COC[id] || id;
+  const coc = CC.BUILDING_TABLE[id] || id;
   const row = CC.buildingLevel(id, to);
-  const ent = CC._cocEntity(coc) || {};
+  const ent = CC._tableEntity(coc) || {};
   const currency = ent.currency || 'gold';
   const out = {
     gold: 0, elixir: 0, dark: 0,
@@ -521,10 +566,10 @@ CC.placeTime = function (type) { return CC.buildTime(type, 1); };
 CC.BUILDINGS = {};
 CC.BUILDING_ORDER.forEach(function (id) {
   const meta = CC.BUILDING_META[id];
-  const coc = CC.BUILDING_COC[id];
+  const coc = CC.BUILDING_TABLE[id];
   if (!coc) return;
-  if (id !== 'townhall' && id !== 'wall' && !(CC_COC.counts || {})[coc]) return;
-  const rows = CC._cocLevels(coc);
+  if (id !== 'townhall' && id !== 'wall' && !(CC_DATA.counts || {})[coc]) return;
+  const rows = CC._tableLevels(coc);
   if (!rows.length) return;
   const row = rows[0];
   // Строим объект из меты без мутации исходника.
@@ -579,19 +624,19 @@ CC.TOWNHALL_TIME = {};
 
 // Валюта сущности: building/troop/hero/pet/spell.
 CC.entityCurrency = function (kind, id) {
-  if (kind === 'building') return (CC._cocEntity(CC.BUILDING_COC[id] || id) || {}).currency || 'gold';
+  if (kind === 'building') return (CC._tableEntity(CC.BUILDING_TABLE[id] || id) || {}).currency || 'gold';
   let coc = id;
-  if (kind === 'troop') coc = CC.TROOP_COC[id] || id;
-  else if (kind === 'hero') coc = CC.HERO_COC[id] || id;
-  const group = kind === 'troop' ? CC_COC.troops :
-    (kind === 'hero' ? CC_COC.heroes : (kind === 'pet' ? CC_COC.pets : CC_COC.spells));
+  if (kind === 'troop') coc = CC.TROOP_TABLE[id] || id;
+  else if (kind === 'hero') coc = CC.HERO_TABLE[id] || id;
+  const group = kind === 'troop' ? CC_DATA.troops :
+    (kind === 'hero' ? CC_DATA.heroes : (kind === 'pet' ? CC_DATA.pets : CC_DATA.spells));
   const ent = (group || {})[coc];
   return (ent && ent.currency) || 'gold';
 };
 
 // Данные героев, питомцев и заклинаний для хелперов ниже.
 CC._heroRows = function (coc) {
-  const ent = (CC_COC.heroes || {})[coc];
+  const ent = (CC_DATA.heroes || {})[coc];
   if (!ent) return [];
   return (ent.levels || []).filter(function (r) {
     return (r._th == null || r._th <= CC.MAX_TH) && (r.th == null || r.th <= CC.MAX_TH);
@@ -599,10 +644,10 @@ CC._heroRows = function (coc) {
 };
 
 /* ---------- войска ----------
-   32 типа из CC.COC.troops. space/speed/range/target/fly/role — ручная
+   32 типа из CC.DATA.troops. space/speed/range/target/fly/role — ручная
    мета; HP/DPS — строго таблица. Цена и время тренировки остаются нашими:
-   в CoC 2026 время тренировки убрано, а research cost — это лаборатория. */
-CC.TROOP_COC = {
+   в справочник 2026 время тренировки убрано, а research cost — это лаборатория. */
+CC.TROOP_TABLE = {
   barb: 'barbarian',
   archer: 'archer',
   giant: 'giant',
@@ -736,6 +781,25 @@ CC.TROOP_META = {
     spawn: 6, cost: 440, time: 58, role: 'призыв' }
 };
 
+// Характеристики из табличных traits: место, дальность, скорость, роль,
+// описание и темп атаки. Приоритет цели и полёт остаются нашими.
+Object.keys(CC.TROOP_TABLE).forEach(function (id) {
+  const m = CC.TROOP_META[id];
+  const trait = (CC_DATA.troopTraits || {})[CC.TROOP_TABLE[id]];
+  if (!m || !trait) return;
+  if (trait.space != null) m.space = Number(trait.space) || m.space;
+  if (trait.range != null) m.range = Number(trait.range) || m.range;
+  if (trait.role) m.role = trait.role;
+  if (trait.what) m.desc = trait.what;
+  if (trait.speed != null) m.speed = (Number(trait.speed) || 0) / 10;
+  if (trait.attackSpeed != null) m.attackSpeed = Number(trait.attackSpeed);
+  m.targets = trait.targets || '';
+  if (trait.targets) {
+    m.onlyGround = /земля/.test(trait.targets) && !/воздух/.test(trait.targets);
+    m.targetsAir = /воздух/.test(trait.targets);
+  }
+});
+
 // Порядок карточек — по открытию, затем по таблице.
 CC.ARMY_ORDER = [
   'barb', 'archer', 'giant', 'goblin', 'gnome', 'airship', 'wizard', 'healer',
@@ -747,8 +811,8 @@ CC.ARMY_ORDER = [
 
 // Строка уровня войска: hp/dps/цена research/время research/требование лабы.
 CC.troopLevelRow = function (id, lv) {
-  const coc = CC.TROOP_COC[id] || id;
-  const ent = (CC_COC.troops || {})[coc];
+  const coc = CC.TROOP_TABLE[id] || id;
+  const ent = (CC_DATA.troops || {})[coc];
   const rows = (ent && ent.levels) || [];
   if (!rows.length) return {};
   let n = Math.floor(Number(lv) || 1);
@@ -763,11 +827,11 @@ CC.troopLevelRow = function (id, lv) {
 
 // Потолок войск на TH: максимум лаборатории, доступный на этом центре.
 CC.troopMaxLevel = function (id, th) {
-  const coc = CC.TROOP_COC[id] || id;
-  const ent = (CC_COC.troops || {})[coc];
+  const coc = CC.TROOP_TABLE[id] || id;
+  const ent = (CC_DATA.troops || {})[coc];
   if (!ent) return 0;
   const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
-  const labRow = (CC_COC.maxlv || {}).laboratory;
+  const labRow = (CC_DATA.maxlv || {}).laboratory;
   let lab = 0;
   if (labRow) {
     const v = Array.isArray(labRow) ? labRow[thN - 1] : Number(labRow[String(thN)]);
@@ -795,6 +859,9 @@ CC.troopStats = function (id, lv) {
     space: meta.space || 1, speed: meta.speed || 2,
     range: meta.range || 1, target: meta.target || 'any',
     fly: !!meta.fly, splash: meta.splash || 0,
+    onlyGround: !!meta.onlyGround, targetsAir: !!meta.targetsAir,
+    targets: meta.targets || '',
+    attackSpeed: meta.attackSpeed || 1,
     color: meta.color || '#c0c0c0', icon: meta.icon || '👾',
     desc: meta.desc || '', row: row
   };
@@ -811,17 +878,19 @@ CC.ARMY_ORDER.forEach(function (id) {
     hp: s.hp, dmg: s.dmg, speed: s.speed, range: s.range,
     target: s.target, fly: !!s.fly, splash: s.splash,
     space: s.space, cost: s.cost, time: s.time, role: s.role,
-    coc: CC.TROOP_COC[id], wallBonus: meta.wallBonus || 0
+    onlyGround: !!s.onlyGround, targetsAir: !!s.targetsAir,
+    targets: s.targets, attackSpeed: s.attackSpeed,
+    coc: CC.TROOP_TABLE[id], wallBonus: meta.wallBonus || 0
   };
 });
 
-/* Открытие войск — из unlocks.troop. Английские имена CoC переводим в наши
+/* Открытие войск — из unlocks.troop. Английские имена справочник переводим в наши
    id; всё, что не нашли, не теряем, а просто не показываем. */
 CC.TROOP_UNLOCK = {};
 (function () {
   const byName = {};
-  Object.keys(CC.TROOP_COC).forEach(function (id) {
-    const ent = (CC_COC.troops || {})[CC.TROOP_COC[id]];
+  Object.keys(CC.TROOP_TABLE).forEach(function (id) {
+    const ent = (CC_DATA.troops || {})[CC.TROOP_TABLE[id]];
     if (ent) byName[ent.name] = id;
   });
   // Резерв для точных английских имён из unlocks.
@@ -840,7 +909,7 @@ CC.TROOP_UNLOCK = {};
     'Apprentice Warden': 'apprentice', 'Druid': 'druid',
     'Furnace': 'furnace', 'Ruin Witch': 'ruinwitch'
   };
-  const src = (CC_COC.unlocks || {}).troop || {};
+  const src = (CC_DATA.unlocks || {}).troop || {};
   for (let t = 1; t <= CC.MAX_TH; t++) {
     const list = src[String(t)] || [];
     list.forEach(function (name) {
@@ -863,11 +932,11 @@ CC.troopUnlock = function (type) {
 CC.TROOP_LEVEL = { max: CC.MAX_TH, deprecated: true };
 
 /* ---------- шесть героев ----------
-   Уровни, HP/DPS, цена и время — из CC.COC.heroes по уровням. Потолок
+   Уровни, HP/DPS, цена и время — из CC.DATA.heroes по уровням. Потолок
    героя — Hero Hall + TH (см. heroMaxLevel). Общий в сейве уровень
    heroLevel остаётся нашим: старый API heroStatsFor(kind, level) жив.
    Способность «Щит» — 3 секунды неуязвимости, один раз за бой. */
-CC.HERO_COC = {
+CC.HERO_TABLE = {
   barb: 'bk',
   archer: 'aq',
   giant: 'gw',
@@ -892,7 +961,7 @@ CC.HERO_META = {
 };
 
 CC._heroEnt = function (id) {
-  return (CC_COC.heroes || {})[CC.HERO_COC[id] || id] || null;
+  return (CC_DATA.heroes || {})[CC.HERO_TABLE[id] || id] || null;
 };
 
 CC.heroLevelRow = function (id, lv) {
@@ -917,7 +986,7 @@ CC.heroMaxLevel = function (id, th) {
   const ent = CC._heroEnt(id);
   if (!ent) return 0;
   const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
-  const hallRow = (CC_COC.maxlv || {}).hero_hall;
+  const hallRow = (CC_DATA.maxlv || {}).hero_hall;
   let hall = 0;
   if (hallRow) {
     const v = Array.isArray(hallRow) ? hallRow[thN - 1] : Number(hallRow[String(thN)]);
@@ -939,7 +1008,7 @@ CC.heroStatsFor = function (id, lv) {
   const level = row.lv || Math.max(1, Math.floor(Number(lv) || 1));
   return {
     id: id,
-    coc: CC.HERO_COC[id] || id,
+    coc: CC.HERO_TABLE[id] || id,
     level: level,
     name: meta.name,
     role: meta.role,
@@ -979,12 +1048,12 @@ CC.HERO = {
   times: {}
 };
 
-CC.HEROES = Object.keys(CC.HERO_COC).map(function (id) {
+CC.HEROES = Object.keys(CC.HERO_TABLE).map(function (id) {
   const meta = CC.HERO_META[id];
   const ent = CC._heroEnt(id) || {};
   return {
     id: id,
-    coc: CC.HERO_COC[id],
+    coc: CC.HERO_TABLE[id],
     base: meta.base,
     name: meta.name,
     role: meta.role,
@@ -994,7 +1063,7 @@ CC.HEROES = Object.keys(CC.HERO_COC).map(function (id) {
   };
 });
 
-// Открытие героев — из unlocks.hero. Английские имена CoC → наши id.
+// Открытие героев — из unlocks.hero. Английские имена справочник → наши id.
 CC.HERO_UNLOCK = {};
 (function () {
   const aliases = {
@@ -1002,7 +1071,7 @@ CC.HERO_UNLOCK = {};
     'Grand Warden': 'giant', 'Royal Champion': 'goblin',
     'Minion Prince': 'airship', 'Dragon Duke': 'dragon'
   };
-  const src = (CC_COC.unlocks || {}).hero || {};
+  const src = (CC_DATA.unlocks || {}).hero || {};
   for (let t = 1; t <= CC.MAX_TH; t++) {
     (src[String(t)] || []).forEach(function (name) {
       const id = aliases[name];
@@ -1034,7 +1103,7 @@ CC.heroesAt = function (th) {
 };
 
 // Совместимость боя P2: старый код читает CC.TROOPS.hero. Держим его
-// не enumerable, чтобы в CC.TROOPS осталось ровно 32 типа CoC.
+// не enumerable, чтобы в CC.TROOPS осталось ровно 32 типа справочник.
 Object.defineProperty(CC.TROOPS, 'hero', {
   enumerable: false,
   configurable: true,
@@ -1056,7 +1125,7 @@ CC.START_ARMY = {};
 CC.ARMY_ORDER.forEach(function (t) { CC.START_ARMY[t] = 0; });
 
 /* ---------- питомцы ----------
-   12 питомцев CoC. Уровни/HP/DPS — из CC.COC.pets, дом — Pet House. */
+   12 питомцев справочник. Уровни/HP/DPS — из CC.DATA.pets, дом — Pet House. */
 CC.PET_META = {
   lassi: { name: 'Гончая', role: 'наземный', speed: 3, range: 1 },
   yak: { name: 'Буйвол', role: 'танк', speed: 1.6, range: 1 },
@@ -1074,7 +1143,7 @@ CC.PET_META = {
 
 CC.PETS = {};
 Object.keys(CC.PET_META).forEach(function (id) {
-  const ent = (CC_COC.pets || {})[id];
+  const ent = (CC_DATA.pets || {})[id];
   if (!ent) return;
   const meta = CC.PET_META[id];
   CC.PETS[id] = {
@@ -1104,7 +1173,7 @@ CC.petMaxLevel = function (id, th) {
   const p = CC.PETS[id];
   if (!p) return 0;
   const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
-  const houseRow = (CC_COC.maxlv || {}).pet_house;
+  const houseRow = (CC_DATA.maxlv || {}).pet_house;
   let house = 0;
   if (houseRow) {
     const v = Array.isArray(houseRow) ? houseRow[thN - 1] : Number(houseRow[String(thN)]);
@@ -1132,7 +1201,7 @@ CC.petStats = function (id, lv) {
 };
 
 /* ---------- заклинания ----------
-   19 типов CoC. Эффекты — мета, уровни/урон/радиус — таблица. */
+   19 типов справочник. Эффекты — мета, уровни/урон/радиус — таблица. */
 CC.SPELL_META = {
   lightning: { name: 'Разряд', role: 'урон по площади' },
   healing: { name: 'Ремонтное поле', role: 'лечит' },
@@ -1157,7 +1226,7 @@ CC.SPELL_META = {
 
 CC.SPELLS = {};
 Object.keys(CC.SPELL_META).forEach(function (id) {
-  const ent = (CC_COC.spells || {})[id];
+  const ent = (CC_DATA.spells || {})[id];
   if (!ent) return;
   const meta = CC.SPELL_META[id];
   CC.SPELLS[id] = {
@@ -1186,7 +1255,7 @@ CC.spellMaxLevel = function (id, th) {
   const s = CC.SPELLS[id];
   if (!s) return 0;
   const thN = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
-  const labRow = (CC_COC.maxlv || {}).laboratory;
+  const labRow = (CC_DATA.maxlv || {}).laboratory;
   let lab = 0;
   if (labRow) {
     const v = Array.isArray(labRow) ? labRow[thN - 1] : Number(labRow[String(thN)]);
@@ -1239,7 +1308,7 @@ CC.SIEGE_UNLOCK = {};
     'Battle Drill': 'battledrill', 'Troop Launcher': 'trooplauncher',
     'Sky Wagon': 'skywagon'
   };
-  const src = (CC_COC.unlocks || {}).siege || {};
+  const src = (CC_DATA.unlocks || {}).siege || {};
   for (let t = 1; t <= CC.MAX_TH; t++) {
     (src[String(t)] || []).forEach(function (name) {
       const id = aliases[name] || byCoc[name];
@@ -1268,10 +1337,81 @@ CC.siegeStats = function (id, lv) {
   };
 };
 
+/* ---------- стражи ----------
+   Три стража поздних центров. Уровни/цена/время — из таблиц, имена наши.
+   Они не занимают место в армии: space = 0. */
+CC.GUARDIAN_META = {
+  longshot: { name: 'Дальнобой', role: 'дальний, земля и воздух' },
+  smasher: { name: 'Сокрушитель', role: 'танк, площадь' },
+  logger: { name: 'Древолом', role: 'дальний, тяжёлый' }
+};
+
+CC.GUARDIANS = {};
+Object.keys(CC.GUARDIAN_META).forEach(function (id) {
+  const ent = (CC_DATA.guardians || {})[id];
+  if (!ent) return;
+  const meta = CC.GUARDIAN_META[id];
+  CC.GUARDIANS[id] = {
+    id: id, table: id, name: meta.name, role: meta.role,
+    currency: ent.currency || 'gold',
+    minTh: 18, space: 0,
+    levels: (ent.levels || []).filter(function (r) {
+      return r.th == null || r.th <= CC.MAX_TH;
+    })
+  };
+});
+
+CC.GUARDIAN_ORDER = ['longshot', 'smasher', 'logger'];
+CC.GUARDIAN_UNLOCK = { longshot: 18, smasher: 18, logger: 18 };
+
+CC.guardianLevelRow = function (id, lv) {
+  const g = CC.GUARDIANS[id];
+  const rows = (g && g.levels) || [];
+  if (!rows.length) return {};
+  let n = Math.floor(Number(lv) || 1);
+  if (n < 1) n = 1;
+  let row = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].lv === n) { row = rows[i]; break; }
+    if (rows[i].lv <= n) row = rows[i];
+  }
+  return row || rows[0];
+};
+
+CC.guardianMaxLevel = function (id, th) {
+  const g = CC.GUARDIANS[id];
+  if (!g) return 0;
+  const t = Math.max(1, Math.min(CC.MAX_TH, Math.round(Number(th) || 1)));
+  if (t < (g.minTh || 18)) return 0;
+  let best = 0;
+  (g.levels || []).forEach(function (r) {
+    if (r.th != null && r.th > t) return;
+    best = Math.max(best, r.lv || 0);
+  });
+  return best;
+};
+
+CC.guardianStats = function (id, lv) {
+  const g = CC.GUARDIANS[id];
+  if (!g) return null;
+  const row = CC.guardianLevelRow(id, lv);
+  return {
+    id: id, name: g.name, role: g.role,
+    level: row.lv || 1,
+    hp: Number(row.hp) || 0,
+    dmg: Number(row.dps != null ? row.dps : row.dmg) || 0,
+    dps: Number(row.dps) || 0,
+    cost: Number(row.cost) || 0,
+    time: Math.max(0, Number(row.time) || 0),
+    currency: g.currency, minTh: g.minTh, space: 0,
+    row: row
+  };
+};
+
 /* ---------- экономика ---------- */
 
 CC.ECONOMY = {
-  // Стартовый запас — наше решение (не CoC): 1000 руды и 1000 энергии,
+  // Стартовый запас — наше решение (не справочник): 1000 руды и 1000 энергии,
   // чтобы пройти обучение без ожидания. Платина — 50, как раньше.
   startGold: 1000,
   startElixir: 1000,
@@ -1472,6 +1612,7 @@ CC.RAIDS = {
 };
 
 // TH11–17: состав набега не сложнее TH10, но волны чаще и злее.
+// С TH18–19 добавляются стражи и новые башни справочника.
 for (let raTh = 11; raTh <= CC.MAX_TH; raTh++) {
   const base = CC.RAIDS.armies[10];
   CC.RAIDS.armies[raTh] = {
@@ -1608,16 +1749,16 @@ function ccWallRing(x0, y0, x1, y1, gaps) {
   return out;
 }
 
-/* ---------- кампания: 10 эпох × 10 секторов, CoC TH1–17 ----------
+/* ---------- кампания: 10 эпох × 10 секторов, справочник TH1–19 ----------
    TH по эпохам: 1, 2, 3, 4, 5, 7, 9, 11, 14, 17. Внутри эпохи база
-   постепенно набирает плотность и уровни, финальный сектор 100 — TH17
+   постепенно набирает плотность и уровни, финальный сектор 100 — TH19
    со всеми доступными типами, максимальными уровнями и полным лимитом стен.
 
    Раскладка строится детерминированно по seed: в сейве достаточно индекса.
    Формат layout — [type, x, y, level]. Застройка идёт от центра наружу:
    командный центр 2×2, вокруг все доступные обороны, затем ресурсы, армия,
    ловушки. Стены — внешний контур с проходами и внутренние перегородки
-   с разрывами; лимит берётся из CC.limitAt('wall', th), на TH17 — до 325. */
+   с разрывами; лимит берётся из CC.limitAt('wall', th), на TH19 — 350. */
 
 CC.LEVEL_SEED_BASE = 20261118;
 CC.LEVEL_ERAS = 10;
@@ -1666,14 +1807,16 @@ CC.LEVEL_ERA_COLORS = [
 
 CC.LEVEL_ERA_TITLES = CC_ERA_TITLES;
 
-// TH эпох: первые пять — 1..5, дальше 7, 9, 11, 14 и финал 17.
-CC.ERA_TH = [1, 2, 3, 4, 5, 7, 9, 11, 14, 17];
+// TH эпох: первые пять — 1..5, дальше 7, 9, 12, 15 и финал 19.
+CC.ERA_TH = [1, 2, 3, 4, 5, 7, 9, 12, 15, 19];
 
-// Все доступные обороны из CC.BUILDING_ORDER. Порядок — от простых к поздним.
+// Все доступные обороны из CC.BUILDING_ORDER. Порядок — от простых к поздним;
+// четыре последних открываются только на TH18–19.
 const CC_DEF_TYPES = [
   'cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper', 'ambush',
   'bombtower', 'xbow', 'beam', 'eagle', 'scattershot', 'monolith',
-  'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter'
+  'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter',
+  'revenge', 'superwizard', 'spiky', 'firecracker'
 ];
 const CC_RES_TYPES = ['goldmine', 'elixir', 'darkdrill', 'storage', 'estorage', 'darkstorage'];
 const CC_ARMY_TYPES = [
@@ -1738,31 +1881,34 @@ CC.LevelGen = {
       return Math.max(1, Math.min(lim, Math.round(lim * progress)));
     }
 
-    // Оборона финала: все типы, но не полный предел counts — на TH17
-    // максимальные уровни сами по себе дают огромный DPS. 75% количества
+    // Оборона финала: все типы, но не полный предел counts — на TH19
+    // максимальные уровни сами по себе дают огромный DPS. 70% количества
     // оставляет финал тяжёлым, но проходимым с максимальной армией.
     function defCountAt(type) {
       const lim = CC.limitAt(type, capTh);
       if (!lim) return finalLevel ? 1 : 0;
       if (finalLevel) return Math.max(1, Math.round(lim * 0.7));
       return Math.max(1, Math.min(lim,
-        Math.round(lim * (era >= 5 ? (0.28 + 0.37 * within / 9) : (0.35 + 0.55 * within / 9)))));
+        Math.round(lim * (era >= 5 ? (0.26 + 0.28 * within / 9)
+          : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.55 * within / 9))))));
     }
 
-    // Ловушки финала — 75% количества: они не входят в процент, но
+    // Ловушки финала — 70% количества: они не входят в процент, но
     // выкашивают десант.
     function trapCountAt(type) {
       const lim = CC.limitAt(type, capTh);
       if (!lim) return 0;
       if (finalLevel) return Math.max(1, Math.round(lim * 0.7));
       return Math.max(1, Math.min(lim,
-        Math.round(lim * (era >= 5 ? (0.28 + 0.37 * within / 9) : (0.35 + 0.55 * within / 9)))));
+        Math.round(lim * (era >= 5 ? (0.26 + 0.28 * within / 9)
+          : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.55 * within / 9))))));
     }
 
     function levelAt(type) {
       const max = Math.max(1, ccLevelMax(type, capTh));
       if (finalLevel) return max;
-      const f = era >= 5 ? (0.2 + 0.52 * within / 9) : (0.3 + 0.7 * within / 9);
+      const f = era >= 5 ? (0.18 + 0.48 * within / 9)
+        : (era >= 4 ? (0.22 + 0.52 * within / 9) : (0.3 + 0.7 * within / 9));
       return Math.max(1, Math.min(max, 1 + Math.round((max - 1) * f)));
     }
 
@@ -1887,9 +2033,13 @@ CC.LevelGen = {
       if (!gapKey[x1 + ',' + y]) ring.push([x1, y]);
     }
 
+    // Финал TH19 выкладывает полный лимит — 350 сегментов: внешний контур
+    // плюс внутренние перегородки. Остальные секторы растут к лимиту плавно.
     const wallLimit = CC.limitAt('wall', capTh);
-    const wallTarget = finalLevel ? Math.min(wallLimit, 270)
-      : Math.max(0, Math.min(wallLimit, Math.round(wallLimit * (era >= 5 ? Math.min(0.9, progress) : progress))));
+    const wallTarget = finalLevel ? wallLimit
+      : Math.max(0, Math.min(wallLimit, Math.round(wallLimit *
+        (era >= 5 ? Math.min(0.78, progress)
+          : (era >= 4 ? progress * 0.9 : Math.min(0.64, progress))))));
     const wallLvl = wallLevelAt();
     let wallLeft = wallTarget;
 
@@ -1954,7 +2104,7 @@ CC.LevelGen = {
     const defList = [];
     for (let k = 0; k < CC_DEF_TYPES.length; k++) {
       const type = CC_DEF_TYPES[k];
-      // Финал: все типы обороны, включая слитые на TH17 в более поздние
+      // Финал: все типы обороны, включая слитые на TH19 в более поздние
       // башни (cannon, eagle). Кампания — не база игрока, ей можно
       // показать весь арсенал.
       const n = defCountAt(type);
@@ -2093,7 +2243,7 @@ CC.LevelGen = {
     let levelHint = CC_ERA_HINTS[era];
     if (finalLevel) {
       levelName += ' · Финал';
-      levelHint += ' Финал: TH17, все башни на максимуме; нужна армия и все герои.';
+      levelHint += ' Финал: TH19, все башни на максимуме; нужна армия, стражи и все герои.';
     }
 
     return {
@@ -2130,7 +2280,7 @@ CC.LAYOUT = [
   ['townhall', 20, 20]
 ];
 
-/* Сколько построек можно поставить на своей базе: counts по TH1–17.
+/* Сколько построек можно поставить на своей базе: counts по TH1–19.
    Base.left() и генератор читают одну и ту же таблицу. */
 CC.LIMITS_BY_TH = {};
 CC.BUILDING_ORDER.forEach(function (type) {
@@ -2139,7 +2289,7 @@ CC.BUILDING_ORDER.forEach(function (type) {
   CC.LIMITS_BY_TH[type] = row;
 });
 
-/* Максимумы TH17: их читает интерфейс как «полный» лимит. */
+/* Максимумы TH19: их читает интерфейс как «полный» лимит. */
 CC.LIMITS = {};
 CC.BUILDING_ORDER.forEach(function (type) {
   CC.LIMITS[type] = CC.limitAt(type, CC.MAX_TH);
@@ -2327,6 +2477,7 @@ CC.PALETTE = [
   'cannon', 'archer', 'mortar', 'airdef', 'mage', 'sweeper', 'ambush',
   'bombtower', 'xbow', 'beam', 'eagle', 'scattershot', 'monolith',
   'spelltower', 'multiarcher', 'ricochet', 'multigear', 'firespitter',
+  'revenge', 'superwizard', 'spiky', 'firecracker',
   'wall', 'mine', 'spring', 'airmine', 'giantbomb', 'seekingair',
   'skeletontrap', 'tornado', 'gigabomb',
   'goldmine', 'elixir', 'darkdrill', 'storage', 'estorage', 'darkstorage',
@@ -2341,7 +2492,8 @@ CC.ICONS = {
   mage: '⚛️', sweeper: '🌪️', ambush: '🕳️', bombtower: '🧨', xbow: '🏹',
   beam: '🔆', eagle: '🦅', scattershot: '🎇', monolith: '🗿',
   spelltower: '🔮', multiarcher: '📶', ricochet: '↩️', multigear: '⚙️',
-  firespitter: '🔥',
+  firespitter: '🔥', revenge: '🕯️', superwizard: '⚡', spiky: '🦔',
+  firecracker: '🎆',
   mine: '💥', spring: '🌀', airmine: '🎈', giantbomb: '💣',
   seekingair: '🚀', skeletontrap: '💀', tornado: '🌪️', gigabomb: '☢️',
   wall: '🛡️', goldmine: '⛏️', elixir: '⚡', darkdrill: '🛢️',

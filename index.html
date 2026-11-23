@@ -375,7 +375,7 @@
       <div class="shop__head terminal__head">
         <div class="terminal__title-wrap">
           <h2 class="shop__title terminal__title">Терминал</h2>
-          <span class="terminal__sub">Строительство · Марс</span>
+          <span class="terminal__sub" id="shop-sub">Строительство · Марс</span>
         </div>
         <div class="terminal__res">
           <span class="terminal__res-chip"><i>🔩</i><b id="shop-res-gold">0</b><em id="shop-res-gold-cap">/0</em></span>
@@ -527,10 +527,12 @@
         </div>
         <button class="levels__x recruit__x" id="recruit-x" title="Закрыть">✕</button>
       </div>
-      <!-- Вкладки окна армии: войска, заклинания, питомцы, осадные машины. -->
+      <!-- Вкладки окна армии: войска, стражи, заклинания, питомцы, осадные машины. -->
       <div class="recruit__tabs" id="recruit-tabs" role="tablist" aria-label="Армия">
         <button class="recruit-tab is-active" type="button" data-recruit-tab="troops"
                 role="tab" aria-selected="true">Войска</button>
+        <button class="recruit-tab" type="button" data-recruit-tab="guardians"
+                role="tab" aria-selected="false">Стражи</button>
         <button class="recruit-tab" type="button" data-recruit-tab="spells"
                 role="tab" aria-selected="false">Заклинания</button>
         <button class="recruit-tab" type="button" data-recruit-tab="pets"
@@ -752,7 +754,7 @@
   </div>
 </div>
 
-<script src="js/cocdata.js"></script>
+<script src="js/tables.js"></script>
 <script src="js/config.js"></script>
 <script src="js/iso.js"></script>
 <script src="js/path.js"></script>

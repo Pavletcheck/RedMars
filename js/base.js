@@ -3,7 +3,7 @@ window.CC = window.CC || {};
 CC.App = CC.App || { mode: 'base' };
 
 /* Характеристики постройки с учётом уровня. Единая точка для деревни,
-   боя кампании и набегов. HP/DPS/цена/время — строго строка CC.COC,
+   боя кампании и набегов. HP/DPS/цена/время — строго строка CC.DATA,
    никаких ×2. Дальность/скорость стрельбы — наша тайловая мета. */
 CC.BuildingStats = {
   at: function (type, level) {
@@ -74,6 +74,16 @@ CC.BuildingStats = {
     if (d.targetsAir) out.targetsAir = true;
     if (d.airOnly) out.airOnly = true;
     if (d.special) out.special = d.special;
+    if (d.chain) out.chain = d.chain;
+    if (d.cone) out.cone = true;
+    if (d.passive) {
+      out.passive = true;
+      const pct = d.passivePercent && d.passivePercent[lvl];
+      if (pct != null) {
+        out.passivePercent = Number(pct);
+        out.passiveShare = Number(pct) / 100;
+      }
+    }
 
     return out;
   }
@@ -246,7 +256,7 @@ CC.Base = (function () {
     const it = { id: nextId++, type: type, x: x, y: y };
     items.push(it);
 
-    // Списываем сразу; снос ресурсы не возвращает (как в CoC).
+    // Списываем сразу; снос ресурсы не возвращает (как в справочник).
     if (st) {
       st.gold -= cost.gold;
       st.elixir -= cost.elixir;
@@ -3537,7 +3547,7 @@ CC.Game = (function () {
     return out;
   }
 
-  // Статы героя: HP/DPS/цена/время — строка CC.COC.heroes.
+  // Статы героя: HP/DPS/цена/время — строка CC.DATA.heroes.
   // Если level не передан — уровень берётся из heroLevels этого героя.
   function heroStatsFor(kind, level) {
     const hero = CC.heroDef ? CC.heroDef(kind) : HERO;
@@ -4196,7 +4206,7 @@ CC.Game = (function () {
 
   /* ---------- перенос постройки ---------- */
 
-  // Перенос как в CoC: двигаем только превью, координаты в Base меняются
+  // Перенос как в справочник: двигаем только превью, координаты в Base меняются
   // после moveConfirm(). Ошибки не трогают текущее превью.
   function moveInfo() {
     if (!move) return null;
@@ -5277,7 +5287,7 @@ CC.Game = (function () {
     if (d.heroUp && typeof d.heroUp === 'object' &&
         isFinite(Number(d.heroUp.endAt))) {
       let kind = d.heroUp.kind || d.heroUp.type || 'barb';
-      if (!CC.HERO_COC[kind]) kind = 'barb';
+      if (!CC.HERO_TABLE[kind]) kind = 'barb';
       const max = CC.heroMaxLevel(kind, heroTh);
       if (max > 0 && s.heroLevels[kind] >= 1) {
         s.heroUp = {

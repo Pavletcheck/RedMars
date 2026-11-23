@@ -9,12 +9,14 @@ CC.Render = (function () {
   const TW = CC.TW;
   const TH = CC.TH;
   const P = CC.Iso.project;
-  // Потолок прокачки: у центра — TH (1..17), у построек CoC — до 21,
-  // у стен — до 18. Держим отдельные границы, иначе уровни 11+ рисовались
+  // Потолок прокачки: у центра — TH (1..19), у построек справочник — до 21,
+  // у стен — до 20. Держим отдельные границы, иначе уровни 11+ рисовались
   // бы как десятый и лестница апгрейдов визуально обрывалась.
   const MAXLVL = CC.MAX_TH || 10;
   const MAX_LVL = 21;
-  const WALL_MAX = 18;
+  // Справочник TH19 доводит стены до 20 уровня: держим верхнюю ступень,
+  // иначе L19-20 молча рисовались бы как L18 и теряли навершие.
+  const WALL_MAX = 20;
 
   /* Камера смотрит сверху (~48° при 54:40): круг на грунте сжимается
      по вертикали в TH/TW (0.74). При прежних 2:1 (30°) это было 0.5,
@@ -148,6 +150,10 @@ CC.Render = (function () {
     ricochet: { h: 38, wall: '#4e6266', roof: '#a9d0d4', flag: null },
     multigear: { h: 46, wall: '#58605a', roof: '#bfc9b8', flag: null },
     firespitter: { h: 42, wall: '#6b4432', roof: '#ff9a5a', flag: null },
+    revenge: { h: 52, wall: '#3c3049', roof: '#c98fe0', flag: null },
+    superwizard: { h: 62, wall: '#4a356a', roof: '#e0a6ff', flag: null },
+    spiky: { h: 44, wall: '#4a3a3a', roof: '#d6a06a', flag: null },
+    firecracker: { h: 50, wall: '#6b4a32', roof: '#ffb05a', flag: null },
     darkdrill: { h: 30, wall: '#3f3548', roof: '#c77dff', flag: null },
     darkstorage: { h: 42, wall: '#3a3142', roof: '#b06adf', flag: null },
     train: { h: 34, wall: '#6f5a42', roof: '#d1b07a', flag: PAL.elixir },
@@ -2037,8 +2043,8 @@ CC.Render = (function () {
   /* ---------- стены: соседние клетки ---------- */
 
   // Стена ниже пояса построек: центр, склады и турели читаются поверх.
-  // Высота растёт ступенями 1.1 px (L1-10) и мягче дальше (L11-18):
-  // L1 — тонкая загородка, L10 — высокая усиленная секция, L18 — пилон
+  // Высота растёт ступенями 1.1 px (L1-10) и мягче дальше (L11-20):
+  // L1 — тонкая загородка, L10 — высокая усиленная секция, L20 — пилон
   // с золотым навершием, но верх всё равно ниже крыши склада.
   function wallHeight(lvl) {
     const l = Math.max(1, Math.min(WALL_MAX, Math.round(lvl || 1)));
@@ -2060,6 +2066,8 @@ CC.Render = (function () {
     if (l >= 14) top = Math.max(top, H + 6.4);    // гребень поля
     if (l >= 16) top = Math.max(top, H + 7.2);    // шипы-разрядники
     if (l >= 18) top = Math.max(top, H + 8.4);    // золотое навершие пилона
+    if (l >= 19) top = Math.max(top, H + 9.0);    // ступень TH18: второй контур
+    if (l >= 20) top = Math.max(top, H + 9.8);    // ступень TH19: корона и лучи
     return top;
   }
 
@@ -2430,6 +2438,39 @@ CC.Render = (function () {
       const my = (a.y + b.y) / 2;
       spot(ctx, mx, my - H + 0.4, 1.3, 'rgba(255,252,232,.95)');
     }
+
+    // 19-20: ступени TH18-19. Поле не расширяем — добавляем второй
+    // золотой контур и короткие лучи над рейкой, чтобы апгрейд читался.
+    if (L >= 19) {
+      poly(ctx, [
+        { x: a.x, y: a.y - H - 4.9 },
+        { x: b.x, y: b.y - H - 4.9 },
+        { x: b.x, y: b.y - H - 5.7 },
+        { x: a.x, y: a.y - H - 5.7 }
+      ], 'rgba(255,207,74,.34)');
+      ctx.strokeStyle = 'rgba(255,244,205,.8)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - H - 5.9);
+      ctx.lineTo(b.x, b.y - H - 5.9);
+      ctx.stroke();
+    }
+
+    if (L >= 20) {
+      // короткие золотые лучи в третях: только верхняя ступень
+      ctx.strokeStyle = 'rgba(255,232,170,.85)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      for (let k = 1; k <= 2; k++) {
+        const u = k / 3;
+        const px = a.x + (b.x - a.x) * u;
+        const py = a.y + (b.y - a.y) * u;
+        ctx.moveTo(px - 1.6, py - H - 6.1);
+        ctx.lineTo(px, py - H - 7.4);
+        ctx.lineTo(px + 1.6, py - H - 6.1);
+      }
+      ctx.stroke();
+    }
   }
 
   function drawWallCellVector(ctx, r) {
@@ -2655,6 +2696,19 @@ CC.Render = (function () {
       spot(ctx, px, py - H - 5.2, 1.6, 'rgba(255,244,205,.9)');
       spot(ctx, px, py - H - 5.2, 0.8, 'rgba(255,255,255,1)');
     }
+
+    // 19-20: ступени TH18-19 — выше только корона, масса прежняя
+    if (L >= 19) {
+      prism(ctx, px - half * 1.9, py - half * 1.9,
+        px + half * 1.9, py + half * 1.9, H + 5.7, 0.7,
+        PAL.gold, shade(PAL.gold, -0.12), shade(PAL.gold, -0.4));
+      spot(ctx, px - half * 1.9, py - H - 4.4, 0.7, PAL.cold);
+      spot(ctx, px + half * 1.9, py - H - 4.4, 0.7, PAL.cold);
+    }
+    if (L >= 20) {
+      spot(ctx, px, py - H - 6.5, 1.1, 'rgba(255,252,232,.95)');
+      ring(ctx, px, py - H - 6.5, 2.6, 1.1, 'rgba(255,232,170,.7)', 0.7);
+    }
   }
 
   // Запасной путь для drawBuilding: одна клетка без карты соседей.
@@ -2846,7 +2900,7 @@ CC.Render = (function () {
   // Пульсирующая полоса максимального уровня: золотая рамка по пятну.
   // Рисуется в кадре, но это один stroke на постройку максимального уровня.
   // Потолок у каждого типа свой (пушки до 21, стены до 18), поэтому
-  // сравниваем не с потолком центра, а с таблицей CoC.
+  // сравниваем не с потолком центра, а с таблицей справочник.
   const maxLvCache = new Map();
 
   function maxLevelOf(type) {
@@ -7865,6 +7919,7 @@ CC.Render = (function () {
     sweeper: 40, bombtower: 42, xbow: 38, eagle: 54, scattershot: 48,
     monolith: 64, spelltower: 52, multiarcher: 52, ricochet: 40,
     multigear: 46, firespitter: 42,
+    revenge: 52, superwizard: 62, spiky: 44, firecracker: 50,
     darkdrill: 30, darkstorage: 42,
     train: 34, darktrain: 34, spellfactory: 42, darkspellfactory: 42,
     pethouse: 36, blacksmith: 40, workshop: 40, clancastle: 50,
@@ -7967,6 +8022,11 @@ CC.Render = (function () {
     }
     if (b.type === 'herohall') {
       return Math.max(bodyHeight(b) + 8, 40 + levelOf(b) * 1.6);
+    }
+    // новые высокие башни: леса должны доходить до короны, а не до корпуса
+    if (b.type === 'revenge' || b.type === 'superwizard' ||
+        b.type === 'spiky' || b.type === 'firecracker') {
+      return Math.max(bodyHeight(b) + 8, crown(b, levelOf(b)) + 4);
     }
     return Math.max(bodyHeight(b) + 8, 28);
   }
@@ -8433,6 +8493,10 @@ CC.Render = (function () {
       if (type === 'spellfactory') { drawFactoryGlow(ctx, b, lvl, false); return; }
       if (type === 'darkspellfactory') { drawFactoryGlow(ctx, b, lvl, true); return; }
       if (type === 'firespitter') { drawFireGlow(ctx, b, lvl); return; }
+      if (type === 'revenge') { drawRevengeGlow(ctx, b, lvl); return; }
+      if (type === 'superwizard') { drawSuperwizardGlow(ctx, b, lvl); return; }
+      if (type === 'spiky') { drawSpikyFx(ctx, b, lvl); return; }
+      if (type === 'firecracker') { drawFirecrackerGlow(ctx, b, lvl); return; }
       if (type === 'townhall') { drawTHGlow(ctx, b, lvl); return; }
     }
 
@@ -9547,6 +9611,634 @@ CC.Render = (function () {
     }
     if (L >= 19) {
       spire(ctx, p.x + 14, p.y - baseH - bodyH + 2, 6, PAL.amber);
+    }
+  }
+
+  /* --- Карающая башня: наклонный обелиск с подвешенным «карателем» ---
+     Тёмная оборона поздних центров. Силуэт намеренно несимметричный:
+     три контрфорса разной высоты, сужающийся ствол и вынесенная в сторону
+     тяжёлая клетка-ядро. Никаких коробок: масса набирается наклонными
+     рёбрами, а акцент — фиолетовое ядро и рваные знамёна. */
+  function drawRevenge(ctx, b, lvl) {
+    const L = bLevel(lvl);
+    const ramp = bRamp(lvl);
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const p = P(cx, cy);
+    const a = aimVec(b);
+    const nx = -a.y;
+    const ny = a.x;
+    const baseH = 7 + ramp * 3;
+    const towerH = 30 + ramp * 18;
+    const spireH = 12 + ramp * 8;
+
+    bPrep(ctx, b, 1.3);
+    // круглый тёмный стилобат: газон остаётся виден по краям
+    ring(ctx, p.x, p.y - 0.5, 25 + ramp * 7, (25 + ramp * 7) * GQ,
+      'rgba(40,28,50,.55)', 5 + ramp * 2);
+    ring(ctx, p.x, p.y - 0.5, 25 + ramp * 7, (25 + ramp * 7) * GQ,
+      'rgba(201,143,224,.3)', 1);
+    prism(ctx, b.x + 0.34, b.y + 0.34, b.x + b.w - 0.34, b.y + b.h - 0.34,
+      0, baseH, mix('#4b3a5c', '#ffe1b4', 0.09), '#453552', '#2b2336');
+    prism(ctx, cx - 0.7, cy - 0.7, cx + 0.7, cy + 0.7,
+      baseH, 3.4, '#5a466e', '#4a3a58', '#32293e');
+    bKick(ctx, b, 0.34, 1.5, 'rgba(201,143,224,.42)');
+
+    // контрфорсы: три разных высоты и наклона
+    const feet = [[-0.86, 0.48, 16], [-0.24, 0.96, 24], [0.82, 0.66, 19]];
+    for (let i = 0; i < feet.length; i++) {
+      const f = feet[i];
+      const g = P(cx + f[0], cy + f[1]);
+      const tx = g.x - a.x * (3 + ramp * 3);
+      const ty = g.y - baseH - f[2] - ramp * 6;
+      uBar(ctx, g.x, g.y - baseH + 1, tx, ty, 5 + ramp * 1.4, '#332a40');
+      uBar(ctx, g.x, g.y - baseH + 1, tx, ty - 0.8, 1.5, '#6a547e');
+      if (L >= 6) spot(ctx, tx, ty, 1.2, 'rgba(201,143,224,.55)');
+    }
+
+    // малая боковая башенка: ломает симметрию и добавляет второй ярус
+    const axw = cx - 0.9;
+    const ayw = cy + 0.92;
+    prism(ctx, axw - 0.28, ayw - 0.28, axw + 0.28, ayw + 0.28,
+      baseH, 18 + ramp * 10, '#5a466e', '#453552', '#2b2336');
+    prism(ctx, axw - 0.19, ayw - 0.19, axw + 0.19, ayw + 0.19,
+      baseH + 18 + ramp * 10, 4, '#6a547e', '#523f66', '#352b42');
+    if (L >= 9) spot(ctx, P(axw, ayw).x, P(axw, ayw).y - baseH - 22 - ramp * 10,
+      1.1, PAL.gold);
+
+    // сужающийся ствол: три объёма, верх уходит в темноту
+    prism(ctx, cx - 0.72, cy - 0.72, cx + 0.72, cy + 0.72,
+      baseH + 3.4, towerH * 0.46,
+      mix('#5a466e', '#ffe1b4', 0.06), '#453552', '#2b2336');
+    prism(ctx, cx - 0.54, cy - 0.54, cx + 0.54, cy + 0.54,
+      baseH + 3.4 + towerH * 0.46, towerH * 0.34,
+      '#5a466e', '#4a3a58', '#302840');
+    prism(ctx, cx - 0.36, cy - 0.36, cx + 0.36, cy + 0.36,
+      baseH + 3.4 + towerH * 0.8, towerH * 0.2,
+      '#6a547e', '#523f66', '#352b42');
+
+    const topY = p.y - baseH - 3.4 - towerH;
+
+    // центральный шип-клин: над ступенями появляется «маяк», силуэт
+    // читается как башня, а не как ступенчатая пирамида
+    uBar(ctx, p.x, topY + 1, p.x, topY - spireH, 2.6, '#332a40');
+    uBar(ctx, p.x, topY + 1, p.x, topY - spireH, 0.9, '#8a6fa4');
+    poly(ctx, [
+      { x: p.x - 2.4, y: topY - 4 },
+      { x: p.x, y: topY - spireH - 2 },
+      { x: p.x + 2.4, y: topY - 4 }
+    ], L >= 12 ? '#a878d8' : '#5a466e');
+    spot(ctx, p.x, topY - spireH - 2.4, 1.2,
+      L >= 17 ? PAL.gold : 'rgba(224,166,255,.9)');
+
+    // руническая щель и насечки: читаются с 3 уровня
+    if (L >= 3) {
+      const fd = P(cx - 0.34, cy + 0.52);
+      const fc = P(cx + 0.34, cy + 0.52);
+      patchPx(ctx, fd, fc, baseH + 3.4 + towerH, 0.3, 0.7,
+        baseH + 9, baseH + 9 + towerH * 0.4, 'rgba(201,143,224,.24)');
+    }
+    if (L >= 9) {
+      ctx.strokeStyle = 'rgba(224,166,255,.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const yy = p.y - baseH - 9 - i * 6;
+        ctx.moveTo(p.x - 2.6, yy);
+        ctx.lineTo(p.x + 2.6, yy - 1.6);
+      }
+      ctx.stroke();
+    }
+
+    // штанга-каратель и подвешенная клетка с ядром
+    const armLen = 9 + ramp * 7;
+    const ax = p.x + a.x * armLen;
+    const ay = topY - 3 + a.y * armLen * 0.6;
+    uBar(ctx, p.x, topY, ax, ay, 3.2, '#332a40');
+    uBar(ctx, p.x, topY - 0.6, ax, ay - 0.6, 1.1, '#8a6fa4');
+    uBar(ctx, ax, ay, ax + nx * 5, ay + ny * 3.4 + 2, 1.4, '#5a466e');
+    uBar(ctx, ax, ay, ax - nx * 5, ay - ny * 3.4 + 2, 1.4, '#5a466e');
+    const orbY = ay + 3.6;
+    ring(ctx, ax, orbY, 4.2 + ramp * 1.2, (4.2 + ramp * 1.2) * GQ,
+      'rgba(201,143,224,.55)', 1);
+    spot(ctx, ax, orbY, 2.6, 'rgba(28,18,36,.94)');
+    spot(ctx, ax, orbY - 0.4, 1.2, 'rgba(230,200,255,.92)');
+
+    // знамёна на переднем ребре, с 12 — с золотой каймой
+    const fn = P(b.x + 0.3, b.y + b.h - 0.3);
+    banner(ctx, fn.x, fn.y - baseH - 3, 11 + ramp * 5, 4.4, 6,
+      L >= 12 ? '#a8782e' : '#7a3452');
+    if (L >= 7) {
+      const bn = P(b.x + b.w - 0.3, b.y + 0.32);
+      banner(ctx, bn.x, bn.y - baseH - 4, 8 + ramp * 3, 3.4, 4.6, '#4a3a58');
+    }
+
+    // 12+: цепи от вершины к передним углам
+    if (L >= 12) {
+      ctx.strokeStyle = 'rgba(120,104,134,.65)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      for (let s = -1; s <= 1; s += 2) {
+        ctx.moveTo(p.x + s * 2, topY + 2);
+        ctx.quadraticCurveTo(p.x + s * 12, topY + 20,
+          p.x + s * (16 + ramp * 4), p.y - baseH - 2);
+      }
+      ctx.stroke();
+    }
+
+    // 15+: тёмные крылья-жалюзи за стволом
+    if (L >= 15) {
+      for (let s = -1; s <= 1; s += 2) {
+        poly(ctx, [
+          { x: p.x + s * 5, y: topY + 8 },
+          { x: p.x + s * (20 + ramp * 6), y: topY + 1 },
+          { x: p.x + s * (17 + ramp * 5), y: topY + 10 },
+          { x: p.x + s * 5, y: topY + 15 }
+        ], s < 0 ? '#3d3049' : '#2e2537');
+      }
+    }
+
+    // 18+: золотое кольцо над ядром и фиолетовые эмиттеры
+    if (L >= 18) {
+      ring(ctx, ax, orbY - 2, 7 + ramp * 2, (7 + ramp * 2) * GQ,
+        'rgba(255,207,74,.5)', 1);
+      spot(ctx, p.x + nx * 9, p.y - baseH - towerH * 0.5, 1.2, PAL.gold);
+      spot(ctx, p.x - nx * 9, p.y - baseH - towerH * 0.5, 1.2, PAL.gold);
+    }
+  }
+
+  /* --- Плазменный колосс: плечистая фигура на ступенчатой платформе ---
+     Узнаваемый силуэт — широкие плечи с катушками, маленькая голова и
+     парящее ядро над ней. Не башня и не коробка: корпус собран трапецией
+     и дугами, руки читаются отдельно от туловища. */
+  function drawSuperwizard(ctx, b, lvl) {
+    const L = bLevel(lvl);
+    const ramp = bRamp(lvl);
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const baseH = 6 + ramp * 3;
+    const botY = p.y - baseH - 18;
+    const torsoH = 30 + ramp * 12;
+    const topY = botY - torsoH;
+    const hw = 16 + ramp * 9;
+    const a = aimVec(b);
+
+    bPrep(ctx, b, 1.35);
+    // круглая ступенчатая платформа: газон читается вокруг, силуэт не «плита»
+    ring(ctx, p.x, p.y - 0.5, 31 + ramp * 8, (31 + ramp * 8) * GQ,
+      'rgba(44,30,64,.5)', 5 + ramp * 2);
+    prism(ctx, b.x + 0.58, b.y + 0.58, b.x + b.w - 0.58, b.y + b.h - 0.58,
+      0, baseH, '#5a4678', '#4a3a62', '#2f2542');
+    prism(ctx, b.x + 0.74, b.y + 0.74, b.x + b.w - 0.74, b.y + b.h - 0.74,
+      baseH, 3.4, '#6a5488', '#574570', '#3a2f4e');
+    bKick(ctx, b, 0.58, 1.5, 'rgba(224,166,255,.42)');
+
+    // задние плавники-излучатели: рисуются до корпуса
+    for (let i = -1; i <= 1; i++) {
+      const fx = p.x + i * hw * 0.52;
+      const fy = topY + 10 + Math.abs(i) * 3;
+      poly(ctx, [
+        { x: fx - 2.2, y: fy },
+        { x: fx + i * 2.4, y: fy - 14 - ramp * 5 },
+        { x: fx + 2.2, y: fy }
+      ], i === 0 ? '#5e4780' : '#46345f');
+      if (L >= 10) spot(ctx, fx + i * 2.2, fy - 14 - ramp * 5, 0.9,
+        'rgba(224,166,255,.7)');
+    }
+
+    // опоры-ноги: колосс стоит на платформе, а не «парит» на плите
+    for (let s = -1; s <= 1; s += 2) {
+      const hx = p.x + s * hw * 0.38;
+      const fx = p.x + s * hw * 0.5;
+      uBar(ctx, hx, botY - 2, fx, p.y - baseH - 3, 6.4 + ramp * 2.4,
+        s > 0 ? '#574570' : '#3d2e54');
+      spot(ctx, fx, p.y - baseH - 3, 4.6 + ramp * 1.2,
+        s > 0 ? '#6a5488' : '#46345f');
+      uBar(ctx, hx, botY - 6, hx + s * 3, botY + 1, 5.2 + ramp * 1.6,
+        '#5a4676');
+    }
+
+    // массивный трапециевидный корпус
+    poly(ctx, [
+      { x: p.x - hw * 0.64, y: botY },
+      { x: p.x + hw * 0.64, y: botY },
+      { x: p.x + hw, y: topY + 7 },
+      { x: p.x + hw * 0.84, y: topY },
+      { x: p.x - hw * 0.84, y: topY },
+      { x: p.x - hw, y: topY + 7 }
+    ], '#4f3a6a');
+    // светлая нагрудная пластина и тёмные рёбра
+    poly(ctx, [
+      { x: p.x - hw * 0.34, y: topY + 7 },
+      { x: p.x + hw * 0.34, y: topY + 7 },
+      { x: p.x + hw * 0.5, y: botY - 4 },
+      { x: p.x - hw * 0.5, y: botY - 4 }
+    ], '#6a5488');
+    ctx.strokeStyle = 'rgba(40,28,56,.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i <= 3; i++) {
+      const yy = topY + 7 + (botY - topY - 11) * i / 4;
+      ctx.moveTo(p.x - hw * 0.34, yy);
+      ctx.lineTo(p.x + hw * 0.34, yy);
+    }
+    ctx.stroke();
+
+    // грудное ядро
+    const cy0 = topY + torsoH * 0.56;
+    ring(ctx, p.x, cy0, 4.6 + ramp, (4.6 + ramp) * 0.86, 'rgba(224,166,255,.65)', 1.2);
+    spot(ctx, p.x, cy0, 2.8, 'rgba(32,20,44,.95)');
+    spot(ctx, p.x, cy0 - 0.5, 1.4, 'rgba(240,214,255,.95)');
+
+    // плечевые блоки с катушками
+    for (let s = -1; s <= 1; s += 2) {
+      const shx = p.x + s * hw * 0.98;
+      const shy = topY + 8;
+      ctx.fillStyle = s > 0 ? '#6a5488' : '#46345f';
+      ctx.beginPath();
+      ctx.ellipse(shx, shy, 5.6 + ramp * 1.6, 4.6 + ramp, 0.2 * s, 0, Math.PI * 2);
+      ctx.fill();
+      const coilY = shy - 4 - ramp * 1.5;
+      ring(ctx, shx, coilY, 3.4 + ramp, (3.4 + ramp) * 0.7,
+        s > 0 ? 'rgba(224,166,255,.75)' : 'rgba(159,210,255,.45)', 1.1);
+      ring(ctx, shx, coilY - 2.2, 2.4 + ramp * 0.6, (2.4 + ramp * 0.6) * 0.7,
+        'rgba(240,214,255,.55)', 0.8);
+      if (L >= 13) {
+        uBar(ctx, shx, shy - 2, shx + s * (5 + ramp * 2), shy - 9, 1.4, '#8a70b0');
+        spot(ctx, shx + s * (5 + ramp * 2), shy - 9, 1, PAL.gold);
+      }
+    }
+
+    // голова-шлем с узким визором
+    poly(ctx, [
+      { x: p.x - 4.2, y: topY - 1 },
+      { x: p.x + 4.2, y: topY - 1 },
+      { x: p.x + 3.2, y: topY - 8 },
+      { x: p.x - 3.2, y: topY - 8 }
+    ], '#5a4676');
+    uBar(ctx, p.x - 2.6, topY - 5, p.x + 2.6, topY - 5, 1.4,
+      L >= 15 ? PAL.gold : '#e0a6ff');
+
+    // левая рука-кулак (ближняя к зрителю)
+    uBar(ctx, p.x - hw * 0.92, topY + 12, p.x - hw - 3, botY - 8,
+      4.2 + ramp, '#46345f');
+    uBar(ctx, p.x - hw - 3, botY - 8, p.x - hw - 6, botY - 1,
+      4.8 + ramp, '#574570');
+    spot(ctx, p.x - hw - 6, botY - 1, 4.6 + ramp * 0.8, '#6a5488');
+    for (let i = -1; i <= 1; i++) {
+      spot(ctx, p.x - hw - 6 + i * 3, botY - 4.6, 1.2, '#8a70b0');
+    }
+
+    // правая рука-орудие смотрит в сторону цели
+    const ax = p.x + hw * 0.92;
+    const ay = topY + 13;
+    uBar(ctx, ax, ay, ax + a.x * (9 + ramp * 4), ay + a.y * (7 + ramp * 3),
+      4.6 + ramp, '#46345f');
+    const mx = ax + a.x * (17 + ramp * 7);
+    const my = ay + a.y * (13 + ramp * 5);
+    uBar(ctx, ax + a.x * 5, ay + a.y * 4,
+      mx, my, 3.4 + ramp * 0.8, '#2f2542');
+    ring(ctx, mx, my, 3.4 + ramp, (3.4 + ramp) * 0.7, 'rgba(224,166,255,.6)', 1);
+    spot(ctx, mx + a.x * 1.4, my + a.y * 1.2, 1.3, 'rgba(240,214,255,.9)');
+
+    // 7+: кольца на предплечье, 16+: второе кольцо
+    if (L >= 7) {
+      ring(ctx, p.x - hw - 1, botY - 6, 5.4 + ramp, (5.4 + ramp) * 0.7,
+        'rgba(224,166,255,.35)', 0.9);
+    }
+    if (L >= 16) {
+      ring(ctx, ax + a.x * 10, ay + a.y * 8, 4.6, 3,
+        'rgba(255,207,74,.5)', 0.9);
+    }
+
+    // парящее плазменное ядро над головой
+    const oy = topY - 15 - ramp * 5;
+    ring(ctx, p.x, oy, 7.6 + ramp * 2.4, (7.6 + ramp * 2.4) * 0.86,
+      'rgba(224,166,255,.62)', 1.3);
+    ring(ctx, p.x, oy, 5 + ramp * 1.4, (5 + ramp * 1.4) * 0.86,
+      'rgba(159,210,255,.45)', 0.9);
+    spot(ctx, p.x, oy, 3.6 + ramp, 'rgba(70,40,94,.95)');
+    spot(ctx, p.x - 0.6, oy - 0.6, 1.9, 'rgba(240,214,255,.95)');
+
+    // 16+: спутники-осколки вокруг ядра
+    if (L >= 16) {
+      for (let i = 0; i < 3; i++) {
+        const ang = i * Math.PI * 2 / 3 - 0.6;
+        const sx = p.x + Math.cos(ang) * (13 + ramp * 3);
+        const sy = oy + Math.sin(ang) * (9 + ramp * 2) * 0.9;
+        poly(ctx, [
+          { x: sx, y: sy - 2.6 }, { x: sx + 1.8, y: sy },
+          { x: sx, y: sy + 2.6 }, { x: sx - 1.8, y: sy }
+        ], i === 0 ? PAL.gold : '#c8a6e8');
+      }
+    }
+
+    // 19+: золотая корона-дуга над ядром
+    if (L >= 19) {
+      ring(ctx, p.x, oy, 11 + ramp * 2, (11 + ramp * 2) * 0.8,
+        'rgba(255,232,170,.45)', 1);
+    }
+  }
+
+  /* --- Шиповая башня: низкий ёж на круглой тумбе ---
+     Пассивная контратака читается формой: ни ствола, ни палубы, только
+     купол и два ряда шипов. Высота намеренно ниже соседних турелей,
+     чтобы 2×2 не спорило с 3×3. */
+  function drawSpiky(ctx, b, lvl) {
+    const L = bLevel(lvl);
+    const ramp = bRamp(lvl);
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const baseH = 6 + ramp * 4;
+    const domeH = 16 + ramp * 9;
+    const r0 = 11 + ramp * 2.6;        // радиус основания шипов
+    const r1 = 23 + ramp * 7;          // вылет острия
+    const prx = 25 + ramp * 6;         // круглая тумба
+    const n = L >= 12 ? 12 : (L >= 6 ? 10 : 8);
+
+    bPrep(ctx, b, 1.0);
+    // круглая тумба: квадратный цоколь на 2×2 выглядел плитой
+    ctx.fillStyle = '#3a2c2a';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, prx, prx * GQ, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#57423d';
+    ctx.fillRect(p.x - prx, p.y - baseH, prx * 2, baseH);
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y - baseH, prx, prx * GQ, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#6a524a';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,210,.18)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ring(ctx, p.x, p.y - 0.4, prx, prx * GQ, 'rgba(214,160,106,.25)', 1);
+
+    // шипы делятся на задние и передние: купол рисуется между ними
+    function spike(ang, front) {
+      const bx = p.x + Math.cos(ang) * r0;
+      const by = p.y - baseH - domeH * 0.44 + Math.sin(ang) * r0 * GQ;
+      const tx = p.x + Math.cos(ang) * r1;
+      const ty = by + Math.sin(ang) * (r1 - r0) * GQ - (5 + ramp * 2) -
+        (front ? 0 : 1.5);
+      uBar(ctx, bx, by, tx, ty, 2.4 + ramp * 0.9, '#3f3230');
+      uBar(ctx, bx, by - 0.6, tx, ty - 0.6, 0.8, '#8a7060');
+      spot(ctx, tx, ty, 1.1 + ramp * 0.4, L >= 6 ? '#e0b07a' : '#b89068');
+    }
+    for (let i = 0; i < n; i++) {
+      const ang = i * Math.PI * 2 / n + 0.25;
+      if (Math.sin(ang) <= 0) spike(ang, false);
+    }
+
+    // купол из четырёх слоёв, каждый уже предыдущего
+    for (let i = 0; i < 4; i++) {
+      const t = i / 3;
+      const ry = domeH * (0.62 - t * 0.2);
+      const rx = (13 + ramp * 2.4) * (1 - t * 0.26);
+      const yy = p.y - baseH - 2 - domeH * t * 0.62;
+      ctx.fillStyle = i === 3 ? '#7a6054' : (i === 2 ? '#6e554c' : '#5e463f');
+      ctx.beginPath();
+      ctx.ellipse(p.x, yy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,240,210,.16)';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < n; i++) {
+      const ang = i * Math.PI * 2 / n + 0.25;
+      if (Math.sin(ang) > 0) spike(ang, true);
+    }
+
+    // центральный шип-коронка: 1 на L1, 3 с 9 уровня
+    const topY = p.y - baseH - domeH * 0.7;
+    uBar(ctx, p.x, topY, p.x, topY - (9 + ramp * 5), 2.2, '#3f3230');
+    spot(ctx, p.x, topY - (9 + ramp * 5), 1.2, L >= 15 ? PAL.gold : '#d6a06a');
+    if (L >= 9) {
+      for (let s = -1; s <= 1; s += 2) {
+        uBar(ctx, p.x + s * 3.4, topY + 1, p.x + s * 7, topY - 7 - ramp * 3,
+          1.6, '#3f3230');
+        spot(ctx, p.x + s * 7, topY - 7 - ramp * 3, 0.9, '#d6a06a');
+      }
+    }
+
+    // 3+: заклёпки по ободу
+    if (L >= 3) {
+      const rb = prx - 2;
+      for (let i = 0; i < 6; i++) {
+        const ang = i * Math.PI / 3 + 0.3;
+        spot(ctx, p.x + Math.cos(ang) * rb, p.y - baseH - 2.4 +
+          Math.sin(ang) * rb * GQ, 0.8, '#c8a078');
+      }
+    }
+
+    // 9+: клетка-рёбра над куполом, ядро внутри
+    if (L >= 9) {
+      ctx.strokeStyle = 'rgba(200,160,120,.45)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        ctx.ellipse(p.x, p.y - baseH - domeH * 0.34,
+          8 + i * 2.2, domeH * 0.72, 0, Math.PI * 1.04, Math.PI * 1.96);
+      }
+      ctx.stroke();
+      spot(ctx, p.x, p.y - baseH - domeH * 0.74, 1.5,
+        L >= 15 ? PAL.gold : 'rgba(255,190,120,.75)');
+    }
+
+    // 12+: второй ряд коротких шипов у основания
+    if (L >= 12) {
+      for (let i = 0; i < 6; i++) {
+        const ang = i * Math.PI / 3 + 0.55;
+        const bx = p.x + Math.cos(ang) * (11 + ramp * 2);
+        const by = p.y - baseH - 2 + Math.sin(ang) * 6 * GQ;
+        uBar(ctx, bx, by, bx + Math.cos(ang) * 4.6, by + Math.sin(ang) * 2.4 * GQ - 2,
+          1.5, '#4a3a36');
+      }
+    }
+
+    // 15+: золотое ядро, 18+: тёплое кольцо у грунта
+    if (L >= 15) {
+      ring(ctx, p.x, p.y - baseH - domeH * 0.74, 3.4, 2.4, 'rgba(255,207,74,.6)', 0.9);
+    }
+    if (L >= 18) {
+      ring(ctx, p.x, p.y - baseH + 0.8, 13 + ramp * 3,
+        (13 + ramp * 3) * GQ, 'rgba(214,160,106,.35)', 1);
+    }
+  }
+
+  /* --- Залповая башня: наклонная А-рама с тройным пакетом труб ---
+     Силуэт строится вокруг наклона: раскосы, шарнир и три трубы разной
+     длины смотрят в сторону цели. База низкая, вся масса — вверху. */
+  function drawFirecracker(ctx, b, lvl) {
+    const L = bLevel(lvl);
+    const ramp = bRamp(lvl);
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const a = aimVec(b);
+    const nx = -a.y;
+    const ny = a.x;
+    const baseH = 6 + ramp * 3;
+    const mastH = 28 + ramp * 18;
+    const hingeY = p.y - baseH - mastH;
+    let dx = a.x * 0.62;
+    let dy = a.y * 0.42 - 1;
+    const dl = Math.hypot(dx, dy) || 1;
+    dx /= dl;
+    dy /= dl;
+
+    bPrep(ctx, b, 1.2);
+    // низкая скошенная база с аммо-отсеком
+    prism(ctx, b.x + 0.24, b.y + 0.24, b.x + b.w - 0.24, b.y + b.h - 0.24,
+      0, baseH, '#7a6248', '#66513c', '#40342a');
+    bKick(ctx, b, 0.24, 1.5, 'rgba(255,176,90,.42)');
+    // тёмный настил на плите: рама и трубы не сливаются с песком
+    const dA = P(b.x + 0.58, b.y + 0.58);
+    const dB = P(b.x + b.w - 0.58, b.y + 0.58);
+    const dC = P(b.x + b.w - 0.58, b.y + b.h - 0.58);
+    const dD = P(b.x + 0.58, b.y + b.h - 0.58);
+    ctx.fillStyle = 'rgba(62,46,32,.62)';
+    diamond(ctx, { x: dA.x, y: dA.y - baseH }, { x: dB.x, y: dB.y - baseH },
+      { x: dC.x, y: dC.y - baseH }, { x: dD.x, y: dD.y - baseH });
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,176,90,.24)';
+    ctx.lineWidth = 1;
+    diamond(ctx, { x: dA.x, y: dA.y - baseH }, { x: dB.x, y: dB.y - baseH },
+      { x: dC.x, y: dC.y - baseH }, { x: dD.x, y: dD.y - baseH });
+    ctx.stroke();
+    const bd = P(b.x + 0.4, b.y + b.h - 0.4);
+    const bc = P(b.x + b.w - 0.4, b.y + b.h - 0.4);
+    poly(ctx, [
+      { x: bd.x, y: bd.y - baseH },
+      { x: bc.x, y: bc.y - baseH },
+      { x: bc.x + 7, y: bc.y - baseH - 11 - ramp * 5 },
+      { x: bd.x, y: bd.y - baseH - 11 - ramp * 5 }
+    ], '#7d6549');
+
+    // поворотный круг под рамой
+    ring(ctx, p.x, p.y - baseH - 2, 15 + ramp * 4, (15 + ramp * 4) * GQ,
+      '#3f3428', 2.2);
+    ring(ctx, p.x, p.y - baseH - 2, 15 + ramp * 4, (15 + ramp * 4) * GQ,
+      'rgba(255,176,90,.3)', 0.9);
+
+    // А-рама: две ноги к шарниру и стяжка
+    const lx = p.x - 18 - ramp * 5;
+    const rx = p.x + 18 + ramp * 5;
+    // тёмная панель между ногами: рама читается массой, а не парой палок
+    poly(ctx, [
+      { x: p.x, y: hingeY + 3 },
+      { x: lx + 3, y: p.y - baseH - 1 },
+      { x: rx - 3, y: p.y - baseH - 1 }
+    ], 'rgba(56,42,30,.6)');
+    uBar(ctx, lx, p.y - baseH - 1, p.x - 3, hingeY + 2, 4.8, '#4a3c30');
+    uBar(ctx, rx, p.y - baseH - 1, p.x + 3, hingeY + 2, 4.8, '#4a3c30');
+    uBar(ctx, lx + 2, p.y - baseH - 11, rx - 2, p.y - baseH - 11, 1.8, '#8a7050');
+    uBar(ctx, lx + 8, p.y - baseH - 20 - ramp * 5,
+      rx - 8, p.y - baseH - 14 - ramp * 3, 1.2, 'rgba(138,112,80,.5)');
+    ring(ctx, p.x, p.y - baseH - 6, 6 + ramp * 1.4, (6 + ramp * 1.4) * GQ,
+      '#3f3428', 3.2);
+    ring(ctx, p.x, p.y - baseH - 6, 6 + ramp * 1.4, (6 + ramp * 1.4) * GQ,
+      'rgba(255,176,90,.35)', 0.8);
+    spot(ctx, p.x, hingeY + 1, 3.4, '#8a7050');
+
+    // три трубы пакета: разная длина, лёгкий веер по nx
+    for (let i = -1; i <= 1; i++) {
+      const off = i * (7 + ramp * 2);
+      const sx = p.x + nx * off - a.x * 2;
+      const sy = hingeY + ny * off * 0.7 - a.y * 1.6;
+      const len = 24 + ramp * 12 + (1 - Math.abs(i)) * 3;
+      const tx = sx + dx * len;
+      const ty = sy + dy * len;
+      uBar(ctx, sx, sy, tx, ty, 7 + (i === 0 ? 1 : 0), '#4a3a30');
+      uBar(ctx, sx, sy - 1.2, sx + dx * len * 0.84,
+        sy + dy * len * 0.84 - 1.2, 2.5, i === 0 ? '#d8a060' : '#b07a4a');
+      // обручи
+      for (let k = 1; k <= 2; k++) {
+        const u = k / 3;
+        uBar(ctx, sx + dx * len * u - nx * 3.8, sy + dy * len * u - ny * 3.8,
+          sx + dx * len * u + nx * 3.8, sy + dy * len * u + ny * 3.8,
+          1.5, '#8a6a44');
+      }
+      // раструб
+      poly(ctx, [
+        { x: tx - nx * 6, y: ty - ny * 6 },
+        { x: tx + nx * 6, y: ty + ny * 6 },
+        { x: tx + dx * 5 + nx * 7.4, y: ty + dy * 5 + ny * 7.4 },
+        { x: tx + dx * 5 - nx * 7.4, y: ty + dy * 5 - ny * 7.4 }
+      ], '#332a20');
+      spot(ctx, tx + dx * 3, ty + dy * 3, 2.1, 'rgba(255,210,130,.8)');
+    }
+
+    // барабаны с зарядами по бокам базы
+    for (let s = -1; s <= 1; s += 2) {
+      const tx = p.x + nx * s * (22 + ramp * 4);
+      const ty = p.y - baseH - 6;
+      ring(ctx, tx, ty, 6.4 + ramp * 1.4, (6.4 + ramp * 1.4) * GQ, '#3f3428', 3.8);
+      ring(ctx, tx, ty, 6.4 + ramp * 1.4, (6.4 + ramp * 1.4) * GQ,
+        'rgba(255,176,90,.35)', 0.9);
+      for (let k = 0; k < 4; k++) {
+        const ang = k * Math.PI / 2 + 0.4;
+        spot(ctx, tx + Math.cos(ang) * 4.2, ty + Math.sin(ang) * 4.2 * GQ,
+          1.1, '#d0a060');
+      }
+    }
+
+    // фитиль сбоку шарнира
+    ctx.strokeStyle = 'rgba(60,44,32,.9)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 3, hingeY + 1);
+    ctx.quadraticCurveTo(p.x - 9, hingeY - 5, p.x - 7, hingeY - 10);
+    ctx.stroke();
+    if (L >= 5) spot(ctx, p.x - 7, hingeY - 10, 1.1,
+      L >= 12 ? PAL.gold : 'rgba(255,190,110,.85)');
+
+    // 6+: вторая стойка ракет на борту
+    if (L >= 6) {
+      for (let i = 0; i < 2; i++) {
+        const sx = p.x - 15 - i * 4;
+        const sy = p.y - baseH - 8 - i * 2;
+        uBar(ctx, sx, sy, sx + dx * 10, sy + dy * 10, 2.2, '#4a3a30');
+        poly(ctx, [
+          { x: sx + dx * 10, y: sy + dy * 10 },
+          { x: sx + dx * 12 + nx * 2, y: sy + dy * 12 + ny * 2 },
+          { x: sx + dx * 12 - nx * 2, y: sy + dy * 12 - ny * 2 }
+        ], '#c8a060');
+      }
+    }
+
+    // 9+: кожух шарнира и натяжные тросы
+    if (L >= 9) {
+      ring(ctx, p.x, hingeY + 1, 4.6 + ramp, (4.6 + ramp) * 0.8, '#2f2820', 2.6);
+      ring(ctx, p.x, hingeY + 1, 4.6 + ramp, (4.6 + ramp) * 0.8,
+        'rgba(255,176,90,.4)', 0.9);
+      ctx.strokeStyle = 'rgba(60,48,36,.65)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 2, hingeY + 4);
+      ctx.lineTo(p.x - 12, p.y - baseH - 2);
+      ctx.moveTo(p.x + 2, hingeY + 4);
+      ctx.lineTo(p.x + 12, p.y - baseH - 2);
+      ctx.stroke();
+    }
+
+    // 12+: третья труба-довесок и золотые кольца
+    if (L >= 12) {
+      const sx = p.x - a.x * 3 - nx * 8;
+      const sy = hingeY - a.y * 2 - ny * 6;
+      uBar(ctx, sx, sy, sx + dx * 16, sy + dy * 16, 3.4, '#3f3428');
+      spot(ctx, sx + dx * 16, sy + dy * 16, 1.2, 'rgba(255,220,150,.8)');
+      ring(ctx, p.x, hingeY + 1, 7 + ramp, (7 + ramp) * 0.8,
+        'rgba(255,207,74,.45)', 0.9);
+    }
+
+    // 16+: высокий прицел на шарнире
+    if (L >= 16) {
+      uBar(ctx, p.x + nx * 5, hingeY + 1, p.x + nx * 7, hingeY - 10, 1.2, '#8a7050');
+      spot(ctx, p.x + nx * 7, hingeY - 10, 1, PAL.gold);
+    }
+
+    // 19-20: корона пакета — золотая дуга и белое ядро
+    if (L >= 19) {
+      ring(ctx, p.x, hingeY - 2, 10 + ramp * 2, (10 + ramp * 2) * 0.7,
+        'rgba(255,232,170,.45)', 1);
+      spot(ctx, p.x, hingeY - 2, 1.3, 'rgba(255,252,232,.9)');
     }
   }
 
@@ -10766,6 +11458,192 @@ CC.Render = (function () {
     spot(ctx, x, y, 0.9 + f * 0.5, 'rgba(255,236,180,.75)');
   }
 
+  function drawRevengeGlow(ctx, b, lvl) {
+    if (!mid()) return;
+    const ramp = bRamp(lvl);
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const a = aimVec(b);
+    const nx = -a.y;
+    const ny = a.x;
+    const baseH = 7 + ramp * 3;
+    const towerH = 30 + ramp * 18;
+    const topY = p.y - baseH - 3.4 - towerH;
+    const armLen = 9 + ramp * 7;
+    const ox = p.x + a.x * armLen;
+    const oy = topY - 3 + a.y * armLen * 0.6 + 3.6;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3.1 + b.x * 0.9);
+    const r = 4.6 + ramp * 1.2 + pulse * 0.7;
+
+    ring(ctx, ox, oy, r, r * GQ, 'rgba(224,166,255,' +
+      (0.24 + pulse * 0.2).toFixed(3) + ')', 1);
+    spot(ctx, ox, oy - 0.4, 1.3 + pulse * 0.5, 'rgba(242,222,255,.92)');
+    // редкие искры-стражи поднимаются от ядра
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 0.55 + i * 0.37 + b.x * 0.11) % 1;
+      const ex = ox + Math.sin(ph * 6.2 + i * 2.1) * (2 + ph * 4);
+      const ey = oy - 2 - ph * (8 + ramp * 4);
+      spot(ctx, ex, ey, 0.7 * (1 - ph), 'rgba(201,143,224,.7)');
+    }
+    // атака: короткая фиолетовая вспышка и два луча из клетки
+    const atk = typeof b.cd === 'number' ? Math.max(0, 1 - b.cd * 3) : 0;
+    if (atk > 0) {
+      spot(ctx, ox + nx * 4, oy + ny * 2, 1.2 + atk * 1.4,
+        'rgba(224,166,255,' + (atk * 0.55).toFixed(2) + ')');
+      uBar(ctx, ox, oy, ox + a.x * (9 + atk * 7), oy + a.y * (7 + atk * 5),
+        1.1, 'rgba(201,143,224,' + (atk * 0.5).toFixed(2) + ')');
+    }
+    if (lvl >= 18) {
+      const rr = 7 + ramp * 2;
+      ring(ctx, ox, oy - 2, rr, rr * GQ,
+        'rgba(255,207,74,' + (0.25 + pulse * 0.2).toFixed(2) + ')', 0.9);
+    }
+  }
+
+  function drawSuperwizardGlow(ctx, b, lvl) {
+    if (!mid()) return;
+    const ramp = bRamp(lvl);
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const a = aimVec(b);
+    const baseH = 6 + ramp * 3;
+    const botY = p.y - baseH - 18;
+    const torsoH = 30 + ramp * 12;
+    const topY = botY - torsoH;
+    const hw = 16 + ramp * 9;
+    const oy = topY - 15 - ramp * 5;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.6 + b.x * 0.7);
+
+    // ядро: дышит и вращает внешнее кольцо
+    const rr = 8 + ramp * 2.4;
+    ring(ctx, p.x, oy, rr, rr * 0.86,
+      'rgba(224,166,255,' + (0.16 + pulse * 0.18).toFixed(3) + ')', 0.9);
+    spot(ctx, p.x, oy - 0.6, 1.8 + pulse * 0.7, 'rgba(244,224,255,.95)');
+    const spin = t * 1.4 + b.x * 0.3;
+    for (let i = 0; i < 3; i++) {
+      const ang = spin + i * Math.PI * 2 / 3;
+      spot(ctx, p.x + Math.cos(ang) * rr * 0.86,
+        oy + Math.sin(ang) * rr * 0.7, 0.9, 'rgba(200,160,255,.8)');
+    }
+
+    // дуга между катушками плеч
+    const cy = topY + 4 - ramp * 1.5;
+    drawArcBolt(ctx, p.x - hw * 0.98, cy - 3, p.x + hw * 0.98, cy - 3,
+      0.22 + pulse * 0.12, 'rgba(224,166,255,.9)', b.x + t * 2, 0.9);
+
+    // атака: плазменный выброс из руки-орудия
+    const atk = typeof b.cd === 'number' ? Math.max(0, 1 - b.cd * 3) : 0;
+    const mx = p.x + hw * 0.92 + a.x * (17 + ramp * 7);
+    const my = topY + 13 + a.y * (13 + ramp * 5);
+    if (atk > 0) {
+      spot(ctx, mx, my, 2 + atk * 2.6,
+        'rgba(224,166,255,' + (atk * 0.55).toFixed(2) + ')');
+      drawArcBolt(ctx, p.x, oy, mx, my, atk * 0.7,
+        'rgba(240,214,255,.9)', b.y + t * 6, 1);
+      spot(ctx, p.x, oy, 1.8 + atk * 1.2, 'rgba(255,250,255,.9)');
+    }
+
+    // 16+: спутники медленно обходят ядро
+    if (lvl >= 16) {
+      for (let i = 0; i < 3; i++) {
+        const ang = spin * 0.7 + i * Math.PI * 2 / 3 + 0.4;
+        const sx = p.x + Math.cos(ang) * (14 + ramp * 3);
+        const sy = oy + Math.sin(ang) * (10 + ramp * 2) * 0.9;
+        spot(ctx, sx, sy, 0.9, i === 0 ? PAL.gold : 'rgba(200,166,232,.85)');
+      }
+    }
+  }
+
+  function drawSpikyFx(ctx, b, lvl) {
+    if (!mid()) return;
+    const L = bLevel(lvl);
+    const ramp = bRamp(lvl);
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const baseH = 6 + ramp * 4;
+    const domeH = 16 + ramp * 9;
+    const r1 = 23 + ramp * 7;
+    const fl = flashOf(b.id);           // 0..1 сразу после удара по башне
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.4 + b.y * 0.6);
+
+    // пассивный контур: тёплое кольцо у грунта
+    ring(ctx, p.x, p.y - baseH + 0.8, 18 + ramp * 4,
+      (18 + ramp * 4) * GQ, 'rgba(214,160,106,' +
+        (0.08 + pulse * 0.08 + fl * 0.25).toFixed(3) + ')', 0.9);
+
+    // кончики шипов тлеют; при ударе вспыхивают
+    const n = L >= 12 ? 12 : (L >= 6 ? 10 : 8);
+    for (let i = 0; i < n; i++) {
+      const ang = i * Math.PI * 2 / n + 0.25;
+      if (Math.sin(ang) <= 0) continue;
+      const tx = p.x + Math.cos(ang) * r1;
+      const ty = p.y - baseH - domeH * 0.44 + Math.sin(ang) * r1 * GQ -
+        5 - ramp * 2;
+      spot(ctx, tx, ty, 0.8 + fl * 1.1,
+        fl > 0.02 ? 'rgba(255,214,150,' + (0.45 + fl * 0.45).toFixed(2) + ')'
+          : 'rgba(214,160,106,' + (0.25 + pulse * 0.2).toFixed(2) + ')');
+    }
+
+    if (fl > 0.02) {
+      // ответный импульс: расходящееся кольцо и короткие искры
+      const rr = 8 + (1 - fl) * 14;
+      ring(ctx, p.x, p.y - baseH, rr, rr * GQ,
+        'rgba(255,207,74,' + (fl * 0.5).toFixed(2) + ')', 1.2);
+      for (let i = 0; i < 4; i++) {
+        const ang = i * Math.PI / 2 + 0.7;
+        spot(ctx, p.x + Math.cos(ang) * rr, p.y - baseH - 2 +
+          Math.sin(ang) * rr * GQ, 0.9 * fl, 'rgba(255,236,190,.85)');
+      }
+    }
+  }
+
+  function drawFirecrackerGlow(ctx, b, lvl) {
+    if (!mid()) return;
+    const ramp = bRamp(lvl);
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const a = aimVec(b);
+    const nx = -a.y;
+    const ny = a.x;
+    const baseH = 6 + ramp * 3;
+    const mastH = 28 + ramp * 18;
+    const hingeY = p.y - baseH - mastH;
+    let dx = a.x * 0.62;
+    let dy = a.y * 0.42 - 1;
+    const dl = Math.hypot(dx, dy) || 1;
+    dx /= dl;
+    dy /= dl;
+    const atk = typeof b.cd === 'number' ? Math.max(0, 1 - b.cd * 3) : 0;
+    const flick = 0.5 + 0.5 * Math.sin(t * 8 + b.x * 1.7);
+
+    // фитиль у шарнира
+    spot(ctx, p.x - 7, hingeY - 10, 0.8 + flick * 0.6,
+      'rgba(255,200,120,' + (0.4 + flick * 0.3).toFixed(2) + ')');
+
+    // сопла труб: тлеют, при выстреле дают короткий факел
+    for (let i = -1; i <= 1; i++) {
+      const off = i * (7 + ramp * 2);
+      const sx = p.x + nx * off - a.x * 2;
+      const sy = hingeY + ny * off * 0.7 - a.y * 1.6;
+      const len = 24 + ramp * 12 + (1 - Math.abs(i)) * 3 + 5;
+      const tx = sx + dx * len;
+      const ty = sy + dy * len;
+      spot(ctx, tx, ty, 0.9 + flick * 0.4,
+        'rgba(255,190,110,' + (0.3 + flick * 0.2).toFixed(2) + ')');
+      if (atk > 0) {
+        spot(ctx, tx + dx * 2, ty + dy * 2, 1.2 + atk * 2.6,
+          'rgba(255,210,120,' + (atk * 0.55).toFixed(2) + ')');
+        spot(ctx, tx + dx * 4, ty + dy * 4, 0.7 + atk * 1.2,
+          'rgba(255,245,210,' + (atk * 0.6).toFixed(2) + ')');
+      }
+    }
+
+    if (atk > 0 && near()) {
+      // дым залпа
+      for (let i = 0; i < 2; i++) {
+        spot(ctx, p.x + nx * (i ? 6 : -6), hingeY - 4 - atk * 6,
+          1.4 + atk * 2, 'rgba(90,74,58,' + (atk * 0.22).toFixed(2) + ')');
+      }
+    }
+  }
+
+
   function drawTHGlow(ctx, b, lvl) {
     if (!mid() || lvl < 10) return;
     const ramp = bRamp(lvl);
@@ -10819,6 +11697,10 @@ CC.Render = (function () {
     if (type === 'ricochet') { drawRicochet(ctx, b, lvl); return; }
     if (type === 'multigear') { drawMultiGear(ctx, b, lvl); return; }
     if (type === 'firespitter') { drawFireSpitter(ctx, b, lvl); return; }
+    if (type === 'revenge') { drawRevenge(ctx, b, lvl); return; }
+    if (type === 'superwizard') { drawSuperwizard(ctx, b, lvl); return; }
+    if (type === 'spiky') { drawSpiky(ctx, b, lvl); return; }
+    if (type === 'firecracker') { drawFirecracker(ctx, b, lvl); return; }
 
     if (type === 'darkdrill') { drawDarkDrill(ctx, b, lvl); return; }
     if (type === 'darkstorage') { drawDarkStorage(ctx, b, lvl); return; }
@@ -10854,7 +11736,7 @@ CC.Render = (function () {
 
   /* ---------- юниты ---------- */
 
-  // высота силуэта и ширина по типу. Полный набор CoC: тень, HP-бар и
+  // высота силуэта и ширина по типу. Полный набор справочник: тень, HP-бар и
   // купол щита считаются отсюда, поэтому ни один тип не должен падать
   // в дефолт «20 px» — иначе танк выглядит муравьём.
   const UNIT_SPEC = {
@@ -10890,6 +11772,11 @@ CC.Render = (function () {
     druid: { h: 23, w: 0.95 },
     furnace: { h: 18, w: 1.1 },
     ruinwitch: { h: 24, w: 0.95 },
+    // стражи поздних центров: дальний стрелок, танк и тяжёлый стрелок
+    longshot: { h: 28, w: 1.02 },
+    smasher: { h: 42, w: 1.9 },
+    logger: { h: 36, w: 1.62 },
+    guardian: { h: 38, w: 1.62 },
     // сержант: фигура в 1.5 раза крупнее штурмовика (h = 40 × 1.5),
     // ширина полосы — по прежнему силуэту, чтобы тень не раздувалась
     hero: { h: 60, w: 1.56 }
@@ -10957,6 +11844,29 @@ CC.Render = (function () {
     trooplauncher: { h: 26, w: 1.55, art: 'cart', body: '#6a6250', dark: '#3f3a2c', acc: '#8ff0e2', top: 'rack' },
     skywagon: { h: 28, w: 1.65, art: 'blimp', fly: true, body: '#7a6a7a', dark: '#4a3f4a', acc: '#e0c0ff' }
   };
+
+  /* Стражи: три роли на одной лестнице поздних центров. Силуэты разведены
+     намеренно — тонкий стрелок с копьём-лучом, широкий танк с молотом и
+     тяжёлый стрелок с наплечной мортирой. Ширина/высота идут и в тень,
+     и в HP-бар, поэтому здесь те же числа, что в UNIT_SPEC. */
+  const GUARDIAN_ART = {
+    longshot: {
+      h: 28, w: 1.02, art: 'ranger',
+      suit: '#3f5a74', suitLight: '#7098b8', acc: '#8fe8ff',
+      weapon: 'lance', scope: true
+    },
+    smasher: {
+      h: 42, w: 1.9, art: 'brute',
+      armor: '#5a4a62', armorLight: '#9986ac', glow: '#e0a6ff',
+      weapon: 'hammer', big: true
+    },
+    logger: {
+      h: 36, w: 1.62, art: 'brute',
+      armor: '#4a5a44', armorLight: '#859a70', glow: '#ffcf4a',
+      weapon: 'logcannon', big: true
+    }
+  };
+
 
   // На камере ~48° юниты чуть крупнее: иначе теряются на оранжевом поле.
   const UNIT_DRAW_SCALE = 1.18;
@@ -11481,8 +12391,14 @@ CC.Render = (function () {
       if (typeof u.kind === 'string' && SIEGE_ART[u.kind]) return u.kind;
       return '';
     }
+    if (u.type === 'guardian') {
+      const g = u.guardianKind || u.kind || u.guardianId || u.gid;
+      if (typeof g === 'string' && GUARDIAN_ART[g]) return g;
+      return 'longshot';
+    }
     if (PET_ART[u.type]) return u.type;
     if (SIEGE_ART[u.type]) return u.type;
+    if (GUARDIAN_ART[u.type]) return u.type;
     return '';
   }
 
@@ -11500,6 +12416,10 @@ CC.Render = (function () {
       }
       if (u.type === 'siege' || SIEGE_ART[u.type]) {
         return SIEGE_ART[v] || SIEGE_ART[u.type] || { h: 26, w: 1.5 };
+      }
+      if (u.type === 'guardian' || GUARDIAN_ART[u.type]) {
+        return GUARDIAN_ART[v] || GUARDIAN_ART[u.type] ||
+          UNIT_SPEC[u.type] || { h: 38, w: 1.6 };
       }
     }
     return (u && UNIT_SPEC[u.type]) || { h: 20, w: 1 };
@@ -12887,6 +13807,27 @@ CC.Render = (function () {
       ctx.stroke();
       uBar(ctx, bx - q.f.x * 4, by + q.f.y * 2, bx + q.p.x * 2, by + 6, 1.6, dark);
       if (q.atk) uFlash(ctx, bx + q.f.x * 4, by - 4, 3, 'rgba(70,224,200,.7)');
+    } else if (w === 'lance') {
+      // копьё-луч: высокий наклонный стержень с плазменным остриём
+      const bx = q.p.x * 3.2 + q.f.x * 1.6;
+      const by = -13.8;
+      const tx = bx + q.f.x * (13 + (c.lance || 0)) + q.p.x * 5;
+      const ty = by - 20 + q.f.y * 5;
+      uBar(ctx, bx, by, tx, ty, 2.6, '#2f3d4c');
+      uBar(ctx, bx, by - 0.7, tx, ty - 0.7, 1.1, acc);
+      uBar(ctx, bx - q.p.x * 2.6, by - 1.4, bx + q.p.x * 2.6, by - 1.4,
+        1.3, '#8a98a8');
+      poly(ctx, [
+        { x: tx + q.f.x * 3 + q.p.x * 1.6, y: ty - 4.6 },
+        { x: tx - q.p.x * 2.6, y: ty + 2.8 },
+        { x: tx + q.p.x * 2.6, y: ty + 2.8 }
+      ], 'rgba(143,232,255,.9)');
+      spot(ctx, tx, ty, 1.4, 'rgba(240,255,255,.95)');
+      if (q.atk) {
+        uFlash(ctx, tx + q.f.x * 4, ty, 3.8, 'rgba(143,232,255,.85)');
+        uBar(ctx, tx, ty, tx + q.f.x * 14, ty + q.f.y * 9, 1.2,
+          'rgba(200,250,255,.7)');
+      }
     }
 
     // голова
@@ -12901,6 +13842,10 @@ CC.Render = (function () {
       { x: 1.4 + q.f.x * 0.3, y: -22.6 },
       { x: -1.4 + q.f.x * 0.3, y: -22.6 }
     ], dark);
+    if (c.scope) {
+      ring(ctx, q.f.x * 2.4, -21.8, 2.6, 1.8, acc, 0.9);
+      spot(ctx, q.f.x * 2.4, -21.8, 1.1, 'rgba(240,255,255,.9)');
+    }
     if (L >= 2) uBar(ctx, -3.2, -9.6, 3.2, -9.6, 0.9, L >= 3 ? PAL.gold : acc);
   }
 
@@ -12994,6 +13939,63 @@ CC.Render = (function () {
             -16 + Math.sin(a) * 8, 0.9, 'rgba(143,232,255,.8)');
         }
         spot(ctx, q.f.x * 9, -16, 2.4, 'rgba(200,248,255,.8)');
+      }
+    } else if (c.weapon === 'hammer') {
+      // двуручный молот: широкая боевая часть на длинной рукояти
+      const hx = q.p.x * 8 + q.f.x * 3;
+      const hy = -30 + q.p.y * 3;
+      uBar(ctx, q.p.x * 2, -13, hx, hy + 2, 2.6, '#3a3230');
+      uBar(ctx, q.p.x * 2, -13.6, hx, hy + 1.4, 0.9, '#8a7a6a');
+      ctx.fillStyle = '#6a5a70';
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, 7.6, 4.8, 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#3a3230';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, 5.4, 3.2, 0.18, 0, Math.PI * 2);
+      ctx.stroke();
+      uBar(ctx, hx - 6.4, hy + 0.4, hx + 6.4, hy + 0.4, 1, glow);
+      poly(ctx, [
+        { x: hx - 2.2, y: hy - 3.6 },
+        { x: hx + q.f.x * 1.4, y: hy - 9.2 },
+        { x: hx + 2.2, y: hy - 3.6 }
+      ], c.armorLight);
+      if (q.atk) {
+        ctx.strokeStyle = 'rgba(224,166,255,.55)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(hx - q.p.x * 5, hy + 4, 12, -1.2, 0.5);
+        ctx.stroke();
+        uFlash(ctx, hx + q.f.x * 5, hy, 3.4, 'rgba(255,232,170,.85)');
+      }
+    } else if (c.weapon === 'logcannon') {
+      // наплечная мортира: толстый ствол, барабан и светящийся срез
+      const bx = q.p.x * 5.2;
+      const by = -23.6;
+      const tx = bx + q.f.x * (13 + (c.big ? 2 : 0));
+      const ty = by + q.f.y * (10 + (c.big ? 2 : 0));
+      uBar(ctx, bx, by, tx, ty, 6, '#3f3630');
+      uBar(ctx, bx, by - 1.6, tx, ty - 1.6, 1.8, '#8a7050');
+      uBar(ctx, bx + q.f.x * 4, by + q.f.y * 3,
+        bx + q.f.x * 4 - q.p.x * 3.6, by + q.f.y * 3 + q.p.y * 3.6,
+        1.2, '#2a2420');
+      ring(ctx, tx, ty, 3.6, 2.6, '#2a2420', 1.4);
+      spot(ctx, tx + q.f.x * 1.6, ty + q.f.y * 1.2, 1.3,
+        'rgba(255,210,140,.85)');
+      // барабан с боеприпасами за спиной
+      ring(ctx, -q.p.x * 7.6, -18.4, 5.4, 3.6, '#4a4038', 2.2);
+      ring(ctx, -q.p.x * 7.6, -18.4, 5.4, 3.6, 'rgba(255,207,74,.3)', 0.8);
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2 + 0.4;
+        spot(ctx, -q.p.x * 7.6 + Math.cos(a) * 3.6,
+          -18.4 + Math.sin(a) * 2.4, 0.8, '#c8a060');
+      }
+      if (q.atk) {
+        spot(ctx, tx + q.f.x * 4, ty + q.f.y * 3, 3.2,
+          'rgba(255,176,90,.55)');
+        spot(ctx, tx + q.f.x * 5, ty + q.f.y * 4, 1.5,
+          'rgba(255,244,210,.85)');
       }
     }
     if (L >= 3) spot(ctx, 0, -20.2, 1.2, PAL.gold);
@@ -13591,6 +14593,10 @@ CC.Render = (function () {
       ? (typeof variant === 'string' && SIEGE_ART[variant] ? variant
         : ((u && u.siegeKind) || 'wallwrecker'))
       : (SIEGE_ART[type] ? type : '');
+    const guardKind = type === 'guardian'
+      ? (typeof variant === 'string' && GUARDIAN_ART[variant] ? variant
+        : (unitVariantOf(u) || 'longshot'))
+      : (GUARDIAN_ART[type] ? type : '');
     const def = (u && u.def) ||
       (heroK && CC.TROOPS[heroK]) || CC.TROOPS[type] || {};
     const color = def.color || PAL.wood;
@@ -13598,6 +14604,10 @@ CC.Render = (function () {
     if (type === 'hero') {
       if (heroK && HERO_KINDS[heroK]) artHeroKind(ctx, q, heroK);
       else artHero(ctx, q, color);
+    } else if (guardKind && GUARDIAN_ART[guardKind]) {
+      const g = GUARDIAN_ART[guardKind];
+      if (g.art === 'ranger') artRanger(ctx, q, g);
+      else artBrute(ctx, q, g);
     } else if (petKind) {
       artPet(ctx, q, petKind);
     } else if (siegeKind) {
@@ -13630,8 +14640,11 @@ CC.Render = (function () {
       ? variant : 'lassi';
     else if (type === 'siege') vk = (typeof variant === 'string' && SIEGE_ART[variant])
       ? variant : 'wallwrecker';
+    else if (type === 'guardian') vk = (typeof variant === 'string' && GUARDIAN_ART[variant])
+      ? variant : 'longshot';
     else if (PET_ART[type]) vk = type;
     else if (SIEGE_ART[type]) vk = type;
+    else if (GUARDIAN_ART[type]) vk = type;
 
     const key = type + (vk ? '|' + vk : '') + '|' + lvl + '|' + dir + '|' + frame;
     const hit = unitSpriteCache.get(key);
@@ -15769,6 +16782,91 @@ CC.Render = (function () {
             { x: jx - px2 * 3 + ux * 3, y: jy - py2 * 3 + uy * 3 }
           ], i === 0 ? 'rgba(255,236,180,.75)' : 'rgba(255,138,74,.55)');
         }
+      } else if (sKind === 'firecracker' || sKind === 'firework') {
+        // залповая ракета: тёплый шлейф, искры веером и хвост
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const px2 = -uy;
+        const py2 = ux;
+        ctx.strokeStyle = 'rgba(255,176,90,.26)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - ux * 13, y - uy * 13);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        poly(ctx, [
+          { x: x + ux * 3.4, y: y + uy * 3.4 },
+          { x: x + px2 * 2.2, y: y + py2 * 2.2 },
+          { x: x - ux * 3.4, y: y - uy * 3.4 },
+          { x: x - px2 * 2.2, y: y - py2 * 2.2 }
+        ], '#8a5a34');
+        spot(ctx, x - ux * 0.6, y - uy * 0.6, 1.5, 'rgba(255,220,150,.95)');
+        for (let i = -1; i <= 1; i++) {
+          const jx = x - ux * (7 + Math.abs(i) * 2) + px2 * i * 3.4;
+          const jy = y - uy * (7 + Math.abs(i) * 2) + py2 * i * 3.4;
+          spot(ctx, jx, jy, 0.9, i === 0 ? 'rgba(255,236,180,.8)'
+            : 'rgba(255,176,90,.65)');
+        }
+        if (k > 0.84 && !s.__burst) {
+          s.__burst = true;
+          burst(bx, by - 4, 4, 2, 28);
+        }
+      } else if (sKind === 'revenge' || sKind === 'punish') {
+        // тёмный залп: чёрное ядро в фиолетовом ореоле
+        const arc = Math.sin(k * Math.PI) * 7;
+        const cx = x;
+        const cy = y - arc;
+        ctx.strokeStyle = 'rgba(44,28,58,.34)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cx - (bx - ax) * 0.16, cy - (by - ay) * 0.16 + 2);
+        ctx.lineTo(cx, cy + 1);
+        ctx.stroke();
+        spot(ctx, cx, cy, 4.8, 'rgba(92,52,124,.24)');
+        spot(ctx, cx, cy, 2.9, '#2a1a34');
+        spot(ctx, cx - 0.6, cy - 0.6, 1.3, 'rgba(230,200,255,.9)');
+        spot(ctx, cx + 2, cy + 2, 0.8, 'rgba(201,143,224,.55)');
+      } else if (sKind === 'superwizard' || sKind === 'plasma' ||
+        sKind === 'chainplasma') {
+        // плазменная сфера: ядро, кольцо и фиолетовые нити
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const px2 = -uy;
+        const py2 = ux;
+        const arc = Math.sin(k * Math.PI) * 8;
+        const cx = x;
+        const cy = y - arc;
+        for (let i = -1; i <= 1; i++) {
+          uBar(ctx, cx, cy,
+            cx - ux * (9 + Math.abs(i) * 2) + px2 * i * 3.6,
+            cy - uy * (9 + Math.abs(i) * 2) + py2 * i * 3.6,
+            0.8, 'rgba(224,166,255,.55)');
+        }
+        spot(ctx, cx, cy, 6.4, 'rgba(160,110,220,.25)');
+        spot(ctx, cx, cy, 3.9, '#a878d8');
+        spot(ctx, cx - 0.7, cy - 0.7, 2, 'rgba(240,214,255,.95)');
+        spot(ctx, cx - 1.2, cy - 1.2, 0.9, 'rgba(255,255,255,.95)');
+        ring(ctx, cx, cy, 7, 3, 'rgba(224,166,255,.5)', 0.9);
+      } else if (sKind === 'spiky' || sKind === 'thorns') {
+        // ответный шип: короткая тёплая спица от башни к цели
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        uBar(ctx, x - ux * 7, y - uy * 7, x, y, 1.5, '#c8a078');
+        poly(ctx, [
+          { x: x + ux * 3, y: y + uy * 3 },
+          { x: x - uy * 1.8 - ux * 1.6, y: y + ux * 1.8 - uy * 1.6 },
+          { x: x + uy * 1.8 - ux * 1.6, y: y - ux * 1.8 - uy * 1.6 }
+        ], '#e0b07a');
+        spot(ctx, x, y, 1.1, 'rgba(255,236,190,.8)');
       } else if (sKind === 'spelltower' || sKind === 'spell' || sKind === 'orb') {
         // сфера поля: ядро и кольцо рун
         spot(ctx, x, y, 4.2, 'rgba(200,170,255,.35)');
@@ -16042,6 +17140,73 @@ CC.Render = (function () {
           ctx.arc(p.x, p.y - 8, r + i * 4, -0.7 + i * 0.15, 0.7 + i * 0.1);
         }
         ctx.stroke();
+      } else if (fk === 'spiky' || fk === 'thorns') {
+        // шиповой ответ: короткие спицы из земли и тёплое кольцо
+        const r = 5 + k * 15;
+        ctx.strokeStyle = 'rgba(214,160,106,' + (0.55 * (1 - k)).toFixed(2) + ')';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const a = i * Math.PI / 4 + (f.x || 0);
+          const x0 = p.x + Math.cos(a) * r * 0.4;
+          const y0 = p.y + Math.sin(a) * r * 0.4 * GQ;
+          const x1 = p.x + Math.cos(a) * r;
+          const y1 = p.y + Math.sin(a) * r * GQ - 4;
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+        }
+        ctx.stroke();
+        spot(ctx, p.x, p.y - 6, 1.4 * (1 - k), 'rgba(255,236,190,.75)');
+      } else if (fk === 'revenge' || fk === 'punish') {
+        // тёмный залп: фиолетовое кольцо и угольные искры
+        const r = 6 + k * 18;
+        ctx.strokeStyle = 'rgba(160,96,200,' + (0.45 * (1 - k)).toFixed(2) + ')';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y - 4, r, r * GQ, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(34,20,44,' + (0.28 * (1 - k)).toFixed(2) + ')';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y - 7 - k * 6, 5 + k * 10, 0, Math.PI * 2);
+        ctx.fill();
+        for (let i = 0; i < 4; i++) {
+          const a = i * 1.6 + 0.4;
+          spot(ctx, p.x + Math.cos(a) * r * 0.7,
+            p.y - 5 + Math.sin(a) * r * 0.5 * GQ, 0.9 * (1 - k),
+            'rgba(224,166,255,.7)');
+        }
+      } else if (fk === 'superwizard' || fk === 'plasma') {
+        // цепная плазма: ядро, кольцо и дуга ко второй цели
+        const r = 7 + k * 16;
+        ctx.strokeStyle = 'rgba(224,166,255,' + (0.55 * (1 - k)).toFixed(2) + ')';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y - 5, r, r * GQ, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        spot(ctx, p.x, p.y - 7, 4 + k * 6, 'rgba(160,110,220,.2)');
+        spot(ctx, p.x, p.y - 7, 1.6 * (1 - k), 'rgba(244,224,255,.9)');
+        if (typeof f.x2 === 'number' && typeof f.y2 === 'number') {
+          const p2 = P(f.x2, f.y2);
+          drawArcBolt(ctx, p.x, p.y - 8, p2.x, p2.y - 8,
+            (1 - k) * 0.9, 'rgba(224,166,255,.95)',
+            (f.x || 1) + k * 11, 1.3);
+          spot(ctx, p2.x, p2.y - 8, 2 * (1 - k), 'rgba(244,224,255,.8)');
+        }
+      } else if (fk === 'firecracker' || fk === 'firework') {
+        // взрыв залпа: оранжевый веер искр и тёплое кольцо
+        const r = 5 + k * 17;
+        ctx.strokeStyle = 'rgba(255,176,90,' + (0.5 * (1 - k)).toFixed(2) + ')';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y - 4, r, r * GQ, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let i = 0; i < 7; i++) {
+          const a = -0.9 + i * 0.3;
+          const rr = r * (0.7 + (i % 2) * 0.3);
+          spot(ctx, p.x + Math.cos(a) * rr, p.y - 6 + Math.sin(a) * rr * GQ,
+            1.2 * (1 - k), i % 2 ? 'rgba(255,236,180,.85)'
+              : 'rgba(255,154,90,.8)');
+        }
       } else {
         // облачко пыли на месте гибели
         ctx.fillStyle = 'rgba(240,236,224,' + (0.45 * (1 - k)).toFixed(2) + ')';
@@ -16813,6 +17978,12 @@ CC.Render = (function () {
     ricochet: [54, 56, 60, 64, 68, 72, 78, 84, 90, 96],
     multigear: [60, 62, 66, 72, 76, 82, 88, 94, 100, 108],
     firespitter: [56, 58, 62, 66, 70, 76, 82, 88, 94, 100],
+    // поздние оборонительные башни TH18-19: 21 ступень, чтобы HP-бар
+    // висел над реальной верхушкой, а не над «средним» силуэтом
+    revenge: [59, 61, 62, 64, 65, 67, 68, 70, 71, 73, 74, 75, 77, 78, 80, 81, 83, 84, 86, 87, 89],
+    superwizard: [80, 81, 82, 83, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101],
+    spiky: [38, 39, 39, 40, 41, 41, 42, 43, 44, 44, 45, 45, 46, 47, 47, 48, 49, 49, 50, 51, 51],
+    firecracker: [58, 60, 61, 63, 64, 66, 68, 69, 71, 72, 74, 76, 77, 79, 80, 82, 84, 85, 87, 88, 90],
     darkdrill: [54, 56, 58, 62, 66, 70, 74, 80, 86, 92],
     darkstorage: [46, 48, 52, 58, 64, 68, 74, 82, 90, 98],
     train: [54, 56, 60, 64, 68, 72, 78, 84, 90, 96],
@@ -18364,7 +19535,8 @@ CC.Render = (function () {
   function troopArt(type, size, level) {
     try {
       const known = type && ((CC.TROOPS && CC.TROOPS[type]) ||
-        (CC.PETS && CC.PETS[type]) || (CC.SIEGE && CC.SIEGE[type]));
+        (CC.PETS && CC.PETS[type]) || (CC.SIEGE && CC.SIEGE[type]) ||
+        (CC.GUARDIANS && CC.GUARDIANS[type]) || GUARDIAN_ART[type]);
       if (!known) return null;
       const s = cardSize(size);
       const lvl = cardLevel(level);

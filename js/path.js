@@ -45,6 +45,11 @@ CC.Path = (function () {
       const h = new Float32Array(total);
       const prev = new Int32Array(total).fill(-1);
       const closed = new Uint8Array(total);
+      // Потолок раскрытий: 44×44 с 350 стенами всё равно укладывается
+      // в 4×клеток, но явный лимит гарантирует выход даже на битых данных.
+      const maxExpand = opts && Number(opts.maxExpand) > 0
+        ? Math.floor(Number(opts.maxExpand))
+        : total * 4;
 
       for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
@@ -99,8 +104,8 @@ CC.Path = (function () {
       push(start);
 
       // Защита от зависания на 44×44: каждая клетка закрывается один раз,
-      // но старые записи в куче могут дублироваться. Лимит — 4×клеток.
-      let guard = total * 4;
+      // старые записи в куче дублируются — считаем именно раскрытия.
+      let guard = maxExpand;
       while (size > 0 && guard-- > 0) {
         const cur = pop();
         if (cur === goal) break;
@@ -146,10 +151,13 @@ CC.Path = (function () {
 
       const path = [];
       let cur = goal;
+      let steps = 0;
       while (cur !== start) {
         path.push({ x: cur % W, y: (cur / W) | 0 });
         cur = prev[cur];
-        if (cur < 0) return null;
+        // Цикл в prev невозможен у A*, но битые входные данные не должны
+        // вешать вызов: ограничение — число клеток поля.
+        if (cur < 0 || ++steps > total) return null;
       }
       path.reverse();
       return path;

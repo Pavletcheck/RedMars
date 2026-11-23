@@ -10432,3 +10432,56 @@ html:root {
   #app .exrow__meta { display: none; }
   #app .exrow__btn { padding: 2px 6px; font-size: 9px; }
 }
+
+/* ---------- стражи и новые характеристики войск ---------- */
+
+/* Вторая строка карточки войска: скорость, дальность, темп атаки.
+   Держим её мелкой, чтобы портрет и имя оставались главными. */
+#app .recruit-card__stats {
+  font-size: var(--fs-10, 10px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: .01em;
+  color: var(--hud-muted);
+  opacity: .9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Вторая полоса характеристик в боковой панели: те же три ячейки. */
+#app .recruit-stats_extra {
+  margin-top: -2px;
+  opacity: .92;
+}
+
+/* Карточка стража: тёплый акцент, но без зелёного «выбрано» у обычных
+   войск, чтобы категория читалась отдельно. */
+#app .recruit-card_guardian.is-picked {
+  border-color: #f0c454;
+  box-shadow: 0 0 0 1px rgba(240, 196, 84, .35);
+}
+
+#app .recruit-card_guardian .recruit-card__portrait {
+  background: radial-gradient(circle at 50% 38%,
+    rgba(240, 196, 84, .18), rgba(0, 0, 0, .22));
+}
+
+/* Отдельная кнопка рейла терминала: не входит в пять старых категорий. */
+#app .term-cat_guardians .term-cat__icon {
+  color: #f0c454;
+}
+
+#app .term-cat_guardians.is-active {
+  border-color: rgba(240, 196, 84, .62);
+  box-shadow: inset 0 0 0 1px rgba(240, 196, 84, .18);
+}
+
+#app .term-card_guardian.is-picked {
+  border-color: rgba(240, 196, 84, .72);
+}
+
+#app .term-card_guardian .term-card__art-wrap {
+  background: radial-gradient(circle at 50% 45%,
+    rgba(240, 196, 84, .16), rgba(0, 0, 0, .18));
+}
