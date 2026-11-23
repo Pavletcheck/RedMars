@@ -202,9 +202,9 @@ CC.Battle = (function () {
     return Math.max(0, Math.floor(Number(v) || 0));
   }
 
-  // Уровень стража в бою. Арена, набег ИИ, повтор и произвольная база —
-  // всегда 1; кампания берёт уровень из сейва (иначе 1) и режет потолком
-  // своего командного центра.
+  // Уровень стража в бою: кампания/Арена/повтор берут уровень из сейва
+  // (иначе 1) и режут потолком своего командного центра. Набег ИИ,
+  // headless и произвольная база — всегда 1.
   function guardianLevelFor(id) {
     if (!GUARDIANS[id]) return 0;
     const th = (CC.Game && CC.Game.townhallLevel)
@@ -212,7 +212,7 @@ CC.Battle = (function () {
       : 1;
     const max = CC.guardianMaxLevel ? CC.guardianMaxLevel(id, th) : 0;
     if (!max) return 0;
-    if (!S || S.kind !== 'campaign') return 1;
+    if (!playerLevelsActive()) return 1;
     const saved = guardianSavedLevel(id);
     return clamp(saved > 0 ? saved : 1, 1, max);
   }
@@ -1140,6 +1140,15 @@ CC.Battle = (function () {
     return dmg;
   }
 
+  // У войск dmg — табличный DPS, а attackSpeed — секунды между ударами.
+  // Урон за удар = DPS × attackSpeed, иначе эффективный DPS занижен.
+  function unitHitDamage(u) {
+    const dps = effectiveDmg(u);
+    const as = Number(u.def && u.def.attackSpeed);
+    if (isFinite(as) && as > 0) return dps * as;
+    return dps;
+  }
+
   function unitById(id) {
     if (!S || !id) return null;
     for (let i = 0; i < S.units.length; i++) {
@@ -1499,7 +1508,7 @@ CC.Battle = (function () {
     // Питомец вне радиуса хозяина сначала догоняет его.
     if (petTick(u, dt)) return;
 
-    const dmg = effectiveDmg(u);
+    const dmg = unitHitDamage(u);
 
     if (u.target && u.target.dead) {
       u.target = null;
@@ -1832,6 +1841,16 @@ CC.Battle = (function () {
     return 1 / Math.max(0.05, Number(def && def.rate) || 1);
   }
 
+  // У обороны dmg в таблице — DPS. Если задан attackSpeed (секунды между
+  // выстрелами), урон за выстрел = DPS × attackSpeed, иначе оставляем
+  // прежнюю трактовку (старые башни без поля attackSpeed).
+  function defenseHitDamage(def) {
+    const dps = Number(def && def.dmg) || 0;
+    const as = Number(def && def.attackSpeed);
+    if (isFinite(as) && as > 0) return dps * as;
+    return dps;
+  }
+
   // Цепь по юнитам рядом с точкой: каждая следующая цель слабее на 40%.
   function chainUnits(x, y, radius, count, dmg, skip, minDist) {
     const hit = [];
@@ -1967,6 +1986,7 @@ CC.Battle = (function () {
     const targets = defenseTargets(b, cx, cy, maxTargets);
     if (!targets.length) return;
     const best = targets[0].u;
+    const basePower = defenseHitDamage(b.def);
 
     b.cd = defenseInterval(b.def);
     b.aim = Math.atan2(best.y - cy, best.x - cx);
@@ -1985,7 +2005,7 @@ CC.Battle = (function () {
           x1: cx, y1: cy,
           x2: clamp(best.x + off, 0, G), y2: clamp(best.y - off, 0, G),
           t: -i * 0.3, dur: 0.6, kind: 'eagle',
-          dmg: b.def.dmg, splash: b.def.splash || 1.5,
+          dmg: basePower, splash: b.def.splash || 1.5,
           onlyGround: !!b.def.onlyGround
         });
       }
@@ -1999,7 +2019,7 @@ CC.Battle = (function () {
         S.shots.push({
           x1: cx, y1: cy, x2: best.x + off, y2: best.y - off,
           t: 0, dur: 0.55, kind: 'scattershot',
-          dmg: b.def.dmg, splash: b.def.splash || 1.2,
+          dmg: basePower, splash: b.def.splash || 1.2,
           onlyGround: !!b.def.onlyGround
         });
       }
@@ -2017,7 +2037,7 @@ CC.Battle = (function () {
           x2: clamp(cx + Math.cos(a) * dist, 0, G),
           y2: clamp(cy + Math.sin(a) * dist, 0, G),
           t: 0, dur: 0.55, kind: 'firecracker',
-          dmg: (b.def.dmg || 0) * 0.65,
+          dmg: basePower * 0.65,
           splash: b.def.splash || 1.4,
           onlyGround: !!b.def.onlyGround
         });
@@ -2027,7 +2047,7 @@ CC.Battle = (function () {
 
     // Плазменный колосс: площадь вокруг цели плюс цепь по соседям.
     if (special === 'superwizard') {
-      const power = b.def.dmg || 0;
+      const power = basePower;
       const radius = b.def.splash || 1.8;
       splashDamage(best.x, best.y, power, radius, false, false);
       chainUnits(best.x, best.y, 4.2, 3, power * 0.6, best, radius);
@@ -2041,7 +2061,7 @@ CC.Battle = (function () {
     // Спаренная вышка: две цели одновременно.
     if (special === 'multiarcher') {
       for (let i = 0; i < targets.length; i++) {
-        hitUnit(targets[i].u, b.def.dmg);
+        hitUnit(targets[i].u, basePower);
         S.shots.push({
           x1: cx, y1: cy, x2: targets[i].u.x, y2: targets[i].u.y,
           t: 0, dur: 0.14, kind: b.type
@@ -2052,7 +2072,7 @@ CC.Battle = (function () {
 
     // Рикошет: основной удар и два прыжка по -30%.
     if (special === 'ricochet') {
-      hitUnit(best, b.def.dmg);
+      hitUnit(best, basePower);
       const jumps = [];
       for (let i = 0; i < S.units.length; i++) {
         const u = S.units[i];
@@ -2062,7 +2082,7 @@ CC.Battle = (function () {
         if (d <= 3) jumps.push({ u: u, d: d });
       }
       jumps.sort(function (a, c) { return a.d - c.d; });
-      let dmg = b.def.dmg * 0.7;
+      let dmg = basePower * 0.7;
       for (let i = 0; i < Math.min(2, jumps.length); i++) {
         hitUnit(jumps[i].u, dmg);
         dmg *= 0.7;
@@ -2076,14 +2096,14 @@ CC.Battle = (function () {
 
     // Обелиск: мощный одиночный удар и замедление на 3 секунды.
     if (special === 'monolith') {
-      hitUnit(best, b.def.dmg);
+      hitUnit(best, basePower);
       best.slowUntil = Math.max(best.slowUntil || 0, S.time + 3);
       pushShot(b, cx, cy, best, 0, 0, 0.18);
       return;
     }
 
     // Многоствольная башня: по земле два ствола, по воздуху один.
-    let power = b.def.dmg || 0;
+    let power = basePower;
     if (special === 'multigear' && !best.def.fly) power *= 2;
     // Рельсотрон в воздушном режиме слабее на 40%.
     if (special === 'xbow' && best.def.fly) power *= 0.6;

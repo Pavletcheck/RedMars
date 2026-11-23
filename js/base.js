@@ -744,6 +744,12 @@ CC.Game = (function () {
     return out;
   }
 
+  function freshGuardianLevels() {
+    const out = {};
+    (CC.GUARDIAN_ORDER || []).forEach(function (id) { out[id] = 1; });
+    return out;
+  }
+
   // Состояние обучения Сержанта. Новый сейв начинается с активным обучением,
   // старый — с done=true (см. load()). cargo — первый груз 800/800 уже выдан,
   // loreSeen — вступительный лор уже показан (на старых сейвах сразу true).
@@ -794,6 +800,9 @@ CC.Game = (function () {
       // Питомцы качаются в Питомнике отдельным слотом.
       petLevels: freshPetLevels(),
       petUp: null,
+      // Стражи поздних центров: свой уровень и отдельный слот.
+      guardianLevels: freshGuardianLevels(),
+      guardianUp: null,
       // Герой: 0 — ещё не открыт (TH ниже 2), 1..10 — уровень.
       // heroUp — один слот прокачки на всех; в нём лежит kind.
       // heroLevels — уровни каждого героя, heroLevel — старый общий
@@ -1167,14 +1176,32 @@ CC.Game = (function () {
     return Math.max(0, Number(row.cap) || 0);
   }
 
-  // Все готовые склады: суммарная ёмкость и количество по ресурсам.
-  // Стройплощадки не считаем — они ещё не хранят.
+  // Собственный запас командного центра на текущем TH. Он входит в общую
+  // ёмкость, но не является отдельным складом для сноса/набега.
+  function townhallStorageCaps(thLevel) {
+    const rows = (CC.DATA && CC.DATA.storage) || [];
+    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
+    let row = null;
+    for (let i = 0; i < rows.length; i++) {
+      if ((rows[i].th || i + 1) <= th) row = rows[i];
+    }
+    return {
+      gold: Math.max(0, Number(row && row.gold) || 0),
+      elixir: Math.max(0, Number(row && row.elixir) || 0),
+      dark: Math.max(0, Number(row && row.dark) || 0)
+    };
+  }
+
+  // Все готовые склады плюс запас центра: суммарная ёмкость и количество
+  // складов по ресурсам. Стройплощадки не считаем — они ещё не хранят.
   function storageTotals() {
     const list = CC.Base.list();
+    const central = townhallStorageCaps();
     const out = {
-      gold: { cap: 0, count: 0 },
-      elixir: { cap: 0, count: 0 },
-      dark: { cap: 0, count: 0 }
+      gold: { cap: central.gold, count: 0 },
+      elixir: { cap: central.elixir, count: 0 },
+      dark: { cap: central.dark, count: 0 }
     };
 
     for (let i = 0; i < list.length; i++) {
@@ -1227,9 +1254,9 @@ CC.Game = (function () {
       else completed++;
     }
 
-    // Уже есть склад или он строится — rescue не нужен.
+    // Уже есть склад или он строится — rescue не нужен. Запас центра
+    // не отменяет бесплатный первый склад.
     if (completed > 0 || building > 0) return false;
-    if (cap(res) > 0) return false;
 
     return {
       ok: true, rescue: true, type: type, res: res,
@@ -3159,6 +3186,268 @@ CC.Game = (function () {
     };
   }
 
+  /* ---------- стражи ---------- */
+
+  function isGuardianType(id) {
+    return typeof id === 'string' && !!CC.GUARDIANS && !!CC.GUARDIANS[id];
+  }
+
+  function guardianLevel(id) {
+    if (!isGuardianType(id)) return 1;
+    const max = CC.guardianMaxLevel(id, townhallLevel());
+    if (max <= 0) return 0;
+    let l = Math.floor(Number(st.guardianLevels && st.guardianLevels[id]));
+    if (!(l >= 1)) l = 1;
+    if (l > max) l = max;
+    return l;
+  }
+
+  function guardianMaxLevelFor(id, thLevel) {
+    if (!isGuardianType(id)) return 0;
+    let th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    th = th < 1 ? 1 : (th > MAX_TH ? MAX_TH : th);
+    return CC.guardianMaxLevel(id, th);
+  }
+
+  function guardianUpgradeCost(id) {
+    if (!isGuardianType(id)) return null;
+    const lvl = guardianLevel(id);
+    const max = guardianMaxLevelFor(id);
+    if (!max || lvl >= max) return null;
+
+    const to = lvl + 1;
+    const row = CC.guardianLevelRow(id, to);
+    const g = CC.GUARDIANS[id];
+    const currency = g.currency || 'gold';
+    const cost = Math.max(0, Number(row.cost) || 0);
+    const out = {
+      id: id, type: 'guardian', kind: id,
+      level: lvl, to: to,
+      gold: 0, elixir: 0, dark: 0,
+      currency: currency,
+      time: Math.max(0, Number(row.time) || 0)
+    };
+    if (currency === 'dark') out.dark = cost;
+    else if (currency === 'elixir') out.elixir = cost;
+    else out.gold = cost;
+    return out;
+  }
+
+  function guardianBusy() {
+    return !!st.guardianUp;
+  }
+
+  function canUpgradeGuardian(id, now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleGuardian(now);
+
+    if (!isGuardianType(id)) {
+      return {
+        ok: false, error: 'Неизвестный страж',
+        reason: 'Неизвестный страж', needTh: null, cost: null
+      };
+    }
+
+    const th = townhallLevel();
+    if (th < 18) {
+      return {
+        ok: false, error: 'Откроется с центра 18 уровня',
+        reason: 'Откроется с центра 18 уровня',
+        needTh: 18, locked: true, cost: null
+      };
+    }
+
+    if (guardianBusy()) {
+      const busy = st.guardianUp.id;
+      const reason = busy === id ? 'Уже улучшается' : 'Сначала заверши прокачку стража';
+      return {
+        ok: false, error: reason, reason: reason,
+        needTh: null, busy: true, busyType: 'guardian:' + busy,
+        cost: guardianUpgradeCost(id)
+      };
+    }
+
+    const lvl = guardianLevel(id);
+    const max = guardianMaxLevelFor(id);
+    if (!max || lvl >= max) {
+      return {
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, cost: null
+      };
+    }
+
+    const c = guardianUpgradeCost(id);
+    if (!c) {
+      return {
+        ok: false, error: 'Максимальный уровень',
+        reason: 'Максимальный уровень', needTh: null, cost: null
+      };
+    }
+
+    if (c.gold > cap('gold')) {
+      const reason = 'Склад руды мал: ' + numText(cap('gold')) + ' из ' +
+        numText(c.gold) + '. Поставь ещё склад руды';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'gold', cost: c
+      };
+    }
+    if (c.elixir > cap('elixir')) {
+      const reason = 'Склад энергии мал: ' + numText(cap('elixir')) + ' из ' +
+        numText(c.elixir) + '. Поставь ещё склад энергии';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'elixir', cost: c
+      };
+    }
+    if (c.dark > cap('dark')) {
+      const reason = 'Склад плазмы мал: ' + numText(cap('dark')) + ' из ' +
+        numText(c.dark) + '. Поставь хранилище плазмы';
+      return {
+        ok: false, error: reason, reason: reason, needTh: null,
+        needStorage: true, resource: 'dark', cost: c
+      };
+    }
+
+    if (st.gold < c.gold) {
+      const need = Math.ceil(c.gold - st.gold);
+      return {
+        ok: false, error: 'Не хватает ' + numText(need) + ' руды',
+        reason: 'Не хватает руды', needTh: null,
+        cost: c, missing: { gold: need }
+      };
+    }
+    if (st.elixir < c.elixir) {
+      const need = Math.ceil(c.elixir - st.elixir);
+      return {
+        ok: false, error: 'Не хватает ' + numText(need) + ' энергии',
+        reason: 'Не хватает энергии', needTh: null,
+        cost: c, missing: { elixir: need }
+      };
+    }
+    if ((st.dark || 0) < c.dark) {
+      const need = Math.ceil(c.dark - (st.dark || 0));
+      return {
+        ok: false, error: 'Не хватает ' + numText(need) + ' плазмы',
+        reason: 'Не хватает плазмы', needTh: null,
+        cost: c, missing: { dark: need }
+      };
+    }
+
+    return { ok: true, error: null, reason: null, needTh: null, cost: c };
+  }
+
+  function startGuardianUpgrade(id, now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const check = canUpgradeGuardian(id, now);
+    if (check.error) return check;
+
+    const c = check.cost;
+    st.gold -= c.gold;
+    st.elixir -= c.elixir || 0;
+    st.dark = (st.dark || 0) - (c.dark || 0);
+    st.guardianUp = {
+      id: id,
+      to: c.to,
+      startedAt: now,
+      endAt: now + c.time * 1000,
+      time: c.time
+    };
+    save();
+    return { ok: true, id: id, type: id, to: c.to, cost: c };
+  }
+
+  function guardianUpInfo(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleGuardian(now);
+
+    const u = st.guardianUp;
+    if (!u) return null;
+
+    const leftMs = Math.max(0, u.endAt - now);
+    const total = Math.max(1, Number(u.time) || 0);
+    const left = leftMs / 1000;
+    return {
+      active: true,
+      id: u.id,
+      type: u.id,
+      name: (CC.GUARDIANS[u.id] && CC.GUARDIANS[u.id].name) || u.id,
+      to: u.to,
+      level: guardianLevel(u.id),
+      total: total,
+      left: left,
+      leftMs: leftMs,
+      progress: Math.max(0, Math.min(1, 1 - left / total)),
+      startedAt: u.startedAt,
+      endAt: u.endAt
+    };
+  }
+
+  function settleGuardian(now) {
+    const u = st.guardianUp;
+    if (!u || !(u.endAt <= now)) return false;
+
+    if (isGuardianType(u.id)) {
+      const cur = guardianLevel(u.id);
+      const rowMax = CC.guardianLevelRow(u.id, 999).lv || cur;
+      const to = Math.min(rowMax, Math.max(cur, Math.floor(Number(u.to) || cur)));
+      st.guardianLevels[u.id] = to;
+      addXp(10 * to);
+    }
+
+    st.guardianUp = null;
+    save();
+    return true;
+  }
+
+  function guardianSpeedCost(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    const info = guardianUpInfo(now);
+    if (!info) return null;
+    return { gems: gemCostFor(info.left), left: info.left, id: info.id };
+  }
+
+  function speedUpGuardian(now) {
+    now = typeof now === 'number' ? now : Date.now();
+    settleGuardian(now);
+
+    if (!st.guardianUp) return { error: 'Улучшение не идёт' };
+
+    const id = st.guardianUp.id;
+    const left = Math.max(0, (st.guardianUp.endAt - now) / 1000);
+    const cost = gemCostFor(left);
+    if (st.gems < cost) return noGems(cost);
+
+    st.gems -= cost;
+    addStat('gemsSpent', cost);
+    st.guardianUp.endAt = now;
+    settleGuardian(now);
+    save();
+    return {
+      ok: true, spent: cost, gems: gemsNow(),
+      id: id, level: guardianLevel(id)
+    };
+  }
+
+  function guardianLevels() {
+    const out = {};
+    (CC.GUARDIAN_ORDER || []).forEach(function (id) {
+      out[id] = guardianLevel(id);
+    });
+    return out;
+  }
+
+  // Снимок стражей для боя: все доступные на текущем TH с уровнями.
+  function guardianBattleArmy(thLevel) {
+    const th = typeof thLevel === 'number' ? Math.round(thLevel) : townhallLevel();
+    const out = {};
+    (CC.GUARDIAN_ORDER || []).forEach(function (id) {
+      const lvl = guardianLevel(id);
+      if (th >= 18 && lvl >= 1) out[id] = lvl;
+    });
+    return out;
+  }
+
   /* ---------- герой ---------- */
 
   // kind по умолчанию — Сержант (barb), как старый общий герой.
@@ -4955,6 +5244,8 @@ CC.Game = (function () {
         spellUp: st.spellUp,
         petLevels: st.petLevels,
         petUp: st.petUp,
+        guardianLevels: st.guardianLevels,
+        guardianUp: st.guardianUp,
         heroLevels: st.heroLevels,
         heroLevel: heroLevel('barb'),
         heroUp: st.heroUp,
@@ -5259,6 +5550,28 @@ CC.Game = (function () {
         startedAt: num(d.petUp.startedAt, 0),
         endAt: Number(d.petUp.endAt),
         time: Math.max(0, num(d.petUp.time, 0))
+      };
+    }
+
+    s.guardianLevels = freshGuardianLevels();
+    if (d.guardianLevels && typeof d.guardianLevels === 'object') {
+      Object.keys(s.guardianLevels).forEach(function (id) {
+        if (d.guardianLevels[id] === undefined) return;
+        const rowMax = CC.guardianLevelRow(id, 999).lv || 1;
+        const l = Math.floor(num(d.guardianLevels[id], 1));
+        s.guardianLevels[id] = l < 1 ? 1 : (l > rowMax ? rowMax : l);
+      });
+    }
+    if (d.guardianUp && typeof d.guardianUp === 'object' &&
+        isGuardianType(d.guardianUp.id) && isFinite(Number(d.guardianUp.endAt))) {
+      const rowMax = CC.guardianLevelRow(d.guardianUp.id, 999).lv || 2;
+      s.guardianUp = {
+        id: d.guardianUp.id,
+        to: Math.max(2, Math.min(rowMax,
+          Math.floor(num(d.guardianUp.to, 2)))),
+        startedAt: num(d.guardianUp.startedAt, 0),
+        endAt: Number(d.guardianUp.endAt),
+        time: Math.max(0, num(d.guardianUp.time, 0))
       };
     }
 
@@ -5771,6 +6084,7 @@ CC.Game = (function () {
     settleTroops(now);
     settleSpell(now);
     settlePet(now);
+    settleGuardian(now);
     settleHero(now);
     settleQueue(now);
     settleDaily(now);
@@ -5833,6 +6147,8 @@ CC.Game = (function () {
     produceAt: produceAt,
     rate: rate,
     cap: cap,
+    storageTotals: storageTotals,
+    townhallStorage: townhallStorageCaps,
     storageRescue: storageRescue,
     collect: collect,
     collectAll: collectAll,
@@ -5880,6 +6196,17 @@ CC.Game = (function () {
     petUpInfo: petUpInfo,
     petSpeedCost: petSpeedCost,
     speedUpPet: speedUpPet,
+    // стражи (отдельный слот поздних центров)
+    guardianLevel: guardianLevel,
+    guardianLevels: guardianLevels,
+    guardianMaxLevelFor: guardianMaxLevelFor,
+    guardianUpgradeCost: guardianUpgradeCost,
+    canUpgradeGuardian: canUpgradeGuardian,
+    startGuardianUpgrade: startGuardianUpgrade,
+    guardianUpInfo: guardianUpInfo,
+    guardianSpeedCost: guardianSpeedCost,
+    speedUpGuardian: speedUpGuardian,
+    guardianBattleArmy: guardianBattleArmy,
     // герой
     heroLevel: heroLevel,
     heroLevels: heroLevels,

@@ -10418,6 +10418,24 @@ html:root {
   background: linear-gradient(90deg, #e0a24a, #f5cf5a);
 }
 
+/* P2-1: карточка терминала не наследует фиксированную ширину карусели.
+   В сетке она всегда занимает ровно свою колонку и не перекрывает соседей. */
+#app .terminal__grid > .term-card {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+/* На средних десктопах терминал больше не зажат 820 px: три колонки
+   получают по ~250–280 px и перестают резать названия. */
+@media (min-width: 1000px) and (max-width: 1499px) {
+  #app #shop .terminal {
+    width: min(1100px, calc(100vw - 20px));
+    max-width: min(1100px, calc(100vw - 20px));
+  }
+}
+
 /* Крупная иконка заклинания в окне исследования. */
 #app .research-spell-icon {
   display: grid;

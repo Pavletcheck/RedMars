@@ -362,6 +362,7 @@ CC.UI = (function () {
   // take*Done-событий, поэтому ловим переход «идёт → готово» в sync().
   let spellWatch = null;
   let petWatch = null;
+  let guardianWatch = null;
 
   const DRAG_PX = 9; // порог «это тап, а не перетаскивание»
 
@@ -3104,8 +3105,10 @@ CC.UI = (function () {
     });
     const rank = function (type) {
       const limit = CC.limitAt(type, th);
+      const first = firstThFor(type);
+      const merged = limit <= 0 && first <= th;
       const open = CC.Game.canBuild(type).ok && limit > 0;
-      return { open: open ? 0 : 1, th: firstThFor(type) };
+      return { open: open ? 0 : 1, th: merged ? 999 : first };
     };
     const order = {};
     list.forEach(function (t, i) { order[t] = i; });
@@ -3128,17 +3131,27 @@ CC.UI = (function () {
     let locked = !open.ok;
     let needTh = open.needTh;
     let lockReason = open.reason;
+    let merged = false;
 
     // на этом уровне центра лимит нулевой: карточка закрыта, даже если
-    // сама постройка формально открыта (энергобарьер до TH2)
+    // сама постройка формально открыта (энергобарьер до TH2). Если лимит
+    // был раньше, а теперь 0 — тип слит в позднюю башню: не показываем
+    // ложное «с командного центра 1».
     if (!locked && limit <= 0) {
       locked = true;
-      needTh = firstThFor(type);
-      lockReason = 'Откроется с командного центра ' + needTh + ' уровня';
+      const first = firstThFor(type);
+      if (first <= th) {
+        merged = true;
+        needTh = th;
+        lockReason = 'Слито в позднюю башню';
+      } else {
+        needTh = first;
+        lockReason = 'Откроется с командного центра ' + needTh + ' уровня';
+      }
     }
 
-    const full = !locked && have >= limit;
-    const atLimit = limit > 0 && have >= limit;
+    const full = !merged && !locked && have >= limit;
+    const atLimit = !merged && limit > 0 && have >= limit;
     // Здание текущего шага Сержанта ставится бесплатно за 5 секунд —
     // карточка честно показывает «Бесплатно · 0:05».
     const lesson = !locked && !full && CC.Game.tutorialPlace
@@ -3160,7 +3173,8 @@ CC.UI = (function () {
     const artLevel = locked ? 1 : Math.min(CC.MAX_TH, th);
     const art = cardArt('building', type, 180, artLevel, 'shop-card__art term-card__art');
     const cls = 'shop-card term-card' + (art ? ' has-art' : '') +
-      (locked ? ' is-locked' : '') + (full ? ' is-empty' : '') +
+      (locked ? ' is-locked' : '') + (merged ? ' is-merged' : '') +
+      (full ? ' is-empty' : '') +
       (poor ? ' is-poor' : '') + (lesson ? ' is-lesson' : '') +
       (rescue ? ' is-rescue' : '') +
       (d.trap ? ' is-trap' : '');
@@ -3174,15 +3188,18 @@ CC.UI = (function () {
       (rescue ? 'rescue' : (full || poor ? 'insufficient' : 'available')));
     const cardLevel = locked ? needTh : th;
     const count = '<span class="shop-card__count term-card__limit">' +
-      (atLimit ? (limit <= 1 ? 'Максимум' : 'Лимит исчерпан')
-        : have + ' / ' + limit) + '</span>';
-    const ptime = lesson ? lesson.seconds
-      : (CC.Game.placeTime ? CC.Game.placeTime(type) : 0);
-    const costLabel = free ? 'Бесплатно' : placePriceText(price);
+      (merged ? (have + ' · слито')
+        : (atLimit ? (limit <= 1 ? 'Максимум' : 'Лимит исчерпан')
+          : have + ' / ' + limit)) + '</span>';
+    const ptime = merged ? 0 : (lesson ? lesson.seconds
+      : (CC.Game.placeTime ? CC.Game.placeTime(type) : 0));
+    const costLabel = merged ? 'Не ставится'
+      : (free ? 'Бесплатно' : placePriceText(price));
     const costText = costLabel + (ptime > 0 ? ' · ' + formatTime(ptime) : '');
     const cost = '<span class="shop-card__cost term-card__cost">' + costText + '</span>';
     let status = '';
-    if (locked) status = atLimit ? 'Максимум' : 'С командного центра ' + needTh;
+    if (merged) status = 'Слито в позднюю башню';
+    else if (locked) status = atLimit ? 'Максимум' : 'С командного центра ' + needTh;
     else if (full) status = 'Лимит исчерпан';
     else if (rescue) status = 'Первый склад: бесплатно';
     else if (lesson) status = 'Сержант: бесплатно';
@@ -3198,7 +3215,9 @@ CC.UI = (function () {
       descText += ' · ответ ' + pct + '%';
     }
     let title;
-    if (locked) title = lockReason;
+    if (merged) title = 'Слито в позднюю башню · на базе ' + have +
+      ' · сносить не нужно';
+    else if (locked) title = lockReason;
     else if (full) title = 'Лимит исчерпан';
     else if (lesson) title = 'Сержант: бесплатно за ' + lesson.seconds + ' с';
     else if (rescue) title = 'Первый склад: бесплатно, чтобы не потерять ресурсы';
@@ -3212,6 +3231,7 @@ CC.UI = (function () {
 
     return '<button class="' + cls + '" data-type="' + type + '"' +
       (d.trap ? ' data-trap="1"' : '') +
+      (merged ? ' data-merged="1"' : '') +
       (locked ? ' data-locked="1" aria-disabled="true"' : '') +
       ' data-level="' + cardLevel + '" data-state="' + cardState + '"' +
       (full ? ' disabled' : '') + ' title="' + title + '">' +
@@ -6579,12 +6599,46 @@ CC.UI = (function () {
 
   // Верхняя ступень прокачки: цена/время/валюта следующего уровня.
   function guardianPrice(id) {
+    if (CC.Game.guardianUpgradeCost) {
+      const c = CC.Game.guardianUpgradeCost(id);
+      if (c) {
+        return {
+          cost: c.dark || c.elixir || c.gold || 0,
+          time: c.time || 0,
+          currency: c.currency || 'gold',
+          to: c.to
+        };
+      }
+    }
     const lvl = guardianLevel(id);
-    const max = CC.guardianMaxLevel ? CC.guardianMaxLevel(id, CC.Game.townhallLevel()) : 0;
+    const max = CC.Game.guardianMaxLevelFor
+      ? CC.Game.guardianMaxLevelFor(id, CC.Game.townhallLevel())
+      : (CC.guardianMaxLevel ? CC.guardianMaxLevel(id, CC.Game.townhallLevel()) : 0);
     if (max <= lvl || !CC.guardianStats) return null;
     const next = CC.guardianStats(id, lvl + 1);
     if (!next || !next.cost) return null;
     return { cost: next.cost, time: next.time, currency: next.currency };
+  }
+
+  // Состояние прокачки стража: один общий слот, независимый от лаборатории
+  // и питомника.
+  function guardianUpgradeState(id) {
+    const up = CC.Game.guardianUpInfo ? CC.Game.guardianUpInfo() : null;
+    const speed = up && CC.Game.guardianSpeedCost
+      ? CC.Game.guardianSpeedCost() : null;
+    const check = CC.Game.canUpgradeGuardian
+      ? CC.Game.canUpgradeGuardian(id) : { ok: false, reason: 'Недоступно' };
+    const cost = check.cost || (CC.Game.guardianUpgradeCost
+      ? CC.Game.guardianUpgradeCost(id) : null);
+    return { up: up, speed: speed, check: check, cost: cost };
+  }
+
+  function guardianMaxFor(id) {
+    const th = CC.Game.townhallLevel();
+    if (CC.Game.guardianMaxLevelFor) {
+      return CC.Game.guardianMaxLevelFor(id, th) || 0;
+    }
+    return CC.guardianMaxLevel ? CC.guardianMaxLevel(id, th) : 0;
   }
 
   function pickGuardian(id) {
@@ -6759,23 +6813,29 @@ CC.UI = (function () {
     const need = g.minTh || (CC.GUARDIAN_UNLOCK && CC.GUARDIAN_UNLOCK[id]) || 18;
     const locked = !guardianUnlocked(id);
     const lvl = guardianLevel(id);
-    const capTh = locked ? CC.MAX_TH : th;
-    const max = (CC.guardianMaxLevel(id, capTh) || lvl);
+    const max = guardianMaxFor(id) || lvl;
     const st = CC.guardianStats ? (CC.guardianStats(id, lvl) || {}) : {};
     const sel = recruitSel === 'u:' + id ? ' is-selected' : '';
     const picked = guardianPicked(id);
     const price = locked ? null : guardianPrice(id);
+    const gs = guardianUpgradeState(id);
+    const active = !!(gs.up && gs.up.id === id);
     const meta = locked
       ? 'С центра ' + need
-      : ('HP ' + fmtNum(st.hp || 0) + ' · DPS ' + fmtNum(st.dps || 0));
+      : (active
+        ? 'Ур. ' + lvl + ' → ' + gs.up.to + ' · ' + formatTime(gs.up.left)
+        : ('HP ' + fmtNum(st.hp || 0) + ' · DPS ' + fmtNum(st.dps || 0)));
     const priceText = locked
       ? 'Не занимает армию'
-      : (price
-        ? fmtNum(price.cost) + ' ' + resWord(price.currency) +
-          (price.time > 0 ? ' · ' + formatTime(price.time) : '')
-        : 'Максимальный уровень');
+      : (active
+        ? 'Идёт прокачка'
+        : (price
+          ? fmtNum(price.cost) + ' ' + resWord(price.currency) +
+            (price.time > 0 ? ' · ' + formatTime(price.time) : '')
+          : 'Максимальный уровень'));
     return '<button class="recruit-card recruit-card_guardian' + sel +
       (picked ? ' is-picked' : '') + (locked ? ' is-locked' : '') +
+      (active ? ' is-run' : '') +
       '" type="button" data-recruit-guardian="' + escHtml(id) + '"' +
       ' title="' + escHtml(g.name + ' · ' + g.role +
         (locked ? ' · с центра ' + need : ' · не занимает армию')) + '">' +
@@ -6791,7 +6851,8 @@ CC.UI = (function () {
       (locked
         ? '<span class="recruit-card__lock">🔒 С центра ' + need + '</span>'
         : '<span class="recruit-card__off' + (picked ? ' is-on' : '') + '">' +
-          (picked ? '✓ на бой' : 'Выбрать на бой') + '</span>') +
+          (active ? 'Прокачка' : (picked ? '✓ на бой' : 'Выбрать на бой')) +
+          '</span>') +
       '</button>';
   }
 
@@ -6973,17 +7034,63 @@ CC.UI = (function () {
       const g = CC.GUARDIANS[id] || {};
       const locked = !guardianUnlocked(id);
       const lvl = guardianLevel(id);
-      const capTh = locked ? CC.MAX_TH : th;
-      const max = (CC.guardianMaxLevel(id, capTh) || lvl);
+      const max = guardianMaxFor(id) || lvl;
       const st = CC.guardianStats ? (CC.guardianStats(id, lvl) || {}) : {};
       const picked = guardianPicked(id);
-      const price = locked ? null : guardianPrice(id);
-      const priceText = locked
-        ? 'С центра ' + (g.minTh || 18)
-        : (price
+      const gs = guardianUpgradeState(id);
+      const active = !!(gs.up && gs.up.id === id);
+      const gems = CC.Game.gems();
+      const price = locked ? null : (gs.cost ? {
+        cost: gs.cost.dark || gs.cost.elixir || gs.cost.gold || 0,
+        time: gs.cost.time || 0,
+        currency: gs.cost.currency || 'gold'
+      } : guardianPrice(id));
+
+      let upBlock;
+      if (locked) {
+        upBlock = '<p class="recruit-price">Откроется с командного центра ' +
+          (g.minTh || 18) + '</p>';
+      } else if (active) {
+        const pct = Math.round((gs.up.progress || 0) * 100);
+        const speed = gs.speed;
+        const gemsOk = !speed || gems >= speed.gems;
+        upBlock = '<p class="recruit-price">Ур. ' + lvl + ' → ' + gs.up.to +
+          ' · осталось ' + formatTime(gs.up.left) + '</p>' +
+          '<i class="recruit-limit__bar"><b style="width:' + pct + '%"></b></i>' +
+          (speed
+            ? '<div class="recruit-actions"><button class="recruit-batch" ' +
+              'type="button" data-guardian-speed="1"' +
+              (gemsOk ? '' : ' disabled') +
+              ' title="' + (gemsOk ? 'Завершить прокачку мгновенно'
+                : 'Нужно ещё ' + platText(speed.gems - gems)) + '">' +
+              '<span class="ico ico-platinum" aria-hidden="true"></span> ' +
+              speed.gems + '</button></div>'
+            : '');
+      } else {
+        const priceText = price
           ? fmtNum(price.cost) + ' ' + resWord(price.currency) +
             (price.time > 0 ? ' · ' + formatTime(price.time) : '')
-          : 'Максимальный уровень');
+          : 'Максимальный уровень';
+        let btn;
+        if (gs.check && gs.check.ok) {
+          btn = '<button class="recruit-hire" type="button" data-guardian-up="' +
+            escHtml(id) + '">Улучшить</button>';
+        } else {
+          let label = 'Улучшить';
+          if (gs.check && gs.check.busy) label = 'Занято';
+          else if (gs.check && gs.check.needTh) label = 'Центр ' + gs.check.needTh;
+          else if (gs.check && gs.check.reason === 'Максимальный уровень') label = 'Макс.';
+          else if (gs.check && gs.check.missing) {
+            label = gs.check.missing.dark ? 'Нет плазмы'
+              : (gs.check.missing.elixir ? 'Нет энергии' : 'Нет руды');
+          } else if (gs.check && gs.check.needStorage) label = 'Склад мал';
+          btn = '<button class="recruit-hire" type="button" disabled title="' +
+            escHtml((gs.check && gs.check.reason) || '') + '">' + label + '</button>';
+        }
+        upBlock = '<p class="recruit-price">' + escHtml(priceText) + '</p>' +
+          '<div class="recruit-actions">' + btn + '</div>';
+      }
+
       const action = locked
         ? '<button class="recruit-hire" type="button" disabled>С центра ' +
           (g.minTh || 18) + '</button>'
@@ -7005,10 +7112,10 @@ CC.UI = (function () {
           '<span class="recruit-stat"><b>' + fmtNum(st.dps || 0) + '</b><i>DPS</i></span>' +
           '<span class="recruit-stat"><b>0</b><i>Место</i></span>' +
         '</div>' +
-        '<p class="recruit-price">' + escHtml(priceText) + '</p>' +
+        upBlock +
         '<p class="recruit-hint">Страж идёт в бой отдельной категорией и не ' +
-          'занимает места в армии. Открывается с командного центра ' +
-          (g.minTh || 18) + '.</p>' +
+          'занимает места в армии. Прокачка стража — свой слот, независимый ' +
+          'от лаборатории и питомника.</p>' +
         '<div class="recruit-actions">' + action + '</div>';
     }
 
@@ -7217,6 +7324,8 @@ CC.UI = (function () {
       const ld = loadoutData();
       const petUp = CC.Game.petUpInfo ? CC.Game.petUpInfo() : null;
       const spellUp = CC.Game.spellUpInfo ? CC.Game.spellUpInfo() : null;
+      const guardUp = CC.Game.guardianUpInfo
+        ? CC.Game.guardianUpInfo() : null;
       const sig = recruitTab + '|' + ids.length + '|' + recruitSel + '|th' +
         CC.Game.townhallLevel() + '|' + JSON.stringify(ld) + '|' +
         spellSlots() + '|pl:' + Object.keys(CC.PETS || {}).map(function (id) {
@@ -7226,7 +7335,11 @@ CC.UI = (function () {
         '|sl:' + Object.keys(CC.SPELLS || {}).map(function (id) {
           return id + ':' + (CC.Game.spellLevel ? CC.Game.spellLevel(id) : 1);
         }).join(',') + '|su:' + (spellUp
-          ? spellUp.id + ':' + spellUp.to + ':' + Math.ceil(spellUp.left) : '-');
+          ? spellUp.id + ':' + spellUp.to + ':' + Math.ceil(spellUp.left) : '-') +
+        '|gl:' + (CC.GUARDIAN_ORDER || []).map(function (id) {
+          return id + ':' + guardianLevel(id);
+        }).join(',') + '|gu:' + (guardUp
+          ? guardUp.id + ':' + guardUp.to + ':' + Math.ceil(guardUp.left) : '-');
       if (cache.recruitSig === sig) return;
       cache.recruitSig = sig;
       if (recruitSub) {
@@ -7234,6 +7347,7 @@ CC.UI = (function () {
         if (recruitTab === 'guardians') {
           const picked = guardianBattleValue();
           line += ' · стражей на бой: ' + picked.length +
+            (guardUp ? ' · идёт прокачка' : '') +
             ' · места в армии не занимают';
         } else if (recruitTab === 'spells') {
           line += ' · слоты ' + spellUsed() + '/' + spellSlots();
@@ -7428,6 +7542,36 @@ CC.UI = (function () {
         cache.recruitSig = null;
         syncRecruit();
       }
+      return;
+    }
+
+    const guardianUp = e.target.closest('[data-guardian-up]');
+    if (guardianUp) {
+      const id = guardianUp.dataset.guardianUp;
+      const res = CC.Game.startGuardianUpgrade(id);
+      if (res.error) toast(res.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgrade');
+        const name = (CC.GUARDIANS[id] || {}).name || 'Страж';
+        toast(name + ': прокачка до ур. ' + res.to);
+      }
+      invalidate();
+      sync();
+      return;
+    }
+
+    const guardianSpeed = e.target.closest('[data-guardian-speed]');
+    if (guardianSpeed) {
+      const res = CC.Game.speedUpGuardian();
+      if (res.error) toast(res.error);
+      else {
+        if (CC.Sound) CC.Sound.play('upgradeDone');
+        const name = (CC.GUARDIANS[res.id] || {}).name || 'Страж';
+        toast(name + ' — ур. ' + res.level);
+      }
+      guardianWatch = null;
+      invalidate();
+      sync();
       return;
     }
 
@@ -10540,6 +10684,21 @@ CC.UI = (function () {
       toast(name + ' — ур. ' + lvl);
       if (CC.Sound) CC.Sound.play('upgradeDone');
       petWatch = null;
+      changed = true;
+    }
+
+    const guard = CC.Game.guardianUpInfo ? CC.Game.guardianUpInfo() : null;
+    if (guard) {
+      guardianWatch = { id: guard.id, to: guard.to,
+        name: (CC.GUARDIANS[guard.id] || {}).name || 'Страж' };
+    } else if (guardianWatch) {
+      const id = guardianWatch.id;
+      const name = guardianWatch.name;
+      const lvl = CC.Game.guardianLevel
+        ? CC.Game.guardianLevel(id) : guardianWatch.to;
+      toast(name + ' — ур. ' + lvl);
+      if (CC.Sound) CC.Sound.play('upgradeDone');
+      guardianWatch = null;
       changed = true;
     }
 
