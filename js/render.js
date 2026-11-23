@@ -8411,6 +8411,9 @@ CC.Render = (function () {
     // у новых типов свои ярусы в painter'е; общий слой им не нужен и
     // масштабировать его под 1×1/2×2 было бы дороже, чем пользы
     if (artNominal(b.type)) return;
+    // 3D-кадр уже содержит все уровневые детали: векторные «этажи» поверх
+    // него висят в воздухе и спорят с моделью.
+    if (BUILDING3D_ART[b.type]) return;
     const t = (Math.min(lvl, MAX_LVL) - 11) / 10;
     const A = P(b.x + 0.12, b.y + 0.12);
     const B = P(b.x + b.w - 0.12, b.y + 0.12);
@@ -8456,6 +8459,159 @@ CC.Render = (function () {
     }
   }
 
+  /* ---------- 3D-модели зданий ----------
+     Пилот: добыча и склады, все уровни. Мир рисуется в «мировых» пикселях
+     (TW=54), поэтому кадр кладётся фиксированного размера: ширина =
+     TW / доля футпринта в кадре. Берём render-256: в сцене это ~97 px,
+     с запасом на зум. Пока PNG не пришёл — прежний векторный арт. */
+  const BUILDING3D_ART = {
+    goldmine: { max: 18, foot: 1 },
+    storage: { max: 20, foot: 1 },
+    elixir: { max: 18, foot: 1 },
+    darkdrill: { max: 12, foot: 1 },
+    estorage: { max: 20, foot: 1 },
+    darkstorage: { max: 14, foot: 1 },
+    townhall: { max: 19, foot: 2 },
+    cannon: { max: 21, foot: 1 },
+    archer: { max: 21, foot: 1 },
+    barracks: { max: 14, foot: 2 },
+    lab: { max: 17, foot: 2 },
+    herohall: { max: 13, foot: 2 },
+    mine: { max: 14, foot: 1 },
+    mortar: { max: 18, foot: 1 },
+    airdef: { max: 17, foot: 1 },
+    mage: { max: 17, foot: 1 },
+    spring: { max: 14, foot: 1 }
+  };
+  // Стена — связная конструкция из пролётов и столбов: её рисует
+  // drawWallRun. Одиночный 3D-сегмент ломал бы стыки и повороты.
+  const BUILDING3D_ORTHO = { 1: 2.55, 2: 4.0 };   // как в пайплайне
+  const BUILDING3D_ROOT = 1.414;                   // диагональ клетки
+  const BUILDING3D_AX = 0.5;              // якорь X: центр футпринта
+  // Якорь земли: камера смотрит в (0,0,target_z), поэтому плоскость z=0
+  // проецируется ниже центра кадра. У 1×1 и 2×2 отношение target_z/ortho
+  // почти одинаковое, поэтому доля общая — 0.664.
+  const BUILDING3D_AY = 0.664;
+
+  const building3d = { images: {}, tops: {}, failed: {} };
+
+  // Верх прозрачности в долях кадра: нужен, чтобы HP-бар и значки висели
+  // над 3D-моделью, а не над старым вектором. При file:// canvas может быть
+  // «испорчен», тогда просто остаётся векторная высота.
+  function building3dMeasureTop(img) {
+    try {
+      const w = img.naturalWidth || 256;
+      const h = img.naturalHeight || 256;
+      const c = makeCanvas(w, h);
+      const cx = c.getContext('2d');
+      if (!cx || typeof cx.getImageData !== 'function') return -1;
+      cx.drawImage(img, 0, 0, w, h);
+      const data = cx.getImageData(0, 0, w, h).data;
+      for (let y = 0; y < h; y++) {
+        const row = y * w * 4;
+        for (let x = 0; x < w; x++) {
+          if (data[row + x * 4 + 3] > 8) return y / h;
+        }
+      }
+    } catch (e) { /* нет доступа к пикселям — не страшно */ }
+    return -1;
+  }
+
+  function building3dLevel(type, lvl) {
+    const cfg = BUILDING3D_ART[type];
+    const max = cfg ? cfg.max : 0;
+    if (!max) return 0;
+    let n = Math.floor(Number(lvl) || 1);
+    if (!isFinite(n)) n = 1;
+    return Math.max(1, Math.min(max, n));
+  }
+
+  function building3dPad(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+
+  // Картинка уровня; первый вызов запускает загрузку и возвращает null.
+  function building3dImage(type, lvl) {
+    const level = building3dLevel(type, lvl);
+    if (!level) return null;
+    const key = type + '|' + level;
+    const known = building3d.images[key];
+    if (known) {
+      return (known.complete && known.naturalWidth > 0) ? known : null;
+    }
+    if (building3d.failed[key]) return null;
+    if (typeof document === 'undefined' || typeof Image !== 'function') return null;
+    let img;
+    try {
+      img = new Image();
+    } catch (e) {
+      building3d.failed[key] = true;
+      return null;
+    }
+    img.onload = function () {
+      if (img.naturalWidth > 0) {
+        building3d.images[key] = img;
+        building3d.tops[key] = building3dMeasureTop(img);
+      } else {
+        building3d.failed[key] = true;
+      }
+    };
+    img.onerror = function () {
+      building3d.failed[key] = true;
+      try { delete building3d.images[key]; } catch (e) {}
+    };
+    building3d.images[key] = img;
+    try {
+      img.src = 'assets/buildings3d/' + type + '/L' +
+        building3dPad(level) + '/render-256.png';
+    } catch (e) {
+      building3d.failed[key] = true;
+      return null;
+    }
+    return null;
+  }
+
+  // Нарисовать 3D-кадр по центру футпринта. Для 2×2 пайплайн снимал
+  // шире (ortho 4.0), поэтому кадр масштабируется под две клетки.
+  function drawBuilding3d(ctx, b, lvl) {
+    const cfg = BUILDING3D_ART[b.type];
+    if (!cfg) return false;
+    const w = b.w || 1;
+    const h = b.h || 1;
+    if (w !== cfg.foot || h !== cfg.foot) return false;
+    const img = building3dImage(b.type, lvl);
+    if (!img) return false;
+
+    const dx = (b.x - b.y) * TW / 2;
+    const dy = (b.x + b.y) * TH / 2;
+    const cx = dx + (w - h) * TW / 4;
+    const cy = dy + (w + h) * TH / 4;
+
+    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) / BUILDING3D_ROOT;
+    try {
+      ctx.drawImage(img, cx - S * BUILDING3D_AX, cy - S * BUILDING3D_AY, S, S);
+    } catch (e) {
+      return false;
+    }
+    return true;
+  }
+
+  // Высота видимой верхушки 3D-модели над землёй в мировых px.
+  // 0 — картинки ещё нет, пусть работает векторная crown().
+  function building3dCrown(type, lvl) {
+    const cfg = BUILDING3D_ART[type];
+    const level = building3dLevel(type, lvl);
+    if (!cfg || !level) return 0;
+    const key = type + '|' + level;
+    const img = building3d.images[key];
+    if (!img || !img.complete || img.naturalWidth <= 0) return 0;
+    const top = building3d.tops[key];
+    if (!(top >= 0)) return 0;
+    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) / BUILDING3D_ROOT;
+    const h = (BUILDING3D_AY - top) * S;
+    return h > 0 ? h : 0;
+  }
+
   function drawBuilding(ctx, b) {
     const st = CC.UI && CC.UI.state;
     const lvl = levelOf(b);
@@ -8470,10 +8626,20 @@ CC.Render = (function () {
 
     const work = workOf(b);
     const site = !!work;
-    const sp = spritesOn && type !== 'cannon' && tilePx <= 96 ? spriteFor(b, lvl) : null;
+    // Подключённые типы рисуем 3D-кадром, пока PNG не пришёл — вектор.
+    // Ловушки в сработавшем состоянии остаются на 2.5D-арте: 3D снят
+    // только для взведённых.
+    const cfg3d = BUILDING3D_ART[type];
+    const trapOk = (type !== 'mine' && type !== 'spring') ||
+      trapVariant(b) !== 'spent';
+    const use3d = !!cfg3d && !site && trapOk &&
+      (b.w || 1) === cfg3d.foot && (b.h || 1) === cfg3d.foot;
+    const sp = !use3d && spritesOn && type !== 'cannon' && tilePx <= 96
+      ? spriteFor(b, lvl) : null;
 
     function body() {
       if (sp) drawSprite(ctx, sp, b);
+      else if (use3d && drawBuilding3d(ctx, b, lvl)) { /* 3D-кадр */ }
       else drawBuildingBody(ctx, b);
     }
 
@@ -18451,6 +18617,12 @@ CC.Render = (function () {
   };
 
   function crown(b, lvl) {
+    // 3D-модель выше/ниже старого вектора: полоска здоровья и значки
+    // должны висеть над её фактической верхушкой.
+    if (b && BUILDING3D_ART[b.type]) {
+      const h3d = building3dCrown(b.type, lvl);
+      if (h3d > 0) return h3d;
+    }
     const arr = CROWN[b.type];
     const l = Math.max(1, Math.min(MAX_LVL, Math.round(lvl || 1)));
     // у новых типов арт вписан в уменьшенное пятно: индикатор и HP-бар
@@ -19923,11 +20095,42 @@ CC.Render = (function () {
     return cardDataUrl(dst);
   }
 
+  // 3D-кадр в квадрат карточки: 256 px → обрезка по альфе → вписывание.
+  function building3dCard(img, size) {
+    try {
+      const tmp = makeCanvas(256, 256);
+      const cx = tmp.getContext('2d');
+      if (!cx) return null;
+      cx.drawImage(img, 0, 0, 256, 256);
+      return cardFit(tmp, size);
+    } catch (e) {
+      return null;
+    }
+  }
+
   function buildingArt(type, size, level) {
     try {
       if (!type || !CC.BUILDINGS || !CC.BUILDINGS[type]) return null;
       const s = cardSize(size);
       const lvl = cardLevel(level);
+
+      // Если 3D-кадр уровня уже в памяти — карточка тоже из него. Иначе
+      // отдаём вектор и параллельно запускаем загрузку на следующий вызов.
+      const img3d = BUILDING3D_ART[type] ? building3dImage(type, lvl) : null;
+      if (img3d) {
+        const key3 = 'b3|' + type + '|' + s + '|' + lvl;
+        if (cardArtCache.has(key3)) return cardArtCache.get(key3);
+        const url3d = building3dCard(img3d, s);
+        if (url3d) {
+          if (cardArtCache.size >= CARD_ART_MAX) {
+            const first3 = cardArtCache.keys().next().value;
+            if (first3 !== undefined) cardArtCache.delete(first3);
+          }
+          cardArtCache.set(key3, url3d);
+          return url3d;
+        }
+      }
+
       const key = 'b|' + type + '|' + s + '|' + lvl;
       if (cardArtCache.has(key)) return cardArtCache.get(key);
 
@@ -20111,6 +20314,19 @@ CC.Render = (function () {
         failed: unit3dV2.failed, readyTypes: unit3dV2.readyTypes,
         frames: unit3dV2.frames, types: types
       };
+    },
+    // состояние 3D-зданий: какие уровни в памяти/сломаны (для инструментов)
+    __buildings3d: function () {
+      const images = {};
+      Object.keys(building3d.images).forEach(function (k) {
+        const img = building3d.images[k];
+        images[k] = {
+          ready: !!(img && img.complete && img.naturalWidth > 0),
+          top: building3d.tops[k] || 0
+        };
+      });
+      return { images: images, failed: Object.keys(building3d.failed),
+        cards: Array.from(cardArtCache.keys()) };
     },
     // сколько 3D-тел сейчас падает (для сцены-чека и отладки)
     __deaths: function () {
