@@ -540,10 +540,10 @@ body {
 #app .res-panel_elixir .res-panel__track i { background: var(--hud-violet); }
 #app .res-panel_gems .res-panel__track { display: none; }
 
-/* «Собрать всё» — в правой колонке под ресурсами, той же ширины. */
+/* «Собрать всё» — пятая строка в правой колонке ресурсов. */
 #app .collect-all {
-  top: calc(env(safe-area-inset-top, 0px) + 168px);
-  width: 150px;
+  position: static;
+  width: 100%;
   height: 40px;
   min-height: 40px;
   padding: 0 10px;
@@ -700,7 +700,7 @@ body {
    =================================================================== */
 
 #app .bpanel {
-  top: calc(env(safe-area-inset-top, 0px) + 214px);
+  top: calc(env(safe-area-inset-top, 0px) + 240px);
   right: 56px;
   padding: 12px;
   gap: 8px;
@@ -1376,13 +1376,12 @@ body {
 }
 #app.is-compact .res-panel__value { font-size: var(--fs-18); }
 #app.is-compact .collect-all {
-  top: calc(env(safe-area-inset-top, 0px) + 126px);
-  width: 150px;
+  width: 100%;
   height: 40px;
   min-height: 40px;
   font-size: var(--fs-11);
 }
-#app.is-compact .bpanel { top: calc(env(safe-area-inset-top, 0px) + 172px); }
+#app.is-compact .bpanel { top: calc(env(safe-area-inset-top, 0px) + 214px); }
 #app.is-compact .bottom-bar { gap: 8px; }
 #app.is-compact .shop-btn,
 #app.is-compact .battle-btn {
@@ -1435,14 +1434,14 @@ body {
   #app .daily-chip { width: auto; }
   #app .volume { display: none; }
   #app .resbar { width: 132px; }
-  #app .collect-all { width: 132px; }
+  #app .collect-all { width: 100%; }
   #app .hud { right: 148px; }
   #app .bpanel { right: 8px; }
 }
 
 @media (max-width: 380px) {
   #app .resbar { width: 112px; }
-  #app .collect-all { width: 112px; }
+  #app .collect-all { width: 100%; }
   #app .res-panel__value { font-size: var(--fs-14); }
   #app .res-panel__in { padding: 4px 6px; gap: 6px; }
   #app .hud { right: 128px; }

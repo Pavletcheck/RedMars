@@ -2645,6 +2645,13 @@ CC.Render = (function () {
   }
 
   function drawWallSection(ctx, r) {
+    // Боевой путь рисует каждую клетку стены отдельно: здесь у r есть bits
+    // (маска соседей), поэтому 3D-обработчик из js/wall3d.js выбирает стык.
+    if (wall3dDraw) {
+      let top = 0;
+      try { top = wall3dDraw(ctx, r, { bar: false }); } catch (e) { top = 0; }
+      if (typeof top === 'number' && top > 0) return;
+    }
     if (!spritesOn || tilePx > 96) {
       drawWallCellVector(ctx, r);
       wallPulse(ctx, r);
@@ -2820,8 +2827,24 @@ CC.Render = (function () {
       x: run.x, y: run.y, w: 1, h: 1, cells: cells, lvl: lvl,
       bits: run.bits | 0, deg: 0, post: 'center'
     };
+    // 3D-энергобарьер из js/wall3d.js: обработчик рисует тела сегментов
+    // и возвращает высоту верхушки в px (для HP-бара). false — fallback 2.5D.
+    if (wall3dDraw) {
+      let top = 0;
+      try { top = wall3dDraw(ctx, run, opts); } catch (e) { top = 0; }
+      if (typeof top === 'number' && top > 0) {
+        if (opts && opts.bar) wallHpBar(ctx, cell, top + 4);
+        return;
+      }
+    }
     drawWallSection(ctx, cell);
     if (opts && opts.bar) wallHpBar(ctx, cell, wallTopPx(lvl) + 4);
+  }
+
+  // Регистрация 3D-стены (вызывает js/wall3d.js).
+  let wall3dDraw = null;
+  function setWall3d(fn) {
+    wall3dDraw = typeof fn === 'function' ? fn : null;
   }
 
   // полоска HP участка стены
@@ -8597,6 +8620,16 @@ CC.Render = (function () {
     scattershot: { max: 7, foot: 2 },
     monolith: { max: 5, foot: 2 }
   };
+  // Дополнительные 3D-здания из js/buildings3d-extra.js. Файл грузится
+  // раньше render.js и только объявляет данные; сами PNG — в
+  // assets/buildings3d/<id>/L<nn>/render-256.png. Так арт-агент не
+  // трогает этот файл и не конфликтует с другими 3D-зонами.
+  if (CC.BUILDING3D_EXTRA) {
+    Object.keys(CC.BUILDING3D_EXTRA).forEach(function (t) {
+      const cfg = CC.BUILDING3D_EXTRA[t];
+      if (cfg && cfg.max > 0) BUILDING3D_ART[t] = cfg;
+    });
+  }
   // Стена — связная конструкция из пролётов и столбов: её рисует
   // drawWallRun. Одиночный 3D-сегмент ломал бы стыки и повороты.
   const BUILDING3D_ORTHO = { 1: 2.55, 2: 4.0 };   // как в пайплайне
@@ -12451,6 +12484,14 @@ CC.Render = (function () {
     archer: { frame: 32, w: 38, h: 36, ax: 19, ay: 27 },
     giant: { frame: 48, w: 54, h: 56, ax: 27, ay: 43 }
   };
+  // Дополнительные 3D-войска из js/units3d-extra.js (грузится раньше).
+  // Формат тот же; кадры — assets/units3d-v2/<type>/<anim>/dirN_M.png.
+  if (CC.UNIT3D_V2_EXTRA) {
+    Object.keys(CC.UNIT3D_V2_EXTRA).forEach(function (t) {
+      const cfg = CC.UNIT3D_V2_EXTRA[t];
+      if (cfg && cfg.frame > 0) UNIT3D_V2[t] = cfg;
+    });
+  }
   const UNIT3D_V2_ANIMS = { idle: 2, walk: 4, attack: 3, death: 4 };
   const UNIT3D_V2_SRC = 256;       // сторона исходного PNG
   const UNIT3D_V2_GX = 128;        // якорь земли в исходнике
@@ -16026,6 +16067,16 @@ CC.Render = (function () {
       // векторный запасной путь: те же формы, без канвы (крупный зум и tools)
       paintUnitArt(ctx, u.type, dir, frame, lvl, u, artKind);
     }
+    // Слой уровня войск (js/units3d-levels.js): акценты 1–10 поверх 3D-кадра.
+    // Рисуется в локальных координатах юнита, поэтому не зависит от зума.
+    if (CC.Render3DUnits && typeof CC.Render3DUnits.after === 'function') {
+      try {
+        CC.Render3DUnits.after(ctx, {
+          type: u.type, heroKind: u.heroKind || kind, level: lvl,
+          dir: dir, frame: frame, hero: hero, flying: flying
+        });
+      } catch (e) { /* слой уровня не должен ломать бой */ }
+    }
     ctx.restore();
 
     // щит — только вектор, поверх спрайта и под полоской здоровья.
@@ -18563,8 +18614,15 @@ CC.Render = (function () {
     for (let i = 0; i < runs.length; i++) {
       const r = runs[i];
       if (!footprintVisible(r.x, r.y, r.x + r.w, r.y + r.h, 80)) continue;
-      const top = wallTopPx(r.lvl || 1) + 4;
-      wallHpBar(ctx, r, top);
+      const lvl = r.lvl || 1;
+      let top = wallTopPx(lvl);
+      if (CC.Render && typeof CC.Render.__wall3dTop === 'function') {
+        try {
+          const t3 = CC.Render.__wall3dTop(r);
+          if (t3 > top) top = t3;
+        } catch (e) { /* остаётся 2.5D-высота */ }
+      }
+      wallHpBar(ctx, r, top + 4);
     }
   }
 
@@ -20826,6 +20884,16 @@ CC.Render = (function () {
     },
     // фаза 2 3D-войск (attack+death) — по входу в бой; tools тоже могут звать
     warmBattleUnits: warmBattleUnits,
+    // Регистрация 3D-стены: обработчик рисует тела сегментов и возвращает
+    // высоту верхушки в px (или 0/false — тогда работает 2.5D).
+    setWall3d: setWall3d,
+    // Дополнительный 3D-тип здания на лету (обычно данные приходят из
+    // js/buildings3d-extra.js ещё до render.js).
+    addBuilding3d: function (type, cfg) {
+      if (!type || !cfg || !(cfg.max > 0)) return false;
+      BUILDING3D_ART[type] = { max: cfg.max | 0, foot: cfg.foot === 2 ? 2 : 1 };
+      return true;
+    },
     // инструментам: нарисовать одного юнита и векторный арт без сцены.
     // art-check/scene-check используют это для контактных листов новых типов.
     __drawUnit: function (ctx, u) { drawUnit(ctx, u); },

@@ -47,7 +47,7 @@ html, body { width: 100%; height: 100%; }
 .rotate {
   position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 200;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -1498,7 +1498,7 @@ html, body { width: 100%; height: 100%; }
 
 .bpanel {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 214px);
+  top: calc(env(safe-area-inset-top, 0px) + 240px);
   right: 56px;
   width: min(280px, calc(100% - 16px));
   z-index: 7;
@@ -4322,7 +4322,7 @@ html, body { width: 100%; height: 100%; }
 
 /* Под ресурсами и «Собрать всё», иначе панель накрывает колонку. */
 .is-compact .bpanel {
-  top: calc(env(safe-area-inset-top, 0px) + 172px);
+  top: calc(env(safe-area-inset-top, 0px) + 214px);
   max-height: 156px;
   gap: 2px;
   padding: 5px;
@@ -4636,17 +4636,15 @@ html, body { width: 100%; height: 100%; }
   50% { transform: translateY(-2px); }
 }
 
-/* Кнопка «Собрать всё» под панелью ресурсов: не раздувает HUD и не
-   перекрывает базу — стоит в той же правой колонке. */
+/* Кнопка «Собрать всё» — пятая строка стека ресурсов. Раньше она стояла
+   абсолютно по top:168px и накрывала четвёртую плашку (платину). */
 .collect-all {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 168px);
-  right: 8px;
-  z-index: 6;
-  width: 150px;
+  position: static;
+  width: 100%;
+  margin-top: 5px;
   min-height: 40px;
   padding: 0 6px;
-  border-radius: 12px;
+  border-radius: 10px;
   color: #3a2812;
   font: inherit;
   font-size: .6rem;
@@ -4654,6 +4652,8 @@ html, body { width: 100%; height: 100%; }
   line-height: 1.05;
   white-space: nowrap;
   cursor: pointer;
+  pointer-events: auto;
+  flex: 0 0 auto;
 }
 
 .collect-all.hidden { display: none; }
@@ -4666,16 +4666,14 @@ html, body { width: 100%; height: 100%; }
 
 [data-mode="battle"] .collect-all { display: none; }
 
-.is-wide .collect-all { width: 150px; }
-.is-narrow .collect-all { width: 150px; }
+.is-wide .collect-all { width: 100%; }
+.is-narrow .collect-all { width: 100%; }
 
 /* Компактная шапка на 844×390 держит панель ресурсов 150 px — кнопка
    под ней повторяет её ширину. Правило идёт последним, чтобы победить
    .is-wide у телефона лёжа. */
 .is-compact .collect-all {
-  top: calc(env(safe-area-inset-top, 0px) + 126px);
-  right: 6px;
-  width: 150px;
+  width: 100%;
   min-height: 40px;
   font-size: .56rem;
 }
@@ -5307,10 +5305,6 @@ html, body { width: 100%; height: 100%; }
    а правая колонка по-прежнему не залезает на базу. */
 #app.is-compact .res-panel { min-height: 40px; }
 #app.is-compact .res-panel__in { min-height: 38px; }
-
-#app.is-compact .collect-all {
-  top: calc(env(safe-area-inset-top, 0px) + 132px);
-}
 
 .buy-card {
   max-width: 460px;
@@ -6396,7 +6390,7 @@ html, body { width: 100%; height: 100%; }
   height: min(86dvh, 760px);
   max-height: min(86dvh, 760px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 8px;
   padding: 12px;
   text-align: left;
