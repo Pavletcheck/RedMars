@@ -30,7 +30,11 @@
   var ORTHO = 2.55;                 // как у 3D-зданий
   var ROOT2 = Math.SQRT2;
   var ANCHOR_X = 0.5;               // центр клетки в кадре
-  var ANCHOR_Y = 0.664;             // якорь земли (общий с buildings3d)
+  /* Якорь земли, общий с buildings3d: в этой точке кадра лежит центр
+     подставки, то есть центр клетки. Нижняя кромка альфы у сегментов
+     (~0.789 кадра) — передний угол октагональной подставки, а не центр:
+     поднимать якорь до 0.789 нельзя, барьер повиснет на ~0.125 кадра. */
+  var ANCHOR_Y = 0.664;
   var CACHE_MAX = 96;               // ~25 МБ декодированных PNG
   var WARM_LEVELS = 6;              // столько уровней греем целиком
   var ROOT = 'assets/wall3d/';
@@ -72,6 +76,7 @@
   var spritePx = 0;
   var measureCtx = null;
   var measureBroken = false;
+  var shadowCanvas = null;          // мягкая контактная тень (пекётся один раз)
 
   /* Буферы для прогона из нескольких клеток: без аллокаций на кадр. */
   var GRID = 64;
@@ -223,15 +228,67 @@
 
   function drawSprite(ctx, gx, gy, rec) {
     var S = spriteSize();
-    // CC.Iso.project без создания объекта: (x-y)*TW/2, (x+y)*TH/2
-    var cx = (gx - gy) * ((window.CC && CC.TW) || 54) * 0.5;
-    var cy = (gx + gy) * ((window.CC && CC.TH) || 40) * 0.5;
+    // Клетка стены — от центра (gx+0.5, gy+0.5), как у зданий. Раньше
+    // брали угол (gx,gy), из-за чего барьер висел на полтайла выше.
+    var tw = (window.CC && CC.TW) || 54;
+    var th = (window.CC && CC.TH) || 40;
+    var cx = (gx - gy) * tw * 0.5;
+    var cy = (gx + gy + 1) * th * 0.5;
+    drawGroundShadow(ctx, cx, cy, tw, th);
     try {
       ctx.drawImage(rec.img, cx - S * ANCHOR_X, cy - S * ANCHOR_Y, S, S);
     } catch (e) {
       return false;
     }
     return true;
+  }
+
+  /* Мягкая тень под сегментом: эллипс в границах клетки, чуть сдвинутый
+     от света. render.js больше не рисует широкий 2.5D-газон под 3D-стеной,
+     поэтому контакт с грунтом держим здесь. Градиент печётся в маленькую
+     канву один раз — на кадр остаётся только drawImage. */
+  function softShadow() {
+    if (shadowCanvas) return shadowCanvas;
+    try {
+      if (typeof document === 'undefined' || !document.createElement) return null;
+      var c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 64;
+      var g = c.getContext('2d');
+      if (!g || typeof g.createRadialGradient !== 'function') return null;
+      var grad = g.createRadialGradient(32, 32, 3, 32, 32, 31);
+      grad.addColorStop(0, 'rgba(52,24,12,.40)');
+      grad.addColorStop(0.55, 'rgba(52,24,12,.24)');
+      grad.addColorStop(0.8, 'rgba(52,24,12,.10)');
+      grad.addColorStop(1, 'rgba(52,24,12,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 64);
+      shadowCanvas = c;
+    } catch (e) {
+      shadowCanvas = null;
+    }
+    return shadowCanvas;
+  }
+
+  function drawGroundShadow(ctx, cx, cy, tw, th) {
+    var rx = tw * 0.45;
+    var ry = th * 0.36;
+    var sx = cx + tw * 0.06;
+    var sy = cy + th * 0.08;
+    var sh = softShadow();
+    if (sh) {
+      try {
+        ctx.drawImage(sh, sx - rx, sy - ry, rx * 2, ry * 2);
+        return;
+      } catch (e) { /* нет canvas-тени — ниже простой эллипс */ }
+    }
+    if (!ctx || typeof ctx.ellipse !== 'function') return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(52,24,12,.13)';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   function cellIndex(x, y) {

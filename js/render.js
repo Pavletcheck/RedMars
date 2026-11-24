@@ -2847,29 +2847,23 @@ CC.Render = (function () {
     wall3dDraw = typeof fn === 'function' ? fn : null;
   }
 
-  // полоска HP участка стены
+  // Полоска HP участка стены. Раньше рисовалась одна на весь пролёт по его
+  // центру: у длинной стены бар висел над целыми клетками/пустым грунтом.
+  // Теперь — отдельная маленькая полоска над каждой повреждённой клеткой.
   function wallHpBar(ctx, run, topPx) {
-    let hp = 0;
-    let maxHp = 0;
-    for (let i = 0; i < run.cells.length; i++) {
-      hp += run.cells[i].hp;
-      maxHp += run.cells[i].maxHp;
+    const cells = run && run.cells && run.cells.length ? run.cells : [run];
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (!c || !(c.maxHp > 0) || !(c.hp < c.maxHp)) continue;
+      const p = P((c.x || 0) + 0.5, (c.y || 0) + 0.5);
+      const w = 18;
+      const y = p.y - topPx - 6;
+      const k = Math.max(0, c.hp / c.maxHp);
+      ctx.fillStyle = 'rgba(40,36,28,.45)';
+      ctx.fillRect(p.x - w / 2 - 1, y - 1, w + 2, 4);
+      ctx.fillStyle = hpColor(k);
+      ctx.fillRect(p.x - w / 2, y, w * k, 2);
     }
-    if (!(maxHp > 0) || hp >= maxHp) return;
-
-    const A = P(run.x, run.y);
-    const B = P(run.x + run.w, run.y);
-    const C = P(run.x + run.w, run.y + run.h);
-    const D = P(run.x, run.y + run.h);
-
-    const cx = (A.x + B.x + C.x + D.x) / 4;
-    const w = Math.min(40, 10 + run.cells.length * 8);
-    const y = Math.min(A.y, B.y, C.y, D.y) - topPx - 6;
-
-    ctx.fillStyle = 'rgba(40,36,28,.45)';
-    ctx.fillRect(cx - w / 2 - 1, y - 1, w + 2, 4);
-    ctx.fillStyle = hpColor(hp / maxHp);
-    ctx.fillRect(cx - w / 2, y, w * Math.max(0, hp / maxHp), 2);
   }
 
   /* ---------- постройки ---------- */
@@ -8777,7 +8771,7 @@ CC.Render = (function () {
     const w = b.w || 1;
     const h = b.h || 1;
     if (!building3dCellsOk(cfg, b)) return false;
-    const k = building3dScale(cfg, b);
+    const k = cfg.rect ? 1 : building3dScale(cfg, b);
     if (!(k > 0)) return false;
     const img = building3dImage(b.type, lvl);
     if (!img) return false;
@@ -8787,8 +8781,8 @@ CC.Render = (function () {
     const cx = dx + (w - h) * TW / 4;
     const cy = dy + (w + h) * TH / 4;
 
-    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) /
-      BUILDING3D_ROOT * k;
+    const ortho = cfg.ov || BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1];
+    const S = TW * ortho / BUILDING3D_ROOT * k;
     try {
       ctx.drawImage(img, cx - S * BUILDING3D_AX, cy - S * BUILDING3D_AY, S, S);
     } catch (e) {
@@ -8809,8 +8803,9 @@ CC.Render = (function () {
     if (!img || !img.complete || img.naturalWidth <= 0) return 0;
     const top = building3d.tops[key];
     if (!(top >= 0)) return 0;
-    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) /
-      BUILDING3D_ROOT * building3dScale(cfg, b);
+    const ortho = cfg.ov || BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1];
+    const S = TW * ortho / BUILDING3D_ROOT *
+      (cfg.rect ? 1 : building3dScale(cfg, b));
     const h = (BUILDING3D_AY - top) * S;
     return h > 0 ? h : 0;
   }
@@ -18433,7 +18428,7 @@ CC.Render = (function () {
 
     const ratio = Math.max(0, Math.min(1, b.hp / b.maxHp));
     const p = P(b.x + b.w / 2, b.y + b.h / 2);
-    const y = p.y - crown(b, levelOf(b)) + 8;
+    const y = p.y - crown(b, levelOf(b)) - 7;
     const w = b.w > 1 ? 34 : 24;
 
     ctx.fillStyle = 'rgba(30,26,20,.45)';
