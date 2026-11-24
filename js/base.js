@@ -4213,18 +4213,19 @@ CC.Game = (function () {
     return n;
   }
 
-  // Одновременная тренировка: по слоту на Казарму. Старый сейв без
-  // Казармы, но с Ангаром получает один слот совместимости.
+  // Одновременная тренировка: один слот на каждый готовый Ангар
+  // (barracks) и каждую готовую Казарму (train/darktrain). Очередь общая,
+  // поэтому три бойца при двух Ангарах встают в два слота. Стройки
+  // слотов не дают. Старый слот вне диапазона обрабатывает slotOf.
   function trainSlots() {
     const list = CC.Base.list();
     let n = 0;
     for (let i = 0; i < list.length; i++) {
       const t = list[i].type;
-      if (t !== 'train' && t !== 'darktrain') continue;
+      if (t !== 'barracks' && t !== 'train' && t !== 'darktrain') continue;
       if (isBuilding(list[i].id)) continue;
       n++;
     }
-    if (!n && barracksList().length) n = 1;
     return n;
   }
 

@@ -359,6 +359,35 @@
     warmCount = 0;
   };
 
+  // Готовность для render.js: под 3D-забором не нужен широкий 2.5D-газон.
+  // __wall3dHasCell — конкретная клетка (маска стыка + уровень) уже в 3D;
+  // __wall3dHas — у уровня есть хотя бы один готовый сегмент;
+  // __wall3dReady — хотя бы один уровень загружен целиком (16 стыков).
+  CC.Render.__wall3dHasCell = function (bits, lvl) {
+    var rec = images.get(clampLvl(lvl) * 16 + ((bits | 0) & 15));
+    return !!(rec && rec.ready);
+  };
+
+  CC.Render.__wall3dHas = function (lvl) {
+    var base = clampLvl(lvl) * 16;
+    for (var m = 0; m < 16; m++) {
+      var rec = images.get(base + m);
+      if (rec && rec.ready) return true;
+    }
+    return false;
+  };
+
+  CC.Render.__wall3dReady = function () {
+    var count = Object.create(null);
+    images.forEach(function (rec, key) {
+      if (!rec.ready) return;
+      var lvl = (key / 16) | 0;
+      count[lvl] = (count[lvl] || 0) + 1;
+    });
+    for (var k in count) if (count[k] >= 16) return true;
+    return false;
+  };
+
   // Высота 3D-верхушки для HP-бара прогона. 0 — ни один сегмент ещё не
   // загружен, render.js остаётся на 2.5D-высоте.
   CC.Render.__wall3dTop = function (run) {

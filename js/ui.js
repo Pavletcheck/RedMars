@@ -301,6 +301,9 @@ CC.UI = (function () {
   const buyPlatX = document.getElementById('buyplat-x');
 
   const cards = {};
+  // Бой, для которого уже собрана панель войск: карточки строятся один раз
+  // на входе, высадка их не пересобирает.
+  let armyBuiltFor = null;
   const cache = {};
   // Иконки сбора: пул элементов по id постройки, чтобы не пересоздавать DOM.
   const collectNodes = {};
@@ -9048,17 +9051,83 @@ CC.UI = (function () {
     return res;
   }
 
+  // Панель боя: слева только натренированные войска, затем разделитель,
+  // справа доступные герои. На узком экране герои больше не вытесняют
+  // войска за край. Состав фиксируется на входе в бой.
   function buildArmy() {
     armyEl.innerHTML = '';
+    for (const key in cards) delete cards[key];
 
-    // Пять героев идут первыми: на 844 их карточки видны без прокрутки.
-    // Каждый высаживается один раз, уровень общий, место в армии — 0.
+    const S = CC.Battle && CC.Battle.state;
+    if (!S) return;
+    const army = S.army || {};
+    let trained = 0;
+
+    // Только реально натренированные войска: 32 карточки с нулями
+    // на узкой панели бесполезны и прячут героев.
+    CC.ARMY_ORDER.forEach(function (type) {
+      if (!(army[type] > 0)) return;
+      const d = CC.TROOPS[type];
+      const el = document.createElement('div');
+      el.className = 'troop';
+      el.dataset.type = type;
+      const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
+      const lvl = CC.Game && need > CC.Game.townhallLevel() ? 1 : CC.Game.troopLevel(type);
+      const art = cardArt('troop', type, 64, lvl, 'troop__art');
+      el.innerHTML =
+        '<span class="troop__lvl">Ур. ' + lvl + '</span>' +
+        '<span class="troop__icon cc-icon" data-type="' + type + '"' +
+        (art ? ' data-art="1"' : '') +
+        ' style="background:' + d.color + '">' + (art || d.icon) + '</span>' +
+        '<span class="troop__name">' + d.name + '</span>' +
+        '<span class="troop__req hidden"></span>' +
+        '<span class="troop__count">×' + army[type] + '</span>';
+
+      el.addEventListener('click', function () {
+        if (el.classList.contains('is-locked')) {
+          const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
+          toast('Откроется на ' + need + ' уровне центра');
+          return;
+        }
+        CC.Battle.select(type);
+        if (CC.Battle.state) CC.Battle.state.selectedSpell = null;
+        sync();
+      });
+
+      armyEl.appendChild(el);
+      cards[type] = el;
+      delete cache[type];
+      trained++;
+    });
+
+    if (!trained) {
+      const empty = document.createElement('span');
+      empty.className = 'army-empty';
+      empty.textContent = 'Нет войск';
+      armyEl.appendChild(empty);
+    }
+
+    // Герои — только открытые и ещё не высаженные. Каждый высаживается
+    // один раз, уровень общий, место в армии — 0.
     const heroes = CC.Game.heroList ? CC.Game.heroList() : [];
+    const available = [];
     for (let i = 0; i < heroes.length; i++) {
       const h = heroes[i];
+      if (!h.unlocked) continue;
+      if (!(S.heroes && S.heroes[h.id] > 0)) continue;
+      available.push(h);
+    }
+
+    if (available.length) {
+      const sep = document.createElement('span');
+      sep.className = 'army-sep';
+      sep.textContent = 'Герои';
+      armyEl.appendChild(sep);
+    }
+
+    available.forEach(function (h, i) {
       const el = document.createElement('div');
-      el.className = 'troop troop_hero troop_hero_' + h.id +
-        (h.unlocked ? '' : ' is-locked');
+      el.className = 'troop troop_hero troop_hero_' + h.id;
       el.dataset.type = 'hero';
       el.dataset.heroKind = h.id;
       const base = CC.TROOPS[h.base] || {};
@@ -9080,15 +9149,11 @@ CC.UI = (function () {
         icon +
         '<span class="troop__name">' + escHtml(h.name) + '</span>' +
         '<span class="troop__req hidden"></span>' +
-        '<span class="troop__count">×1</span>';
+        '<span class="troop__count">×' + (S.heroes[h.id] | 0) + '</span>';
 
       el.addEventListener('click', function () {
-        if (el.classList.contains('is-locked')) {
-          toast('Откроется с центра ' + h.minTh);
-          return;
-        }
-        const S = CC.Battle && CC.Battle.state;
-        if (!S || !S.heroes || !(S.heroes[h.id] > 0)) {
+        const now = CC.Battle && CC.Battle.state;
+        if (!now || !now.heroes || !(now.heroes[h.id] > 0)) {
           toast('Герой уже высажен');
           return;
         }
@@ -9099,39 +9164,8 @@ CC.UI = (function () {
 
       armyEl.appendChild(el);
       cards['hero:' + h.id] = el;
+      delete cache['hero:' + h.id];
       if (i === 0) cards.hero = el;
-    }
-
-    CC.ARMY_ORDER.forEach(function (type) {
-      const d = CC.TROOPS[type];
-      const el = document.createElement('div');
-      el.className = 'troop';
-      el.dataset.type = type;
-      const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
-      const lvl = CC.Game && need > CC.Game.townhallLevel() ? 1 : CC.Game.troopLevel(type);
-      const art = cardArt('troop', type, 64, lvl, 'troop__art');
-      el.innerHTML =
-        '<span class="troop__lvl">Ур. ' + lvl + '</span>' +
-        '<span class="troop__icon cc-icon" data-type="' + type + '"' +
-        (art ? ' data-art="1"' : '') +
-        ' style="background:' + d.color + '">' + (art || d.icon) + '</span>' +
-        '<span class="troop__name">' + d.name + '</span>' +
-        '<span class="troop__req hidden"></span>' +
-        '<span class="troop__count">×0</span>';
-
-      el.addEventListener('click', function () {
-        if (el.classList.contains('is-locked')) {
-          const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
-          toast('Откроется на ' + need + ' уровне центра');
-          return;
-        }
-        CC.Battle.select(type);
-        if (CC.Battle.state) CC.Battle.state.selectedSpell = null;
-        sync();
-      });
-
-      armyEl.appendChild(el);
-      cards[type] = el;
     });
   }
 
@@ -9155,6 +9189,14 @@ CC.UI = (function () {
   function syncBattle() {
     const S = CC.Battle.state;
     if (!S) return;
+
+    // Новый бой — новая панель: только натренированные войска и доступные
+    // герои. Высадка внутри боя карточки не пересобирает.
+    if (armyBuiltFor !== S) {
+      armyBuiltFor = S;
+      buildArmy();
+    }
+
     const pvp = S.kind === 'pvp';
     const replay = S.kind === 'replay';
     const th = CC.Game.townhallLevel();
@@ -9279,7 +9321,8 @@ CC.UI = (function () {
       if (cache[type] === key) continue;
       cache[type] = key;
 
-      el.querySelector('.troop__count').textContent = '×' + n;
+      const countEl = el.querySelector('.troop__count');
+      if (countEl) countEl.textContent = '×' + n;
       el.classList.toggle('is-empty', n === 0 && !locked);
       el.classList.toggle('is-locked', locked);
       el.classList.toggle('is-selected', S.selected === type && !locked);

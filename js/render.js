@@ -2879,8 +2879,11 @@ CC.Render = (function () {
     let l = 1;
     try {
       if (b && typeof b.__level === 'number') l = b.__level;
+      // В бою/на арене у постройки свой level, а id — боевой, не из базы.
+      // Раньше CC.Game.level(b.id) находил чужое здание игрока и подставлял
+      // его уровень: на канве оставался 3D-ассет прошлой ступени.
+      else if (b && typeof b.level === 'number' && isFinite(b.level)) l = b.level;
       else if (CC.Game && typeof CC.Game.level === 'function') l = CC.Game.level(b.id);
-      else if (b && typeof b.level === 'number') l = b.level;
     } catch (e) {
       l = 1;
     }
@@ -8742,9 +8745,13 @@ CC.Render = (function () {
     return null;
   }
 
-  // 3D-кадр снят под квадратное пятно foot×foot. Если фактическое пятно
-  // меньше по площади, кадр сжимаем по корню отношения площадей: 2 клетки
-  // вместо 4 → ×0.707. Командный центр остаётся 2×2 и идёт без сжатия.
+  // 3D-кадр снят под квадратное пятно foot×foot. 2×2 (командный центр)
+  // идёт 1:1. Для двухклеточного пятна (2×1) кадр сжимается не по площади
+  // (было ×0.707), а по фактическому основанию: у всех 2×2-артов площадка
+  // занимает ~1.9 клетки по каждой оси, поэтому k=0.47 кладёт её в ромб
+  // 1×2 с запасом ~0.05 тайла. Один коэффициент на все 2×1.
+  const BUILDING3D_K2CELL = 0.47;
+
   function building3dCellsOk(cfg, b) {
     const f = cfg.foot || 1;
     const w = b.w || 1;
@@ -8757,6 +8764,7 @@ CC.Render = (function () {
     const w = b.w || 1;
     const h = b.h || 1;
     if (w === f && h === f) return 1;
+    if (f === 2 && w * h === 2) return BUILDING3D_K2CELL;
     const k = Math.sqrt((w * h) / (f * f));
     return isFinite(k) && k > 0 ? k : 0;
   }
@@ -12878,13 +12886,17 @@ CC.Render = (function () {
     const dx = u.x - m.x;
     const dy = u.y - m.y;
     const moved = Math.hypot(dx, dy);
+    // Гуляющие на базе идут 0.16–0.5 тайла/с: за кадр это 0.003–0.008,
+    // поэтому старый порог 0.008 не включал walk-кадры и юниты «скользили».
+    // Любое заметное смещение — шаг; пауза гасит анимацию даже при пути.
+    const paused = u.pause > 0;
 
-    if (moved > 0.002) {
+    if (!paused && moved > 0.002) {
       const d = dirFromDelta(dx, dy);
       if (d >= 0) m.dir = d;
       m.phase += moved / 0.22;
-      m.walking = moved > 0.008;
-    } else if (u.path && u.path.length) {
+      m.walking = true;
+    } else if (!paused && u.path && u.path.length) {
       const s = u.path[0];
       if (s && typeof s.x === 'number') {
         const d = dirFromDelta(s.x + 0.5 - u.x, s.y + 0.5 - u.y);
@@ -12892,7 +12904,7 @@ CC.Render = (function () {
       }
       m.walking = true;
       m.phase += 0.09;
-    } else if (u.tx != null && u.ty != null && !(u.pause > 0)) {
+    } else if (!paused && u.tx != null && u.ty != null) {
       const d = dirFromDelta(u.tx - u.x, u.ty - u.y);
       if (d >= 0) m.dir = d;
       m.walking = Math.hypot(u.tx - u.x, u.ty - u.y) > 0.12;
@@ -18509,11 +18521,32 @@ CC.Render = (function () {
   function drawEntities(ctx, buildings, units, traps) {
     const list = [];
     const runs = wallRuns(buildings);
+    const cells = wallCells(buildings);
+
+    // Соседи по сетке нужны и для подложки: если каждая клетка прогона
+    // реально уходит в 3D, широкий 2.5D-газон под ней — лишняя коричневая
+    // плита на 1–2 клетки вокруг сегментов. Тогда 3D-спрайт рисует
+    // собственное основание и мягкую тень сам.
+    const wallByCell = Object.create(null);
+    for (let i = 0; i < cells.length; i++) {
+      wallByCell[cells[i].x + ',' + cells[i].y] = cells[i];
+    }
+    function run3dReady(run) {
+      if (!run || !run.cells || !run.cells.length) return false;
+      if (!CC.Render || typeof CC.Render.__wall3dHasCell !== 'function') return false;
+      for (let i = 0; i < run.cells.length; i++) {
+        const c = run.cells[i];
+        const s = wallByCell[c.x + ',' + c.y];
+        if (!s || !CC.Render.__wall3dHasCell(s.bits, s.lvl)) return false;
+      }
+      return true;
+    }
 
     // газоны и тени стен — один раз и под всеми постройками, без двойных полос
     for (let i = 0; i < runs.length; i++) {
       const r = runs[i];
       if (!footprintVisible(r.x, r.y, r.x + r.w, r.y + r.h, 80)) continue;
+      if (run3dReady(r)) continue;
       grassPad(ctx, r.x, r.y, r.x + r.w, r.y + r.h);
       castShadow(ctx, r.x, r.y, r.x + r.w, r.y + r.h, 0.9);
     }
@@ -18527,7 +18560,6 @@ CC.Render = (function () {
 
     // каждая клетка стены — отдельный элемент сортировки; соседей берём
     // по сетке, поэтому прогоны больше не влияют на форму стыков
-    const cells = wallCells(buildings);
     for (let i = 0; i < cells.length; i++) {
       const s = cells[i];
       if (!footprintVisible(s.x, s.y, s.x + 1, s.y + 1, wallTopPx(s.lvl) + 8)) continue;
