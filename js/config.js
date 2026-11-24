@@ -186,20 +186,20 @@ CC.BUILDING_META = {
   },
   eagle: {
     name: 'Артиллерия «Молот»', desc: 'дальний площадной залп',
-    role: 'дальняя', w: 2, h: 2, height: 58,
+    role: 'дальняя', w: 2, h: 1, height: 58,
     color: '#5d4b3a', top: '#d7a85a',
     range: 11, minRange: 4, rate: 1, splash: 1.8,
     targetsAir: true, special: 'eagle'
   },
   scattershot: {
     name: 'Картечная башня', desc: 'площадной огонь по земле и воздуху',
-    role: 'площадная', w: 2, h: 2, height: 52,
+    role: 'площадная', w: 2, h: 1, height: 52,
     color: '#5a5148', top: '#c7a272',
     range: 11, rate: 1, splash: 1.8, targetsAir: true, special: 'scattershot'
   },
   monolith: {
     name: 'Обелиск', desc: 'мощный одиночный удар',
-    role: 'тяжёлая', w: 2, h: 2, height: 64,
+    role: 'тяжёлая', w: 2, h: 1, height: 64,
     color: '#3f4550', top: '#9fa9c0',
     range: 11, rate: 1, targetsAir: true, special: 'monolith'
   },
@@ -291,62 +291,62 @@ CC.BUILDING_META = {
   },
   barracks: {
     name: 'Ангар', desc: 'даёт места в армии',
-    role: 'армия', w: 2, h: 2, height: 38,
+    role: 'армия', w: 2, h: 1, height: 38,
     color: '#7b5a3a', top: '#c9a06a', housing: true
   },
   train: {
     name: 'Казарма', desc: 'тренирует войска',
-    role: 'армия', w: 2, h: 2, height: 34,
+    role: 'армия', w: 2, h: 1, height: 34,
     color: '#6f5a42', top: '#d1b07a', training: true
   },
   darktrain: {
     name: 'Казарма плазмы', desc: 'тренирует тёмные войска',
-    role: 'армия', w: 2, h: 2, height: 34,
+    role: 'армия', w: 2, h: 1, height: 34,
     color: '#45394f', top: '#b984d8', training: true, darkTraining: true
   },
   spellfactory: {
     name: 'Генератор аномалий', desc: 'готовит заклинания',
-    role: 'армия', w: 2, h: 2, height: 40,
+    role: 'армия', w: 2, h: 1, height: 40,
     color: '#3d5a7a', top: '#8fd0ff', spells: true
   },
   darkspellfactory: {
     name: 'Резонатор плазмы', desc: 'готовит тёмные заклинания',
-    role: 'армия', w: 2, h: 2, height: 40,
+    role: 'армия', w: 2, h: 1, height: 40,
     color: '#443553', top: '#c28fe8', spells: true, darkSpells: true
   },
   lab: {
     name: 'Исследовательский центр', desc: 'изучает войска и заклинания',
-    role: 'развитие', w: 2, h: 2, height: 36,
+    role: 'развитие', w: 2, h: 1, height: 36,
     color: '#2f6b6b', top: '#63c9c1', research: true
   },
   herohall: {
     name: 'Академия героя', desc: 'готовит и качает героев',
-    role: 'развитие', w: 2, h: 2, height: 48,
+    role: 'развитие', w: 2, h: 1, height: 48,
     color: '#8a3a32', top: '#d9a441', heroHall: true
   },
   pethouse: {
     name: 'Питомник', desc: 'дом питомцев героев',
-    role: 'развитие', w: 2, h: 2, height: 38,
+    role: 'развитие', w: 2, h: 1, height: 38,
     color: '#5a3a4a', top: '#d77fa0', petHouse: true
   },
   blacksmith: {
     name: 'Оружейная', desc: 'снаряжение героев',
-    role: 'развитие', w: 2, h: 2, height: 36,
+    role: 'развитие', w: 2, h: 1, height: 36,
     color: '#554a3e', top: '#c8a15c', equipment: true
   },
   workshop: {
     name: 'Сборочный цех', desc: 'собирает осадные машины',
-    role: 'развитие', w: 2, h: 2, height: 38,
+    role: 'развитие', w: 2, h: 1, height: 38,
     color: '#4d5a4a', top: '#b9c99a', siege: true
   },
   clancastle: {
     name: 'Орбитальная станция', desc: 'резерв и подкрепление',
-    role: 'армия', w: 2, h: 2, height: 46,
+    role: 'армия', w: 2, h: 1, height: 46,
     color: '#4a5468', top: '#a9b8d8'
   },
   squadbarracks: {
     name: 'Казарма эскадрильи', desc: 'режим отрядов',
-    role: 'армия', w: 2, h: 2, height: 34,
+    role: 'армия', w: 2, h: 1, height: 34,
     color: '#5a4e3a', top: '#c8b07a', squad: true
   },
   mine: {
@@ -1762,6 +1762,10 @@ function ccWallRing(x0, y0, x1, y1, gaps) {
    с разрывами; лимит берётся из CC.limitAt('wall', th), на TH19 — 350. */
 
 CC.LEVEL_SEED_BASE = 20261118;
+/* Солёный сид отдельных секторов. После перехода армейских зданий на 1×2
+   раскладка сектора 40 (Разлом 10, TH4) стала тупиком для максимальной
+   армии; +9 даёт плотный, но проходимый сектор. Остальные 99 не меняются. */
+const LEVEL_SEED_SALT = { 39: 9 };
 CC.LEVEL_ERAS = 10;
 
 function ccLevelRng(seed) {
@@ -1870,7 +1874,8 @@ CC.LevelGen = {
     const capTh = th;
     // Плотность и уровни растут от первого сектора эпохи к десятому.
     const progress = finalLevel ? 1 : (0.45 + 0.55 * within / 9);
-    const seed = (CC.LEVEL_SEED_BASE + i * 7919) >>> 0;
+    const seed = (CC.LEVEL_SEED_BASE + i * 7919 +
+      (LEVEL_SEED_SALT[i] || 0)) >>> 0;
     const rnd = ccLevelRng(seed);
     const layout = [];
     const zones = [];
@@ -1889,7 +1894,7 @@ CC.LevelGen = {
       const lim = CC.limitAt(type, capTh);
       if (!lim) return finalLevel ? 1 : 0;
       let n;
-      if (finalLevel) n = Math.max(1, Math.round(lim * 0.42));
+      if (finalLevel) n = Math.max(1, Math.round(lim * 0.55));
       else n = Math.max(1, Math.min(lim,
         Math.round(lim * (era >= 5 ? (0.26 + 0.28 * within / 9)
           : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.45 * within / 9))))));
@@ -1905,7 +1910,7 @@ CC.LevelGen = {
     function trapCountAt(type) {
       const lim = CC.limitAt(type, capTh);
       if (!lim) return 0;
-      if (finalLevel) return Math.max(1, Math.round(lim * 0.40));
+      if (finalLevel) return Math.max(1, Math.round(lim * 0.50));
       return Math.max(1, Math.min(lim,
         Math.round(lim * (era >= 5 ? (0.26 + 0.28 * within / 9)
           : (era >= 4 ? (0.30 + 0.34 * within / 9) : (0.35 + 0.45 * within / 9))))));
@@ -2148,7 +2153,7 @@ CC.LevelGen = {
     // Центр — 2×2, ближе к середине поля.
     putSolid('townhall', th, 'center');
 
-    // Оборона: крупные 4×4 первыми, чтобы им хватило места; все типы,
+    // Оборона: крупные пятна первыми, чтобы им хватило места; все типы,
     // доступные на этом TH, получают хотя бы одну постройку.
     const defList = [];
     for (let k = 0; k < CC_DEF_TYPES.length; k++) {

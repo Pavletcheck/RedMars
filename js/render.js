@@ -8709,6 +8709,25 @@ CC.Render = (function () {
     return null;
   }
 
+  // 3D-кадр снят под квадратное пятно foot×foot. Если фактическое пятно
+  // меньше по площади, кадр сжимаем по корню отношения площадей: 2 клетки
+  // вместо 4 → ×0.707. Командный центр остаётся 2×2 и идёт без сжатия.
+  function building3dCellsOk(cfg, b) {
+    const f = cfg.foot || 1;
+    const w = b.w || 1;
+    const h = b.h || 1;
+    return (w === f && h === f) || (f === 2 && w * h === 2);
+  }
+
+  function building3dScale(cfg, b) {
+    const f = cfg.foot || 1;
+    const w = b.w || 1;
+    const h = b.h || 1;
+    if (w === f && h === f) return 1;
+    const k = Math.sqrt((w * h) / (f * f));
+    return isFinite(k) && k > 0 ? k : 0;
+  }
+
   // Нарисовать 3D-кадр по центру футпринта. Для 2×2 пайплайн снимал
   // шире (ortho 4.0), поэтому кадр масштабируется под две клетки.
   function drawBuilding3d(ctx, b, lvl) {
@@ -8716,7 +8735,9 @@ CC.Render = (function () {
     if (!cfg) return false;
     const w = b.w || 1;
     const h = b.h || 1;
-    if (w !== cfg.foot || h !== cfg.foot) return false;
+    if (!building3dCellsOk(cfg, b)) return false;
+    const k = building3dScale(cfg, b);
+    if (!(k > 0)) return false;
     const img = building3dImage(b.type, lvl);
     if (!img) return false;
 
@@ -8725,7 +8746,8 @@ CC.Render = (function () {
     const cx = dx + (w - h) * TW / 4;
     const cy = dy + (w + h) * TH / 4;
 
-    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) / BUILDING3D_ROOT;
+    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) /
+      BUILDING3D_ROOT * k;
     try {
       ctx.drawImage(img, cx - S * BUILDING3D_AX, cy - S * BUILDING3D_AY, S, S);
     } catch (e) {
@@ -8736,16 +8758,18 @@ CC.Render = (function () {
 
   // Высота видимой верхушки 3D-модели над землёй в мировых px.
   // 0 — картинки ещё нет, пусть работает векторная crown().
-  function building3dCrown(type, lvl) {
+  function building3dCrown(b, lvl) {
+    const type = b && b.type;
     const cfg = BUILDING3D_ART[type];
     const level = building3dLevel(type, lvl);
-    if (!cfg || !level) return 0;
+    if (!cfg || !level || !building3dCellsOk(cfg, b)) return 0;
     const key = type + '|' + level;
     const img = building3d.images[key];
     if (!img || !img.complete || img.naturalWidth <= 0) return 0;
     const top = building3d.tops[key];
     if (!(top >= 0)) return 0;
-    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) / BUILDING3D_ROOT;
+    const S = TW * (BUILDING3D_ORTHO[cfg.foot] || BUILDING3D_ORTHO[1]) /
+      BUILDING3D_ROOT * building3dScale(cfg, b);
     const h = (BUILDING3D_AY - top) * S;
     return h > 0 ? h : 0;
   }
@@ -8833,8 +8857,7 @@ CC.Render = (function () {
     const trapOk = type === 'ambush'
       ? variant !== 'open'
       : ((type !== 'mine' && type !== 'spring') || variant !== 'spent');
-    const use3d = !!cfg3d && !site && trapOk &&
-      (b.w || 1) === cfg3d.foot && (b.h || 1) === cfg3d.foot;
+    const use3d = !!cfg3d && !site && trapOk && building3dCellsOk(cfg3d, b);
     const sp = !use3d && spritesOn && type !== 'cannon' && tilePx <= 96
       ? spriteFor(b, lvl) : null;
 
@@ -8983,13 +9006,15 @@ CC.Render = (function () {
     return ART_NOMINAL[type] || 0;
   }
 
-  // Во сколько раз арт надо сжать/растянуть под фактическое пятно.
+  // Во сколько раз арт надо сжать под фактическое пятно. Для неквадратного
+  // пятна берём корень отношения площадей: 1×2 от номинала 2×2 — ×0.707,
+  // иначе линейный min(w,h) давал бы слишком мелкий рисунок.
   function artScale(b) {
     const n = artNominal(b && b.type);
     if (!n) return 1;
     const w = Math.max(1, b.w || 1);
     const h = Math.max(1, b.h || 1);
-    const k = Math.min(w, h) / n;
+    const k = Math.sqrt((w * h) / (n * n));
     return isFinite(k) && k > 0 ? k : 1;
   }
 
@@ -19057,7 +19082,7 @@ CC.Render = (function () {
         ? variant !== 'open'
         : ((b.type !== 'mine' && b.type !== 'spring') || variant !== 'spent');
       if (drawn3d) {
-        const h3d = building3dCrown(b.type, lvl);
+        const h3d = building3dCrown(b, lvl);
         if (h3d > 0) return h3d;
       }
     }
