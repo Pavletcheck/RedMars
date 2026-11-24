@@ -405,7 +405,7 @@ CC.Render = (function () {
      по хэшу мировых клеток, поэтому повтор плитки не читается. */
 
   const bgCache = {
-    key: 'regolith-v2', canvas: null, pattern: null, patternCtx: null,
+    key: 'regolith-v2', canvas: null,
     paints: 0, pad: 0, shift: 0
   };
   const BG_TILE = 1024;
@@ -667,23 +667,6 @@ CC.Render = (function () {
       bgCache.canvas = null;
     }
     return bgCache.canvas;
-  }
-
-  function regolithPattern(ctx) {
-    const tile = ensureRegolithTile();
-    if (!tile) return null;
-    if (bgCache.patternCtx !== ctx) {
-      bgCache.pattern = null;
-      bgCache.patternCtx = ctx;
-    }
-    if (!bgCache.pattern) {
-      try {
-        bgCache.pattern = ctx.createPattern(tile, 'repeat');
-      } catch (e) {
-        bgCache.pattern = null;
-      }
-    }
-    return bgCache.pattern;
   }
 
   // Экранная подложка: тот же реголит без неба, солнца и горизонта.
@@ -8767,6 +8750,67 @@ CC.Render = (function () {
     return h > 0 ? h : 0;
   }
 
+  // Оборонные 3D-модели — статичный PNG, поэтому направление на цель
+  // терялось (в 2.5D его показывал поворот ствола). Поверх 3D-кадра
+  // рисуем короткий ствол по b.aim: только для оборон из списка, только
+  // когда кадр реально лёг, и только если в бою есть куда целиться.
+  const AIM3D = {
+    cannon: 1, archer: 1, mage: 1, airdef: 1, mortar: 1, xbow: 1,
+    ricochet: 1, multigear: 1, firespitter: 1, multiarcher: 1,
+    superwizard: 1, firecracker: 1, revenge: 1
+  };
+
+  function drawAim3d(ctx, b, lvl) {
+    if (!AIM3D[b.type]) return;
+    if (typeof b.aim !== 'number' || !isFinite(b.aim)) return;
+
+    const p = P(b.x + (b.w || 1) / 2, b.y + (b.h || 1) / 2);
+    const f = aimVec(b);
+    const rx = -f.y;
+    const ry = f.x;
+    const top = crown(b, lvl);
+    const cy = p.y - Math.max(9, top * 0.58);
+    const len = 19 + Math.min(8, (lvl || 1) * 0.55);   // 0.35–0.5 тайла
+    const wid = tilePx < 42 ? 2 : 3;
+    const bx = p.x - f.x * 2;
+    const by = cy - f.y * 2;
+
+    ctx.save();
+    // тёмный металл ствола
+    ctx.strokeStyle = 'rgba(26,24,22,.92)';
+    ctx.lineWidth = wid;
+    ctx.lineCap = 'butt';
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + f.x * len, by + f.y * len);
+    ctx.stroke();
+
+    // светлая верхняя грань
+    ctx.strokeStyle = 'rgba(196,190,178,.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bx - rx * 0.9, by - ry * 0.9 - 0.6);
+    ctx.lineTo(bx + f.x * len - rx * 0.9, by + f.y * len - ry * 0.9 - 0.6);
+    ctx.stroke();
+
+    // янтарный акцент у дула
+    const ax = bx + f.x * len * 0.72;
+    const ay = by + f.y * len * 0.72;
+    ctx.strokeStyle = 'rgba(255,176,74,.9)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ax - rx * wid * 0.75, ay - ry * wid * 0.75);
+    ctx.lineTo(ax + rx * wid * 0.75, ay + ry * wid * 0.75);
+    ctx.stroke();
+
+    // дуло
+    const mx = bx + f.x * len;
+    const my = by + f.y * len;
+    spot(ctx, mx, my, 1.9, 'rgba(255,196,96,.92)');
+    spot(ctx, mx, my, 0.9, 'rgba(24,20,18,.95)');
+    ctx.restore();
+  }
+
   function drawBuilding(ctx, b) {
     const st = CC.UI && CC.UI.state;
     const lvl = levelOf(b);
@@ -8794,9 +8838,10 @@ CC.Render = (function () {
     const sp = !use3d && spritesOn && type !== 'cannon' && tilePx <= 96
       ? spriteFor(b, lvl) : null;
 
+    let drew3d = false;
     function body() {
       if (sp) drawSprite(ctx, sp, b);
-      else if (use3d && drawBuilding3d(ctx, b, lvl)) { /* 3D-кадр */ }
+      else if (use3d && drawBuilding3d(ctx, b, lvl)) drew3d = true;
       else drawBuildingBody(ctx, b);
     }
 
@@ -8891,6 +8936,7 @@ CC.Render = (function () {
 
     body();
     deco();
+    if (drew3d) drawAim3d(ctx, b, lvl);
     maxBand(ctx, b, lvl);
     highTier(ctx, b, lvl);
   }
@@ -12386,8 +12432,12 @@ CC.Render = (function () {
   const UNIT3D_V2_GY = 206;
   const UNIT3D_V2_LOAD = 12;       // одновременных запросов
 
+  // phase 1 — idle+walk (первый экран), phase 2 — attack+death (при входе
+  // в бой). total/loaded считают весь набор, coreTotal/coreLoaded — только
+  // phase 1: готовность типа и finish() не ждут вторую фазу.
   const unit3dV2 = {
     started: false, ready: false, total: 0, loaded: 0, failed: 0,
+    coreTotal: 0, coreLoaded: 0, phase2Started: false, beginPhase2: null,
     readyTypes: 0, frames: 0, types: {}
   };
 
@@ -12402,9 +12452,28 @@ CC.Render = (function () {
     if (!rec || !rec.ready) return null;
     const list = rec.sprites[anim];
     if (!list) return null;
-    const byDir = list[dir < 0 ? 0 : (dir & 7)];
+    const dd = dir < 0 ? 0 : (dir & 7);
+    const byDir = list[dd];
     if (!byDir) return null;
-    return byDir[frame] || null;
+    let spr = byDir[frame] || null;
+    // attack приезжает только во второй фазе: до неё держим idle-кадр
+    // того же направления, чтобы не было скачка на старый вектор.
+    if (!spr && anim === 'attack') {
+      const idle = rec.sprites.idle;
+      if (idle && idle[dd]) spr = idle[dd][frame % 2] || idle[dd][0] || null;
+    }
+    return spr;
+  }
+
+  // Есть ли именно этот кадр (без подмены attack→idle): нужен кэшу
+  // unitSpriteV2, чтобы подмена не залипла под ключом attack.
+  function unit3dV2Has(type, anim, dir, frame) {
+    const rec = unit3dV2.types[type];
+    if (!rec || !rec.ready) return false;
+    const list = rec.sprites[anim];
+    if (!list) return false;
+    const byDir = list[dir < 0 ? 0 : (dir & 7)];
+    return !!(byDir && byDir[frame]);
   }
 
   function bakeUnit3dV2(type, anim, dir, frame, img) {
@@ -12443,20 +12512,31 @@ CC.Render = (function () {
     const types = Object.keys(UNIT3D_V2);
     const queue = [];
 
+    // Фаза 1 — только idle/walk: этого хватает деревне и прогулке.
     types.forEach(function (type) {
-      const rec = { sprites: {}, ready: false, broken: false, loaded: 0, total: 0 };
+      const rec = {
+        sprites: {}, ready: false, broken: false, loaded: 0, total: 0,
+        coreLoaded: 0, coreTotal: 0, p2: false
+      };
       Object.keys(UNIT3D_V2_ANIMS).forEach(function (anim) {
         const n = UNIT3D_V2_ANIMS[anim];
         const dirs = new Array(8);
         for (let d = 0; d < 8; d++) dirs[d] = new Array(n).fill(null);
         rec.sprites[anim] = dirs;
         rec.total += n * 8;
-        for (let d = 0; d < 8; d++) {
-          for (let f = 0; f < n; f++) queue.push({ type: type, anim: anim, dir: d, frame: f });
+        const core = anim === 'idle' || anim === 'walk';
+        if (core) {
+          rec.coreTotal += n * 8;
+          for (let d = 0; d < 8; d++) {
+            for (let f = 0; f < n; f++) {
+              queue.push({ type: type, anim: anim, dir: d, frame: f, core: true });
+            }
+          }
         }
       });
       unit3dV2.types[type] = rec;
       unit3dV2.total += rec.total;
+      unit3dV2.coreTotal += rec.coreTotal;
     });
 
     let next = 0;
@@ -12472,9 +12552,13 @@ CC.Render = (function () {
     function finish(task, ok) {
       const rec = unit3dV2.types[task.type];
       active--;
-      if (!ok) rec.broken = true;
+      if (!ok && task.core) rec.broken = true;
       rec.loaded++;
-      if (rec.loaded >= rec.total) {
+      if (task.core) {
+        rec.coreLoaded++;
+        unit3dV2.coreLoaded++;
+      }
+      if (!rec.ready && rec.coreLoaded >= rec.coreTotal) {
         if (!rec.broken) {
           rec.ready = true;
           unit3dV2.readyTypes++;
@@ -12521,14 +12605,49 @@ CC.Render = (function () {
 
     function pump() {
       while (active < UNIT3D_V2_LOAD && next < queue.length) {
-        start(queue[next++]);
+        const task = queue[next++];
+        const rec = unit3dV2.types[task.type];
+        // тип уже отвалился на ядре — его кадры не нужны
+        if (rec && rec.broken) continue;
+        start(task);
       }
     }
+
+    // Фаза 2 — attack+death: ставим в тот же pump с лимитом 12 только
+    // при первом входе в бой, чтобы первый экран не тянул ~2.36 МБ.
+    function beginPhase2() {
+      if (unit3dV2.phase2Started) return;
+      unit3dV2.phase2Started = true;
+      types.forEach(function (type) {
+        const rec = unit3dV2.types[type];
+        if (!rec || rec.p2) return;
+        rec.p2 = true;
+        ['attack', 'death'].forEach(function (anim) {
+          const n = UNIT3D_V2_ANIMS[anim];
+          for (let d = 0; d < 8; d++) {
+            for (let f = 0; f < n; f++) {
+              queue.push({ type: type, anim: anim, dir: d, frame: f, core: false });
+            }
+          }
+        });
+      });
+      pump();
+    }
+    unit3dV2.beginPhase2 = beginPhase2;
 
     pump();
   }
 
   unit3dV2Begin();
+
+  // Первый вход в бой догружает attack/death (фаза 2). Деревня и первый
+  // экран эти кадры не тянут; вызов идёт из draw-пути боя.
+  function warmBattleUnits() {
+    if (unit3dV2.phase2Started) return;
+    if (unit3dV2.started && typeof unit3dV2.beginPhase2 === 'function') {
+      unit3dV2.beginPhase2();
+    }
+  }
 
   // Кадр анимации для живого юнита. Удар — окно u.atk (0.18 с), шаг —
   // фаза unitMotion, покой — медленное дыхание 2 кадра. Мёртвый юнит
@@ -12563,6 +12682,12 @@ CC.Render = (function () {
   // Обёртка-кэш: drawUnit ждёт { canvas, ax, ay, w, h }. Сами кадры уже
   // уменьшены при загрузке; здесь один объект на сочетание кадр+направление.
   function unitSpriteV2(type, dir, anim, frame) {
+    // attack, пока не приехал во второй фазе, берём idle-кадром и под
+    // ключом idle: иначе подмена залипнет в кэше после догрузки атаки.
+    if (anim === 'attack' && !unit3dV2Has(type, 'attack', dir, frame)) {
+      anim = 'idle';
+      frame = frame % 2;
+    }
     const canvas = unit3dV2Sprite(type, anim, dir, frame);
     const cfg = UNIT3D_V2[type];
     if (!canvas || !cfg) return null;
@@ -12600,6 +12725,13 @@ CC.Render = (function () {
     if (tilePx <= UNIT3D_V2_HI_ZOOM) return null;
     const cfg = UNIT3D_V2[type];
     if (!cfg || !unit3dV2Ready(type)) return null;
+
+    // attack, который ещё не приехал во второй фазе, показываем idle-кадром
+    // того же направления — так же, как unit3dV2Sprite.
+    if (anim === 'attack' && !unit3dV2Has(type, 'attack', dir, frame)) {
+      anim = 'idle';
+      frame = frame % 2;
+    }
 
     const key = type + '|' + anim + '|' + dir + '|' + frame;
     const hit = unit3dV2Hi.get(key);
@@ -17129,8 +17261,11 @@ CC.Render = (function () {
   }
 
   const collapses = [];
-  for (let i = 0; i < 10; i++) {
-    collapses.push({ on: false, x: 0, y: 0, w: 1, h: 1, t: 0, dur: 0.6 });
+  for (let i = 0; i < 40; i++) {
+    collapses.push({
+      on: false, x: 0, y: 0, w: 1, h: 1, t: 0, dur: 0.6,
+      type: '', phase: 0, bits: []
+    });
   }
   let colNext = 0;
 
@@ -17165,6 +17300,20 @@ CC.Render = (function () {
     c.h = b.h || 1;
     c.t = 0;
     c.dur = 0.6;
+    c.type = b.type || '';
+    c.phase = 1;
+    // руины: 2–4 обломка считаем один раз, чтобы не сыпать частицами на кадр
+    c.bits.length = 0;
+    const bits = 2 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < bits; k++) {
+      c.bits.push({
+        u: 0.16 + Math.random() * 0.68,
+        v: 0.16 + Math.random() * 0.68,
+        r: 1.6 + Math.random() * 2.4,
+        a: Math.random() * Math.PI,
+        shape: Math.random() < 0.5 ? 0 : 1
+      });
+    }
 
     // пыль и обломки — тем крупнее, чем больше пятно постройки
     const col = debrisColor(b.type);
@@ -17193,12 +17342,56 @@ CC.Render = (function () {
       const c = collapses[i];
       if (!c.on) continue;
 
-      const k = Math.min(1, c.t / c.dur);
-      const a = 1 - k;
       const A = P(c.x, c.y);
       const B = P(c.x + c.w, c.y);
       const C = P(c.x + c.w, c.y + c.h);
       const D = P(c.x, c.y + c.h);
+
+      // фаза 2 — руины до конца боя: выжженное пятно и пара обломков
+      if (c.phase === 2) {
+        const rk = Math.min(1, (c.t - c.dur) / 0.25);
+        ctx.fillStyle = 'rgb(36,18,10)';
+        ctx.globalAlpha = 0.4 * rk;
+        diamond(ctx, A, B, C, D);
+        ctx.fill();
+
+        const cx = (A.x + B.x + C.x + D.x) / 4;
+        const cy = (A.y + B.y + C.y + D.y) / 4;
+        ctx.fillStyle = 'rgb(60,28,14)';
+        ctx.globalAlpha = 0.3 * rk;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 11 * c.w * rk, 11 * c.w * rk * GQ, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = PCOL[debrisColor(c.type)];
+        ctx.globalAlpha = 0.72 * rk;
+        for (let k = 0; k < c.bits.length; k++) {
+          const bit = c.bits[k];
+          const u = bit.u;
+          const v = bit.v;
+          const bx = (A.x * (1 - u) + B.x * u) * (1 - v) + (D.x * (1 - u) + C.x * u) * v;
+          const by = (A.y * (1 - u) + B.y * u) * (1 - v) + (D.y * (1 - u) + C.y * u) * v;
+          ctx.save();
+          ctx.translate(bx, by - bit.r * 0.5);
+          ctx.rotate(bit.a);
+          if (bit.shape) {
+            ctx.fillRect(-bit.r, -bit.r * 0.5, bit.r * 2, bit.r);
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(0, -bit.r);
+            ctx.lineTo(bit.r, 0);
+            ctx.lineTo(0, bit.r);
+            ctx.lineTo(-bit.r, 0);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+        continue;
+      }
+
+      const k = Math.min(1, c.t / c.dur);
+      const a = 1 - k;
       const cx = (A.x + B.x + C.x + D.x) / 4;
       const cy = (A.y + B.y + C.y + D.y) / 4;
       const sc = 1 - k * 0.12;
@@ -17289,7 +17482,11 @@ CC.Render = (function () {
     shake.amp = 0;
     flashList.length = 0;
     final.t = -1;
-    for (let i = 0; i < collapses.length; i++) collapses[i].on = false;
+    for (let i = 0; i < collapses.length; i++) {
+      collapses[i].on = false;
+      collapses[i].phase = 0;
+      collapses[i].bits.length = 0;
+    }
     clearUnitDeaths();
   }
 
@@ -17307,7 +17504,8 @@ CC.Render = (function () {
       const c = collapses[i];
       if (!c.on) continue;
       c.t += dt;
-      if (c.t >= c.dur) c.on = false;
+      // фаза 1 короткая (вспышка/оседание), дальше руины живут до resetTrack
+      if (c.phase === 1 && c.t >= c.dur) c.phase = 2;
     }
 
     const units = S.units || [];
@@ -19006,6 +19204,8 @@ CC.Render = (function () {
     drawBuildGrid(ctx);
 
     if (battle) {
+      // phase 2 3D-войск подтягиваем при первом входе в бой, не раньше
+      if (CC.App && CC.App.mode === 'battle') warmBattleUnits();
       pBudget = lod === 0 ? 12 : 22;
       trackBattle(S, 1 / 60);
       updateParticles(1 / 60);
@@ -20541,17 +20741,24 @@ CC.Render = (function () {
       return m ? { dir: m.dir, frame: m.frame, walking: m.walking } : null;
     },
     // загрузка 3D-биллбордов v2 barb/archer/giant: сколько PNG пришло/не
-    // нашлось и у скольких типов готовы все 104 кадра. Может быть ready
-    // по одному типу — остальные пока живут на векторном арте.
+    // нашлось и у скольких типов готова фаза 1 (idle+walk). attack/death
+    // грузятся второй фазой при входе в бой. Может быть ready по одному
+    // типу — остальные пока живут на векторном арте.
     __unit3d: function () {
       const types = {};
       Object.keys(unit3dV2.types).forEach(function (k) {
         const r = unit3dV2.types[k];
-        types[k] = { ready: !!r.ready, loaded: r.loaded, total: r.total };
+        types[k] = {
+          ready: !!r.ready, loaded: r.loaded, total: r.total,
+          coreLoaded: r.coreLoaded, coreTotal: r.coreTotal
+        };
       });
       return {
         ready: unit3dV2.ready, source: 'units3d-v2',
         total: unit3dV2.total, loaded: unit3dV2.loaded,
+        coreTotal: unit3dV2.coreTotal, coreLoaded: unit3dV2.coreLoaded,
+        phase: unit3dV2.phase2Started ? 2 : 1,
+        phase2Started: unit3dV2.phase2Started,
         failed: unit3dV2.failed, readyTypes: unit3dV2.readyTypes,
         frames: unit3dV2.frames, types: types,
         hi: unit3dV2Hi.size, hiWait: Object.keys(unit3dV2HiWait).length,
@@ -20592,6 +20799,8 @@ CC.Render = (function () {
       unitBakes.count = 0;
       unitBakes.hits = 0;
     },
+    // фаза 2 3D-войск (attack+death) — по входу в бой; tools тоже могут звать
+    warmBattleUnits: warmBattleUnits,
     // инструментам: нарисовать одного юнита и векторный арт без сцены.
     // art-check/scene-check используют это для контактных листов новых типов.
     __drawUnit: function (ctx, u) { drawUnit(ctx, u); },

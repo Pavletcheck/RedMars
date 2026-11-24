@@ -561,6 +561,7 @@ CC.UI = (function () {
       });
     }
     if (shopGrid) shopGrid.addEventListener('click', onShopClick);
+    if (shopGrid) shopGrid.addEventListener('scroll', onShopArtScroll);
     if (shopCats) {
       shopCats.addEventListener('click', function (e) {
         const btn = e.target.closest('[data-shop-cat]');
@@ -2401,6 +2402,7 @@ CC.UI = (function () {
 
   function closeShop() {
     shopOpen = false;
+    stopShopArt();
     if (shopEl) shopEl.classList.add('hidden');
   }
 
@@ -3047,6 +3049,190 @@ CC.UI = (function () {
       size + '" height="' + size + '" draggable="false" decoding="async">';
   }
 
+  /* Аудит A4: карточки терминала сначала рисуются с emoji, а canvas-арт
+     догружается порциями уже после вставки DOM. Иначе первое открытие
+     синхронно строило ~50 data-URI и блокировало main thread на ~230 мс.
+     Слот помечен data-art-*; paintShopArtSlot подменяет только его
+     содержимое и не трогает cache.shopSig и остальной грид. */
+  const SHOP_ART_CHUNK = 4;
+  const shopArt = {
+    gen: 0,      // поколение задачи: колбэки прошлых отрисовок молчат
+    queue: [],
+    idx: 0,
+    timer: null,
+    frame: null,
+    idle: null,
+    io: null
+  };
+
+  // Атрибуты слота: тип уже лежит в data-type рядом, здесь — как рисовать.
+  function shopArtAttrs(kind, size, level) {
+    return ' data-art-kind="' + kind + '" data-art-size="' + size +
+      '" data-art-level="' + level + '"';
+  }
+
+  // Остановить догрузку: закрытие терминала, смена категории или новая
+  // отрисовка грида. Уже нарисованный арт остаётся в DOM.
+  function stopShopArt() {
+    shopArt.gen++;
+    shopArt.queue = [];
+    shopArt.idx = 0;
+    if (shopArt.timer !== null) {
+      clearTimeout(shopArt.timer);
+      shopArt.timer = null;
+    }
+    if (shopArt.frame !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(shopArt.frame);
+    }
+    shopArt.frame = null;
+    if (shopArt.idle !== null && typeof cancelIdleCallback === 'function') {
+      cancelIdleCallback(shopArt.idle);
+    }
+    shopArt.idle = null;
+    if (shopArt.io) {
+      shopArt.io.disconnect();
+      shopArt.io = null;
+    }
+  }
+
+  // Пересечение слота с видимой частью грида. В тестовом DOM размеров нет.
+  function shopArtVisible(slot) {
+    if (!slot || !slot.getBoundingClientRect || !shopGrid ||
+        !shopGrid.getBoundingClientRect) return false;
+    const a = slot.getBoundingClientRect();
+    const b = shopGrid.getBoundingClientRect();
+    return a.bottom > b.top && a.top < b.bottom &&
+      a.right > b.left && a.left < b.right;
+  }
+
+  // Нарисовать арт одного слота. Ошибки canvas уже глотает cardArt.
+  function paintShopArtSlot(slot) {
+    if (!slot || !slot.getAttribute) return;
+    const kind = slot.getAttribute('data-art-kind');
+    const type = slot.getAttribute('data-type');
+    if (!kind || !type) return;
+    const size = Number(slot.getAttribute('data-art-size')) || 180;
+    const level = Number(slot.getAttribute('data-art-level')) || 1;
+    slot.removeAttribute('data-art-kind');
+    const art = cardArt(kind, type, size, level,
+      'shop-card__art term-card__art');
+    if (!art) return;
+    slot.innerHTML = art;
+    if (slot.classList) slot.classList.add('has-art');
+    const card = slot.closest ? slot.closest('.term-card') : null;
+    if (card && card.classList) card.classList.add('has-art');
+  }
+
+  // Карточка въехала в кадр при прокрутке — поднять её в начало очереди.
+  function promoteShopArtSlot(slot) {
+    if (!slot || !slot.getAttribute || !slot.getAttribute('data-art-kind')) return;
+    const i = shopArt.queue.indexOf(slot);
+    if (i < 0 || i <= shopArt.idx) return;
+    shopArt.queue.splice(i, 1);
+    shopArt.queue.splice(shopArt.idx, 0, slot);
+  }
+
+  // Без IntersectionObserver прокрутка грида сама поднимает видимые слоты.
+  function onShopArtScroll() {
+    if (shopArt.io || !shopOpen || !shopGrid || !shopArt.queue.length) return;
+    const list = shopGrid.querySelectorAll('[data-art-kind]');
+    for (let i = 0; i < list.length; i++) {
+      if (shopArtVisible(list[i])) promoteShopArtSlot(list[i]);
+    }
+  }
+
+  function scheduleShopArtChunk(gen) {
+    if (gen !== shopArt.gen) return;
+    // Одна порция за кадр: 4 карточки по ~4–5 мс не рвут анимацию.
+    // requestIdleCallback в игре с постоянным rAF может голодать, поэтому
+    // основной путь — кадр, а простой/таймер только как запасной.
+    if (typeof requestAnimationFrame === 'function') {
+      shopArt.frame = requestAnimationFrame(function () {
+        shopArt.frame = null;
+        runShopArtChunk(gen);
+      });
+      return;
+    }
+    if (typeof requestIdleCallback === 'function') {
+      shopArt.idle = requestIdleCallback(function () {
+        shopArt.idle = null;
+        runShopArtChunk(gen);
+      }, { timeout: 250 });
+      return;
+    }
+    shopArt.timer = setTimeout(function () {
+      shopArt.timer = null;
+      runShopArtChunk(gen);
+    }, 16);
+  }
+
+  function runShopArtChunk(gen) {
+    if (gen !== shopArt.gen) return;
+    shopArt.timer = null;
+    shopArt.frame = null;
+    shopArt.idle = null;
+    if (!shopOpen || !shopGrid) return;
+
+    let done = 0;
+    while (shopArt.idx < shopArt.queue.length && done < SHOP_ART_CHUNK) {
+      const slot = shopArt.queue[shopArt.idx++];
+      if (!slot) { done++; continue; }
+      // Грид перерисован или терминал закрыт — старый узел уже не в DOM.
+      if (slot.isConnected === false) { done++; continue; }
+      if (!slot.getAttribute || !slot.getAttribute('data-art-kind')) continue;
+      paintShopArtSlot(slot);
+      done++;
+    }
+
+    if (shopArt.idx < shopArt.queue.length) {
+      scheduleShopArtChunk(gen);
+      return;
+    }
+    shopArt.queue = [];
+    shopArt.idx = 0;
+    if (shopArt.io) {
+      shopArt.io.disconnect();
+      shopArt.io = null;
+    }
+  }
+
+  // Запустить догрузку после вставки карточек: видимые — первыми,
+  // затем остальные порциями. В DOM без querySelectorAll (тесты) — no-op.
+  function fillShopArt() {
+    stopShopArt();
+    if (!shopOpen || !shopGrid || !shopGrid.querySelectorAll) return;
+    const gen = shopArt.gen;
+    const list = shopGrid.querySelectorAll('[data-art-kind]');
+    const slots = [];
+    for (let i = 0; i < list.length; i++) slots.push(list[i]);
+    if (!slots.length) return;
+
+    const visible = [];
+    const rest = [];
+    slots.forEach(function (slot) {
+      (shopArtVisible(slot) ? visible : rest).push(slot);
+    });
+    shopArt.queue = visible.concat(rest);
+    shopArt.idx = 0;
+
+    if (typeof IntersectionObserver === 'function') {
+      try {
+        shopArt.io = new IntersectionObserver(function (entries) {
+          if (gen !== shopArt.gen) return;
+          for (let i = 0; i < entries.length; i++) {
+            if (entries[i].isIntersecting) {
+              promoteShopArtSlot(entries[i].target);
+            }
+          }
+        }, { root: shopGrid, rootMargin: '0px 0px 200px 0px' });
+        slots.forEach(function (slot) { shopArt.io.observe(slot); });
+      } catch (e) {
+        shopArt.io = null;
+      }
+    }
+    scheduleShopArtChunk(gen);
+  }
+
   /* Категории терминала. Рейл остаётся пятью основными вкладками —
      так его читают старые тесты и инструменты; «Стены» — отдельная
      кнопка-счётчик (data-shop-wall), потому что стена не карточка,
@@ -3171,15 +3357,14 @@ CC.UI = (function () {
     // Уровень для арта: обычная карточка показывает текущий TH,
     // закрытая — 1, чтобы художнику не пришлось рисовать «нулевой» вид.
     const artLevel = locked ? 1 : Math.min(CC.MAX_TH, th);
-    const art = cardArt('building', type, 180, artLevel, 'shop-card__art term-card__art');
-    const cls = 'shop-card term-card' + (art ? ' has-art' : '') +
+    const artAttrs = shopArtAttrs('building', 180, artLevel);
+    const cls = 'shop-card term-card' +
       (locked ? ' is-locked' : '') + (merged ? ' is-merged' : '') +
       (full ? ' is-empty' : '') +
       (poor ? ' is-poor' : '') + (lesson ? ' is-lesson' : '') +
       (rescue ? ' is-rescue' : '') +
       (d.trap ? ' is-trap' : '');
-    const iconCls = 'shop-card__icon cc-icon term-card__art-fallback' +
-      (art ? ' has-art' : '');
+    const iconCls = 'shop-card__icon cc-icon term-card__art-fallback';
     const lockBadge = locked
       ? '<span class="shop-card__lock term-card__lock" aria-hidden="true">🔒</span>'
       : '';
@@ -3241,8 +3426,9 @@ CC.UI = (function () {
       '</span>' +
       '<span class="term-card__art-wrap">' +
         lockBadge +
-        '<span class="' + iconCls + '" data-type="' + type + '">' +
-          (art || icon) + '</span>' +
+        '<span class="' + iconCls + '" data-type="' + type + '"' +
+          artAttrs + '>' +
+          icon + '</span>' +
       '</span>' +
       '<span class="shop-card__desc term-card__desc">' + (descText || '') + '</span>' +
       statusEl + cost +
@@ -3271,12 +3457,9 @@ CC.UI = (function () {
     const status = locked
       ? '🔒 С командного центра ' + need
       : (picked ? '✓ выбран на бой' : 'Не занимает армию · открыть армию');
-    const art = cardArt('troop', id, 180, 1,
-      'shop-card__art term-card__art');
-    const iconCls = 'shop-card__icon cc-icon term-card__art-fallback' +
-      (art ? ' has-art' : '');
+    const artAttrs = shopArtAttrs('troop', 180, 1);
+    const iconCls = 'shop-card__icon cc-icon term-card__art-fallback';
     const cls = 'shop-card term-card term-card_guardian' +
-      (art ? ' has-art' : '') +
       (locked ? ' is-locked' : '') + (picked ? ' is-picked' : '');
     return '<button class="' + cls + '" type="button" data-guardian-open="' +
       escHtml(id) + '" data-guardian="' + escHtml(id) + '"' +
@@ -3293,8 +3476,8 @@ CC.UI = (function () {
       '<span class="term-card__art-wrap">' +
         (locked ? '<span class="term-card__lock" aria-hidden="true">🔒</span>' : '') +
         '<span class="' + iconCls + '" ' +
-          'data-type="' + escHtml(id) + '">' +
-          (art || GUARDIAN_ICONS[id] || '🛡️') +
+          'data-type="' + escHtml(id) + '"' + artAttrs + '>' +
+          (GUARDIAN_ICONS[id] || '🛡️') +
         '</span>' +
       '</span>' +
       '<span class="shop-card__desc term-card__desc">' +
@@ -3322,7 +3505,7 @@ CC.UI = (function () {
     const price = CC.wallUpgrade ? CC.wallUpgrade(wallLevel()) : { gold: 0, elixir: 0 };
     const poor = !locked && !full &&
       (CC.Game.gold() < (price.gold || 0) || CC.Game.elixir() < (price.elixir || 0));
-    const art = cardArt('building', 'wall', 180, 1, 'shop-card__art term-card__art');
+    const artAttrs = shopArtAttrs('building', 180, 1);
     const cls = 'shop-card term-card term-card_wall' +
       (locked ? ' is-locked' : '') + (full ? ' is-empty' : '') +
       (poor ? ' is-poor' : '');
@@ -3340,8 +3523,8 @@ CC.UI = (function () {
         '<span class="shop-card__count term-card__limit">' + have + ' / ' + limit + '</span>' +
       '</span>' +
       '<span class="term-card__art-wrap">' +
-        '<span class="shop-card__icon cc-icon term-card__art-fallback" data-type="wall">' +
-          (art || '🧱') + '</span>' +
+        '<span class="shop-card__icon cc-icon term-card__art-fallback" data-type="wall"' +
+          artAttrs + '>🧱</span>' +
       '</span>' +
       '<span class="shop-card__desc term-card__desc">Сегмент барьера: ' +
         'держит врага и не пропускает</span>' +
@@ -3753,6 +3936,9 @@ CC.UI = (function () {
     }
     shopGrid.scrollLeft = 0;
     if (shopScroll) shopGrid.scrollTop = shopScroll;
+
+    // Арт — уже после вставки DOM: первый кадр терминала не ждёт canvas.
+    fillShopArt();
   }
 
   function onShopClick(e) {
@@ -6093,7 +6279,8 @@ CC.UI = (function () {
         (base.color || '#6b5a45') + '">' + (art || base.icon || '★') + '</span>' +
       '<img class="' + cls + '__img" src="' + escHtml(src) +
         '" alt="" width="' + size + '" height="' + size + '"' +
-        ' draggable="false" decoding="async"' +
+        ' draggable="false" decoding="async" loading="lazy"' +
+        ' fetchpriority="low"' +
         ' onload="if(this.parentNode)this.parentNode.classList.add(\'has-img\')"' +
         ' onerror="this.style.display=\'none\'">' +
       '</span>';
@@ -6748,7 +6935,7 @@ CC.UI = (function () {
     return '<span class="' + cls + '">' + icon +
       '<img class="' + imgCls + '" src="assets/portraits/' + type + '.png"' +
       ' alt="" width="' + size + '" height="' + size + '" draggable="false"' +
-      ' decoding="async"' +
+      ' decoding="async" loading="lazy" fetchpriority="low"' +
       ' onload="if(this.parentNode&&this.parentNode.firstElementChild)this.parentNode.firstElementChild.style.display=\'none\'"' +
       ' onerror="this.style.display=\'none\'">' +
       '</span>';
@@ -8884,6 +9071,7 @@ CC.UI = (function () {
         '<span class="troop__fallback">' + (art || base.icon || '★') + '</span>' +
         '<img class="troop__portrait" src="' + escHtml(h.portrait) +
           '" alt="" width="64" height="64" draggable="false" decoding="async"' +
+          ' loading="lazy" fetchpriority="low"' +
           ' onload="if(this.parentNode)this.parentNode.classList.add(\'has-portrait\')"' +
           ' onerror="this.style.display=\'none\'">' +
         '</span>';
