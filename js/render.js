@@ -8500,8 +8500,15 @@ CC.Render = (function () {
   function drawSite(ctx, b, lvl, body, floating, work) {
     const prog = work ? work.progress : siteProgress(b);
     const H = siteH(b);
+    const upgrading = !!(work && work.kind === 'upgrade');
 
     if (!floating) sitePad(ctx, b);
+
+    // При улучшении внутри лесов стоит готовый корпус: сначала 3D-кадр
+    // старого уровня, затем каркас поверх него — балки не спорят с моделью.
+    // У новой стройки корпуса ещё нет: прежний порядок (каркас, затем
+    // полупрозрачный «недоделанный» вектор поверх).
+    if (upgrading) body();
 
     if (mid()) {
       const sp = spritesOn && tilePx <= 96 ? siteSprite(b, lvl) : null;
@@ -8509,11 +8516,13 @@ CC.Render = (function () {
       else siteArt(ctx, b, b.x, b.y);
     }
 
-    // недоделанный корпус поверх лесов: полупрозрачный, балки видны сквозь него
-    ctx.save();
-    ctx.globalAlpha = 0.66;
-    body();
-    ctx.restore();
+    if (!upgrading) {
+      // недоделанный корпус поверх лесов: полупрозрачный, балки видны сквозь него
+      ctx.save();
+      ctx.globalAlpha = 0.66;
+      body();
+      ctx.restore();
+    }
 
     siteFill(ctx, b, prog, H);
 
@@ -8820,9 +8829,36 @@ CC.Render = (function () {
     superwizard: 1, firecracker: 1, revenge: 1
   };
 
+  // В деревне ствол не нужен: 3D-кадр статичен, а b.aim там — стартовое
+  // значение из Base.renderList, из-за чего «палка» висела над всеми
+  // 13 типами обороны. В бою рисуем ствол только при живой цели в
+  // радиусе: без цели b.aim остаётся от прошлого выстрела.
+  function battleAimLive(b) {
+    if (!(CC.App && CC.App.mode === 'battle')) return false;
+    const S = CC.Battle && CC.Battle.state;
+    if (!S || S.over || !S.units || !S.units.length) return false;
+
+    const def = b.def || {};
+    const range = Number(def.range) || 0;
+    const cx = b.x + (b.w || 1) / 2;
+    const cy = b.y + (b.h || 1) / 2;
+    for (let i = 0; i < S.units.length; i++) {
+      const u = S.units[i];
+      if (!u || u.hp <= 0) continue;
+      const ud = u.def || {};
+      if (def.onlyGround && ud.fly) continue;
+      if (def.airOnly && !ud.fly) continue;
+      if ((u.invisibleUntil || 0) > (S.time || 0)) continue;
+      if (range > 0 && Math.hypot(u.x - cx, u.y - cy) > range + 0.5) continue;
+      return true;
+    }
+    return false;
+  }
+
   function drawAim3d(ctx, b, lvl) {
     if (!AIM3D[b.type]) return;
     if (typeof b.aim !== 'number' || !isFinite(b.aim)) return;
+    if (!battleAimLive(b)) return;
 
     const p = P(b.x + (b.w || 1) / 2, b.y + (b.h || 1) / 2);
     const f = aimVec(b);
@@ -8893,7 +8929,12 @@ CC.Render = (function () {
     const trapOk = type === 'ambush'
       ? variant !== 'open'
       : ((type !== 'mine' && type !== 'spring') || variant !== 'spent');
-    const use3d = !!cfg3d && !site && trapOk && building3dCellsOk(cfg3d, b);
+    // Апгрейд — не «новая стройка»: внутри лесов должен стоять готовый
+    // 3D-кадр текущего (старого) уровня, а не 2.5D-вектор. У новой
+    // постройки готового корпуса нет — там остаётся прежний вектор.
+    const upgrading = site && work.kind === 'upgrade';
+    const use3d = !!cfg3d && (!site || upgrading) &&
+      trapOk && building3dCellsOk(cfg3d, b);
     const sp = !use3d && spritesOn && type !== 'cannon' && tilePx <= 96
       ? spriteFor(b, lvl) : null;
 
@@ -18430,7 +18471,13 @@ CC.Render = (function () {
 
     const ratio = Math.max(0, Math.min(1, b.hp / b.maxHp));
     const p = P(b.x + b.w / 2, b.y + b.h / 2);
-    const y = p.y - crown(b, levelOf(b)) - 7;
+    // У добытчиков иконка сбора висит на crown−7 и закрывала половину
+    // полоски. Поднимаем бар выше иконки: фон crown−19…−15, заливка
+    // crown−18…−16. Чип повреждённого добытчика drawLevelBadge поднимает
+    // до crown−40…−26 (хвостик до −22), поэтому и плашка, и иконка сбора
+    // остаются в стороне от заливки.
+    const collect = b.type === 'goldmine' || b.type === 'elixir';
+    const y = p.y - crown(b, levelOf(b)) - (collect ? 18 : 7);
     const w = b.w > 1 ? 34 : 24;
 
     ctx.fillStyle = 'rgba(30,26,20,.45)';
@@ -18652,6 +18699,29 @@ CC.Render = (function () {
         } catch (e) { /* остаётся 2.5D-высота */ }
       }
       wallHpBar(ctx, r, top + 4);
+    }
+
+    // Значки уровня — отдельным проходом поверх соседних тел: иначе чип
+    // заднего здания перекрывался бы моделью переднего.
+    if (CC.App.mode !== 'battle') {
+      for (let i = 0; i < buildings.length; i++) {
+        const b = buildings[i];
+        if (!b || b.dead || b.type === 'wall') continue;
+        const cfg = BUILDING3D_ART[b.type];
+        if (!cfg || !building3dCellsOk(cfg, b)) continue;
+        if (workOf(b)) continue;
+        if (isLurker(b.type) && trapHidden(b)) continue;
+        const variant = trapVariant(b);
+        const trapOk = b.type === 'ambush'
+          ? variant !== 'open'
+          : ((b.type !== 'mine' && b.type !== 'spring') || variant !== 'spent');
+        if (!trapOk) continue;
+        if (!footprintVisible(b.x, b.y, b.x + b.w, b.y + b.h, 170)) continue;
+        const lvl = levelOf(b);
+        // 0 — 3D-кадр ещё не загрузился, чип рисовать не над чем
+        if (!building3dCrown(b, lvl)) continue;
+        drawLevelBadge(ctx, b, lvl);
+      }
     }
   }
 
@@ -19182,6 +19252,101 @@ CC.Render = (function () {
     const base = arr[Math.min(arr.length - 1, l - 1)];
     // L11-21: детали верхних ступеней добавляют ~2.2 px на уровень
     return (base + Math.max(0, l - arr.length) * 2.2) * k;
+  }
+
+  /* ---------- значок уровня над 3D-зданием ----------
+     Показываем в режиме «Постройки» (там выбирают, что качать) и у
+     выбранного/перетаскиваемого здания. На максимуме — золотая рамка.
+     Только деревня и только поверх реально нарисованного 3D-кадра:
+     2.5D-вектор и стройплощадки уровень в чипе не дублируют. */
+  function drawLevelBadge(ctx, b, lvl) {
+    const st = CC.UI && CC.UI.state;
+    const showAll = !!(st && st.buildMode);
+    const sel = !!(st && (st.selected === b.id || st.dragId === b.id));
+    if (!showAll && !sel) return;
+    if (!sel && tilePx < 34) return;
+
+    const p = P(b.x + b.w / 2, b.y + b.h / 2);
+    const top = crown(b, lvl);
+    // У добытчиков (иконка сбора) и повреждённых зданий (HP-бар) чип
+    // поднимается над стеком индикаторов: HP-бар обычного здания
+    // crown−8…−4, иконка сбора crown−14.2…+0.2. Плашка 14 px + хвостик
+    // 2 px заканчивается на crown−14. У обычного здания чип остаётся
+    // у крыши и не «улетает».
+    const collect = b.type === 'goldmine' || b.type === 'elixir';
+    const damaged = b.maxHp > 0 && b.hp < b.maxHp;
+    // Особый случай — повреждённый добытчик: его HP-бар поднят на
+    // crown−18…−16, поэтому чип на прежних crown−30…−16 закрыл бы
+    // заливку. Поднимаем плашку до crown−40…−26 и удлиняем хвостик
+    // до crown−22: бар crown−19…−15 и иконка остаются свободными.
+    const damagedCollector = collect && damaged;
+    const lift = damagedCollector ? 40 : (collect || damaged ? 30 : 18);
+    const tail = damagedCollector ? 4 : (lift > 18 ? 2 : 4);
+    const y = p.y - top - lift;
+    // Потолок — текущий TH, а не абсолютный максимум таблицы: на TH10
+    // здание, упёршееся в лимит своего TH, уже получает золотую рамку.
+    let cap = 0;
+    try {
+      cap = (CC.Game && typeof CC.Game.townhallLevel === 'function' &&
+        typeof CC.maxLevelAt === 'function')
+        ? CC.maxLevelAt(b.type, CC.Game.townhallLevel())
+        : 0;
+    } catch (e) {
+      cap = 0;
+    }
+    const isMax = lvl >= (cap > 0 ? cap : maxLevelOf(b.type));
+
+    const txt = String(lvl);
+    ctx.font = '800 10px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = Math.max(17, Math.round(ctx.measureText(txt).width) + 9);
+    const h = 14;
+    const x = p.x - w / 2;
+
+    const bg = isMax || sel ? 'rgba(58,42,12,.92)' : 'rgba(18,24,22,.86)';
+    const line = isMax ? '#ffcf4a' : (sel ? '#e0b045' : 'rgba(246,232,198,.26)');
+    const ink = isMax || sel ? '#ffe6a3' : '#f6e9cd';
+
+    // мягкая тень и хвостик к зданию
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y + 1, w, h, 5);
+    else ctx.rect(x, y + 1, w, h);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(p.x - 3, y + h - 1);
+    ctx.lineTo(p.x + 3, y + h - 1);
+    ctx.lineTo(p.x, y + h + tail);
+    ctx.fill();
+
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, 5);
+    else ctx.rect(x, y, w, h);
+    ctx.fill();
+
+    ctx.strokeStyle = line;
+    ctx.lineWidth = isMax ? 1.6 : 1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 4.5);
+    else ctx.rect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.stroke();
+
+    if (isMax) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,196,74,.55)';
+      ctx.shadowBlur = 5;
+      ctx.fillStyle = ink;
+      ctx.fillText(txt, p.x, y + h / 2 + 0.5);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = ink;
+      ctx.fillText(txt, p.x, y + h / 2 + 0.5);
+    }
+
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
   }
 
   function plate(ctx, x, y, w, h, fill) {
@@ -20741,6 +20906,21 @@ CC.Render = (function () {
     }
   }
 
+  // Готов ли 3D-кадр для карточки терминала. ui.js перерисовывает слот,
+  // когда загрузка завершилась (UI-04: карточка оставалась 2.5D).
+  function buildingArtReady(type, level) {
+    const cfg = BUILDING3D_ART[type];
+    if (!cfg) return false;
+    const lvl = building3dLevel(type, level);
+    if (!lvl) return false;
+    const img = building3d.images[type + '|' + lvl];
+    return !!(img && img.complete && img.naturalWidth > 0);
+  }
+
+  function buildingArt3d(type) {
+    return !!BUILDING3D_ART[type];
+  }
+
   function troopArt(type, size, level) {
     try {
       const known = type && ((CC.TROOPS && CC.TROOPS[type]) ||
@@ -20772,6 +20952,8 @@ CC.Render = (function () {
     draw: draw,
     // готовый PNG-арт для карточек интерфейса (data:image/png;base64 | null)
     buildingArt: buildingArt,
+    buildingArtReady: buildingArtReady,
+    buildingArt3d: buildingArt3d,
     troopArt: troopArt,
     // стартовая заставка: рисуется поверх/вместо сцены, пока идёт интро
     drawIntro: drawIntro,

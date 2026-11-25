@@ -247,7 +247,7 @@ CC.BUILDING_META = {
     chain: 15, special: 'superwizard'
   },
   spiky: {
-    name: 'Шиповая башня', desc: 'пассивный ответ на атаки',
+    name: 'Игольчатая башня', desc: 'пассивный ответ на атаки',
     role: 'контратакующая', w: 1, h: 1, height: 44,
     color: '#4a3a3a', top: '#d6a06a',
     passive: true, passivePercent: [0, 6, 9], special: 'spiky'
@@ -300,7 +300,7 @@ CC.BUILDING_META = {
     color: '#6f5a42', top: '#d1b07a', training: true
   },
   darktrain: {
-    name: 'Казарма плазмы', desc: 'тренирует тёмные войска',
+    name: 'Казарма плазмы', desc: 'готовит плазменные отряды',
     role: 'армия', w: 2, h: 1, height: 34,
     color: '#45394f', top: '#b984d8', training: true, darkTraining: true
   },
@@ -310,7 +310,7 @@ CC.BUILDING_META = {
     color: '#3d5a7a', top: '#8fd0ff', spells: true
   },
   darkspellfactory: {
-    name: 'Резонатор плазмы', desc: 'готовит тёмные заклинания',
+    name: 'Резонатор плазмы', desc: 'готовит плазменные заклинания',
     role: 'армия', w: 2, h: 1, height: 40,
     color: '#443553', top: '#c28fe8', spells: true, darkSpells: true
   },
@@ -325,7 +325,7 @@ CC.BUILDING_META = {
     color: '#8a3a32', top: '#d9a441', heroHall: true
   },
   pethouse: {
-    name: 'Питомник', desc: 'дом питомцев героев',
+    name: 'Питомник', desc: 'выводит питомцев героев',
     role: 'развитие', w: 2, h: 1, height: 38,
     color: '#5a3a4a', top: '#d77fa0', petHouse: true
   },
@@ -340,7 +340,7 @@ CC.BUILDING_META = {
     color: '#4d5a4a', top: '#b9c99a', siege: true
   },
   clancastle: {
-    name: 'Орбитальная станция', desc: 'резерв и подкрепление',
+    name: 'Орбитальная станция', desc: 'сброс модулей с орбиты',
     role: 'армия', w: 2, h: 1, height: 46,
     color: '#4a5468', top: '#a9b8d8'
   },
@@ -392,31 +392,21 @@ CC.BUILDING_META = {
     trap: true, trapKind: 'tornado', radius: 2, capacity: 1
   },
   gigabomb: {
-    name: 'Гига-мина', desc: 'огромный урон по земле',
+    name: 'Сверхмина', desc: 'огромный урон по земле',
     role: 'ловушка', w: 1, h: 1, hp: 1, height: 24,
     color: '#4a2e2e', top: '#ff6a4a',
     trap: true, trapKind: 'ground', radius: 2.2, splash: 2.4
   },
   wall: {
     name: 'Энергобарьер', desc: 'держит врага, не пропускает',
-    role: 'стена', w: 1, h: 1, height: 18,
+    role: 'барьер', w: 1, h: 1, height: 18,
     color: '#8d877d', top: '#b3ada2'
   }
 };
 
-// Роль и описание берём из путеводителя таблиц, имя остаётся нашим.
-Object.keys(CC.BUILDING_META).forEach(function (id) {
-  const tableId = CC.BUILDING_TABLE[id];
-  const guide = tableId && (CC_DATA.buildingGuide || {})[tableId];
-  if (!guide) return;
-  const clean = function (text) {
-    return String(text)
-      .replace(/\bTH(\d+)\b/g, 'центр $1')
-      .replace(/\bTH\b/g, 'центра');
-  };
-  if (guide.role) CC.BUILDING_META[id].role = clean(guide.role);
-  if (guide.what) CC.BUILDING_META[id].desc = clean(guide.what);
-});
+// Тексты построек — только наши. Имя, роль и короткое описание живут
+// в CC.BUILDING_META; формулировки из buildingGuide справочника в интерфейс
+// не подставляем, чтобы в игре не появлялись чужие названия и ресурсы.
 
 // Список зданий: только ключи CC.DATA.counts (кроме стены и оружия центра)
 // плюс сам центр и стена. Никаких войск/героев/питомцев из details.
@@ -447,8 +437,8 @@ CC._tableLevels = function (coc) {
 };
 
 CC._tableEntity = function (coc) {
-  if (coc === 'townhall') return { coc: 'townhall', name: 'Ратуша', currency: 'gold' };
-  if (coc === 'wall') return { coc: 'wall', name: 'Стена', currency: 'gold' };
+  if (coc === 'townhall') return { coc: 'townhall', name: 'Командный центр', currency: 'gold' };
+  if (coc === 'wall') return { coc: 'wall', name: 'Энергобарьер', currency: 'gold' };
   return (CC_DATA.details || {})[coc] || null;
 };
 
@@ -697,7 +687,7 @@ CC.TROOP_META = {
     cost: 25, time: 6, role: 'добытчик' },
   gnome: { name: 'Подрывник', desc: 'рвёт энергобарьеры в клочья', icon: '🧨',
     color: '#d9a05b', space: 2, speed: 3.4, range: 0.8, target: 'wall',
-    wallBonus: 4, cost: 60, time: 8, role: 'стенобой' },
+    wallBonus: 4, cost: 60, time: 8, role: 'взлом барьеров' },
   airship: { name: 'Дрон-бомбардировщик', desc: 'летит и бомбит по площади',
     icon: '🛸', color: '#c46a3f', space: 5, speed: 0.85, range: 1.2,
     target: 'any', fly: true, splash: 1.5, cost: 220, time: 45, role: 'воздух' },
@@ -713,7 +703,7 @@ CC.TROOP_META = {
   pekka: { name: 'Экзоскелет', desc: 'тяжёлый ближний', icon: '🗡️',
     color: '#6a6f8a', space: 25, speed: 1.5, range: 1, target: 'defense',
     cost: 520, time: 60, role: 'танк' },
-  babydragon: { name: 'Дракончик', desc: 'воздух, площадной', icon: '🐲',
+  babydragon: { name: 'Стриж', desc: 'воздух, площадной', icon: '🐲',
     color: '#c77a4a', space: 10, speed: 2.4, range: 2, target: 'any',
     fly: true, splash: 1.2, cost: 280, time: 40, role: 'воздух' },
   miner: { name: 'Крот', desc: 'подземный', icon: '⛏️',
@@ -722,67 +712,67 @@ CC.TROOP_META = {
   electrodragon: { name: 'Дуговой дракон', desc: 'воздух, цепь', icon: '⚡',
     color: '#5a8ad6', space: 30, speed: 1.6, range: 2.5, target: 'any',
     fly: true, chain: 3, cost: 620, time: 65, role: 'воздух' },
-  yeti: { name: 'Ледяной гигант', desc: 'танк, детёныши', icon: '❄️',
+  yeti: { name: 'Криолит', desc: 'танк, выводок', icon: '❄️',
     color: '#a8c8d8', space: 18, speed: 1.6, range: 1, target: 'defense',
     spawn: 4, cost: 380, time: 50, role: 'танк' },
-  dragonrider: { name: 'Наездник', desc: 'воздух, быстрый', icon: '🪽',
+  dragonrider: { name: 'Птер', desc: 'воздух, быстрый', icon: '🪽',
     color: '#8a5a4a', space: 25, speed: 2.4, range: 1, target: 'any',
     fly: true, cost: 520, time: 60, role: 'воздух' },
-  electrotitan: { name: 'Титан', desc: 'тяжёлый, цепь', icon: '🔱',
+  electrotitan: { name: 'Громовержец', desc: 'тяжёлый, цепь', icon: '🔱',
     color: '#6a7ad6', space: 32, speed: 1.5, range: 1, target: 'defense',
     chain: 4, cost: 680, time: 70, role: 'танк' },
-  rootrider: { name: 'Корневой таран', desc: 'стены, танк', icon: '🌿',
+  rootrider: { name: 'Терралом', desc: 'стены, танк', icon: '🌿',
     color: '#7a8a4a', space: 20, speed: 1.8, range: 1, target: 'any',
     wallBonus: 3, cost: 460, time: 55, role: 'танк' },
-  thrower: { name: 'Метатель дисков', desc: 'дальний', icon: '💿',
+  thrower: { name: 'Дискомёт', desc: 'дальний', icon: '💿',
     color: '#c8a05a', space: 16, speed: 2, range: 6, target: 'defense',
     cost: 400, time: 50, role: 'дальний' },
   meteorgolem: { name: 'Метеорит', desc: 'тяжёлый, площадной', icon: '☄️',
     color: '#8a5a3a', space: 30, speed: 1.2, range: 1, target: 'any',
     splash: 2, cost: 660, time: 70, role: 'танк' },
-  minion: { name: 'Скат', desc: 'воздух', icon: '🦇',
+  minion: { name: 'Шершень', desc: 'воздух', icon: '🦇',
     color: '#7a6aa8', space: 2, speed: 3.2, range: 2.5, target: 'any',
     fly: true, cost: 40, time: 8, role: 'воздух' },
-  hogrider: { name: 'Рейдер', desc: 'прыгает через стены', icon: '🐗',
+  hogrider: { name: 'Прыгун', desc: 'прыгает через стены', icon: '🐗',
     color: '#a8744a', space: 5, speed: 3.4, range: 1, target: 'defense',
     jumpsWalls: true, cost: 160, time: 22, role: 'быстрый' },
-  valkyrie: { name: 'Валькирия', desc: 'площадной ближний', icon: '🪓',
+  valkyrie: { name: 'Секира', desc: 'площадной ближний', icon: '🪓',
     color: '#d08a4a', space: 8, speed: 2.8, range: 1, target: 'any',
     splash: 1.5, cost: 220, time: 30, role: 'площадной' },
-  golem: { name: 'Голем', desc: 'танк, распадается', icon: '🗿',
+  golem: { name: 'Базальт', desc: 'танк, распадается', icon: '🗿',
     color: '#8a8a7a', space: 30, speed: 1.2, range: 1, target: 'defense',
     spawn: 2, cost: 560, time: 65, role: 'танк' },
-  witch: { name: 'Некрос', desc: 'призывает скелетов', icon: '💀',
+  witch: { name: 'Некрос', desc: 'ведёт рой дронов', icon: '💀',
     color: '#6a5a7a', space: 12, speed: 1.8, range: 4, target: 'any',
     spawn: 4, cost: 320, time: 45, role: 'призыв' },
-  lavahound: { name: 'Лавовый пёс', desc: 'воздушный танк', icon: '🌋',
+  lavahound: { name: 'Магмогон', desc: 'воздушный танк, выводок', icon: '🌋',
     color: '#d05a3a', space: 30, speed: 1, range: 1, target: 'defense',
     fly: true, spawn: 8, cost: 580, time: 65, role: 'воздух' },
-  bowler: { name: 'Крушитель', desc: 'дальний, рикошет', icon: '🎳',
+  bowler: { name: 'Дроболит', desc: 'дальний, рикошет', icon: '🎳',
     color: '#8a7a6a', space: 6, speed: 2.2, range: 3, target: 'any',
     splash: 1.5, cost: 200, time: 28, role: 'площадной' },
-  icegolem: { name: 'Криоголем', desc: 'танк, заморозка', icon: '🧊',
+  icegolem: { name: 'Ледник', desc: 'танк, заморозка', icon: '🧊',
     color: '#8ac8e0', space: 15, speed: 2, range: 1, target: 'defense',
     freeze: true, cost: 320, time: 45, role: 'танк' },
-  headhunter: { name: 'Охотник', desc: 'ищет героев', icon: '🎯',
+  headhunter: { name: 'Дуэлянт', desc: 'ищет героев', icon: '🎯',
     color: '#b85a8a', space: 6, speed: 3, range: 1, target: 'hero',
     cost: 200, time: 28, role: 'антигерой' },
-  apprentice: { name: 'Ученик', desc: 'поддержка', icon: '📘',
+  apprentice: { name: 'Связист', desc: 'поддержка войск', icon: '📘',
     color: '#6ab8c8', space: 20, speed: 2, range: 3, target: 'support',
     support: true, cost: 420, time: 55, role: 'поддержка' },
-  druid: { name: 'Друид', desc: 'поддержка', icon: '🌱',
+  druid: { name: 'Симбиот', desc: 'лечит союзников', icon: '🌱',
     color: '#7ab86a', space: 16, speed: 2, range: 3, target: 'support',
     support: true, cost: 380, time: 50, role: 'поддержка' },
-  furnace: { name: 'Печь', desc: 'призывает огонь', icon: '🔥',
+  furnace: { name: 'Инкубатор', desc: 'выводит рой', icon: '🔥',
     color: '#d0783a', space: 15, speed: 1.8, range: 3, target: 'any',
     spawn: 6, cost: 360, time: 48, role: 'призыв' },
-  ruinwitch: { name: 'Руинная ведьма', desc: 'призывает руины', icon: '🕯️',
+  ruinwitch: { name: 'Руинатор', desc: 'поднимает обломки', icon: '🕯️',
     color: '#7a5a8a', space: 20, speed: 1.8, range: 4, target: 'any',
     spawn: 6, cost: 440, time: 58, role: 'призыв' }
 };
 
-// Характеристики из табличных traits: место, дальность, скорость, роль,
-// описание и темп атаки. Приоритет цели и полёт остаются нашими.
+// Характеристики из табличных traits: место, дальность, скорость, роль
+// и темп атаки. Короткое описание, приоритет цели и полёт остаются нашими.
 Object.keys(CC.TROOP_TABLE).forEach(function (id) {
   const m = CC.TROOP_META[id];
   const trait = (CC_DATA.troopTraits || {})[CC.TROOP_TABLE[id]];
@@ -790,7 +780,6 @@ Object.keys(CC.TROOP_TABLE).forEach(function (id) {
   if (trait.space != null) m.space = Number(trait.space) || m.space;
   if (trait.range != null) m.range = Number(trait.range) || m.range;
   if (trait.role) m.role = trait.role;
-  if (trait.what) m.desc = trait.what;
   if (trait.speed != null) m.speed = (Number(trait.speed) || 0) / 10;
   if (trait.attackSpeed != null) m.attackSpeed = Number(trait.attackSpeed);
   m.targets = trait.targets || '';
@@ -799,6 +788,9 @@ Object.keys(CC.TROOP_TABLE).forEach(function (id) {
     m.targetsAir = /воздух/.test(trait.targets);
   }
 });
+
+// Симбиот только лечит: превращение из чужой механики в роль не выносим.
+CC.TROOP_META.druid.role = 'лечение';
 
 // Порядок карточек — по открытию, затем по таблице.
 CC.ARMY_ORDER = [
@@ -954,7 +946,7 @@ CC.HERO_META = {
     portrait: 'assets/portraits/giant.png', speed: 1.8, range: 4, target: 'any' },
   goblin: { name: 'Главарь', base: 'goblin', role: 'Мародёр',
     portrait: 'assets/portraits/goblin.png', speed: 2.8, range: 1.2, target: 'any' },
-  airship: { name: 'Пилот', base: 'airship', role: 'Дрон',
+  airship: { name: 'Пилот', base: 'airship', role: 'Дрон-бомбардировщик',
     portrait: 'assets/portraits/airship.png', speed: 3, range: 3, target: 'any', fly: true },
   dragon: { name: 'Герцог', base: 'dragon', role: 'Краер',
     portrait: 'assets/portraits/dragon.png', speed: 2.2, range: 4, target: 'any', fly: true }
@@ -1127,18 +1119,18 @@ CC.ARMY_ORDER.forEach(function (t) { CC.START_ARMY[t] = 0; });
 /* ---------- питомцы ----------
    12 питомцев справочник. Уровни/HP/DPS — из CC.DATA.pets, дом — Pet House. */
 CC.PET_META = {
-  lassi: { name: 'Гончая', role: 'наземный', speed: 3, range: 1 },
-  yak: { name: 'Буйвол', role: 'танк', speed: 1.6, range: 1 },
-  owl: { name: 'Филин', role: 'воздух', speed: 3.2, range: 3, fly: true },
-  unicorn: { name: 'Единорог', role: 'лекарь', speed: 2.5, range: 2, heal: true },
-  frosty: { name: 'Морозко', role: 'заморозка', speed: 2.2, range: 1 },
-  diggy: { name: 'Крот', role: 'подземный', speed: 2.4, range: 1 },
-  lizard: { name: 'Ящер', role: 'токсин', speed: 2.6, range: 2 },
-  phoenix: { name: 'Феникс', role: 'воздух', speed: 3, range: 1, fly: true },
-  fox: { name: 'Дух-лис', role: 'воздух', speed: 3.2, range: 2, fly: true },
-  jelly: { name: 'Медуза', role: 'замедление', speed: 2, range: 2 },
-  sneezy: { name: 'Чихун', role: 'площадной', speed: 2, range: 2 },
-  raven: { name: 'Ворон', role: 'воздух', speed: 3.4, range: 2, fly: true }
+  lassi: { name: 'Ищейка', role: 'наземный', speed: 3, range: 1 },
+  yak: { name: 'Зубр', role: 'танк', speed: 1.6, range: 1 },
+  owl: { name: 'Искрокрыл', role: 'воздух', speed: 3.2, range: 3, fly: true },
+  unicorn: { name: 'Мираж', role: 'лечение', speed: 2.5, range: 2, heal: true },
+  frosty: { name: 'Стужа', role: 'заморозка', speed: 2.2, range: 1 },
+  diggy: { name: 'Землерой', role: 'подземный', speed: 2.4, range: 1 },
+  lizard: { name: 'Варан', role: 'токсин', speed: 2.6, range: 2 },
+  phoenix: { name: 'Пепел', role: 'воздух', speed: 3, range: 1, fly: true },
+  fox: { name: 'Летун', role: 'воздух', speed: 3.2, range: 2, fly: true },
+  jelly: { name: 'Слизень', role: 'замедление', speed: 2, range: 2 },
+  sneezy: { name: 'Пыльник', role: 'площадной', speed: 2, range: 2 },
+  raven: { name: 'Гриф', role: 'воздух', speed: 3.4, range: 2, fly: true }
 };
 
 CC.PETS = {};
@@ -1212,16 +1204,16 @@ CC.SPELL_META = {
   invisibility: { name: 'Маскировка', role: 'невидимость' },
   recall: { name: 'Эвакуация', role: 'возврат войск' },
   revive: { name: 'Реанимация', role: 'поднимает героя' },
-  totem: { name: 'Тотем', role: 'аура' },
+  totem: { name: 'Маяк', role: 'аура' },
   heroic: { name: 'Героический импульс', role: 'усиление героев' },
-  angry: { name: 'Берсерк', role: 'ярость' },
+  angry: { name: 'Берсерк', role: 'урон и темп' },
   poison: { name: 'Токсин', role: 'урон и замедление' },
   earthquake: { name: 'Резонанс', role: 'урон стенам' },
   haste: { name: 'Оверклок', role: 'скорость' },
   skeleton: { name: 'Дроны', role: 'призыв' },
-  bat: { name: 'Нетопыри', role: 'призыв воздуха' },
-  overgrowth: { name: 'Обрастание', role: 'ловушки/стены' },
-  iceblock: { name: 'Ледяная глыба', role: 'блок' }
+  bat: { name: 'Мошкара', role: 'призыв воздуха' },
+  overgrowth: { name: 'Биоплёнка', role: 'ловушки/стены' },
+  iceblock: { name: 'Криокапсула', role: 'блок' }
 };
 
 CC.SPELLS = {};
@@ -1286,15 +1278,15 @@ CC.spellStats = function (id, lv) {
    Поэтому мета и пустые таблицы уровней; числа появятся со следующим
    срезом data.json. */
 CC.SIEGE = {
-  wallwrecker: { name: 'Стенолом', role: 'стены', coc: 'wall_wrecker', levels: [] },
-  battleblimp: { name: 'Боевой дирижабль', role: 'воздух', coc: 'battle_blimp', levels: [] },
-  stoneslammer: { name: 'Каменный таран', role: 'площадной', coc: 'stone_slammer', levels: [] },
-  siegebarracks: { name: 'Осадная казарма', role: 'десант', coc: 'siege_barracks', levels: [] },
-  loglauncher: { name: 'Бревномёт', role: 'стены', coc: 'log_launcher', levels: [] },
-  flameflinger: { name: 'Плазмомёт (осадный)', role: 'дальний', coc: 'flame_flinger', levels: [] },
-  battledrill: { name: 'Боевой бур', role: 'подземный', coc: 'battle_drill', levels: [] },
-  trooplauncher: { name: 'Пусковая установка', role: 'десант', coc: 'troop_launcher', levels: [] },
-  skywagon: { name: 'Небесный фургон', role: 'воздух', coc: 'sky_wagon', levels: [] }
+  wallwrecker: { name: 'Барьеролом', role: 'стены', coc: 'wall_wrecker', levels: [] },
+  battleblimp: { name: 'Десантёр', role: 'воздух', coc: 'battle_blimp', levels: [] },
+  stoneslammer: { name: 'Геомолот', role: 'площадной', coc: 'stone_slammer', levels: [] },
+  siegebarracks: { name: 'Блокпост', role: 'десант', coc: 'siege_barracks', levels: [] },
+  loglauncher: { name: 'Рельсомёт', role: 'стены', coc: 'log_launcher', levels: [] },
+  flameflinger: { name: 'Плазмолёт', role: 'дальний', coc: 'flame_flinger', levels: [] },
+  battledrill: { name: 'Шнек', role: 'подземный', coc: 'battle_drill', levels: [] },
+  trooplauncher: { name: 'Капсуломёт', role: 'десант', coc: 'troop_launcher', levels: [] },
+  skywagon: { name: 'Орбитолёт', role: 'воздух', coc: 'sky_wagon', levels: [] }
 };
 
 CC.SIEGE_UNLOCK = {};
@@ -1341,9 +1333,9 @@ CC.siegeStats = function (id, lv) {
    Три стража поздних центров. Уровни/цена/время — из таблиц, имена наши.
    Они не занимают место в армии: space = 0. */
 CC.GUARDIAN_META = {
-  longshot: { name: 'Дальнобой', role: 'дальний, земля и воздух' },
-  smasher: { name: 'Сокрушитель', role: 'танк, площадь' },
-  logger: { name: 'Древолом', role: 'дальний, тяжёлый' }
+  longshot: { name: 'Стрелок', role: 'дальний, земля и воздух' },
+  smasher: { name: 'Молотобой', role: 'танк, площадь' },
+  logger: { name: 'Скалолом', role: 'дальний, тяжёлый' }
 };
 
 CC.GUARDIANS = {};
@@ -1690,7 +1682,7 @@ CC.BUILDING_ORDER.forEach(function (type) {
 /* Достижения: постоянные цели, платина выдаётся вручную за ступень.
    Платина — донат, поэтому за каждую ступень ровно 1 штука: всего 13×3 = 39. */
 CC.ACHIEVEMENTS = [
-  { id: 'walls', name: 'Крушитель барьеров', desc: 'Снести энергобарьеры в бою',
+  { id: 'walls', name: 'Взломщик барьеров', desc: 'Снести энергобарьеры в бою',
     stat: 'wallsDestroyed', tiers: [10, 100, 500], gems: [1, 1, 1] },
   { id: 'wins', name: 'Командир', desc: 'Выиграть бои',
     stat: 'battleWins', tiers: [1, 10, 50], gems: [1, 1, 1] },
@@ -2290,7 +2282,7 @@ CC.LevelGen = {
     let levelHint = CC_ERA_HINTS[era];
     if (finalLevel) {
       levelName += ' · Финал';
-      levelHint += ' Финал: TH19, все башни на максимуме; нужна армия, стражи и все герои.';
+      levelHint += ' Финал: центр 19, все башни на максимуме; нужна армия, стражи и все герои.';
     }
 
     return {

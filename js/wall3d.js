@@ -77,6 +77,9 @@
   var measureCtx = null;
   var measureBroken = false;
   var shadowCanvas = null;          // мягкая контактная тень (пекётся один раз)
+  var glowBudget = 0;               // сколько свечений можно испечь за кадр
+  var motionOk = null;              // prefers-reduced-motion, кэш на ~1 с
+  var motionAt = 0;
 
   /* Буферы для прогона из нескольких клеток: без аллокаций на кадр. */
   var GRID = 64;
@@ -291,6 +294,94 @@
     ctx.restore();
   }
 
+  // Свечение энергобарьера: тонированный силуэт кадра, аддитивно поверх
+  // тела. Пульс общий по времени, но со сдвигом фазы по (x+y) — волна
+  // бежит вдоль стены. Пекётся лениво, не больше GLOW_BUDGET за кадр,
+  // чтобы первый кадр с сотней сегментов не встал.
+  var GLOW_BUDGET = 12;
+
+  function nowSeconds() {
+    try {
+      var p = window.performance;
+      if (p && typeof p.now === 'function') return p.now() / 1000;
+    } catch (e) { /* ignore */ }
+    return Date.now() / 1000;
+  }
+
+  function reduceMotion() {
+    var sec = nowSeconds();
+    if (motionOk !== null && sec - motionAt < 1) return motionOk;
+    motionAt = sec;
+    try {
+      motionOk = !!(window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) {
+      motionOk = false;
+    }
+    return motionOk;
+  }
+
+  function glowFor(rec) {
+    if (rec.glow !== undefined) return rec.glow;
+    if (glowBudget <= 0) return null;
+    glowBudget--;
+    try {
+      if (typeof document === 'undefined' || !document.createElement) {
+        rec.glow = null;
+        return null;
+      }
+      var c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 128;
+      var g = c.getContext('2d');
+      if (!g) {
+        rec.glow = null;
+        return null;
+      }
+      // Силуэт исходного кадра → заливка цветом поля. Пиксели не читаем,
+      // поэтому file:// с «испорченной» канвой тоже работает.
+      g.drawImage(rec.img, 0, 0, 128, 128);
+      g.globalCompositeOperation = 'source-in';
+      g.fillStyle = '#6fe9ff';
+      g.fillRect(0, 0, 128, 128);
+      rec.glow = c;
+    } catch (e) {
+      rec.glow = null;
+    }
+    return rec.glow;
+  }
+
+  function drawGlow(ctx, gx, gy, rec, lvl) {
+    if (!rec || !rec.ready) return;
+    var S = spriteSize();
+    if (S < 34) return;              // на дальнем зуме свечение — шум
+    var glow = glowFor(rec);
+    if (!glow) return;
+    var tw = (window.CC && CC.TW) || 54;
+    var th = (window.CC && CC.TH) || 40;
+    var cx = (gx - gy) * tw * 0.5;
+    var cy = (gx + gy + 1) * th * 0.5;
+    var sec = nowSeconds();
+    var pulse = reduceMotion()
+      ? 0.55
+      : (0.5 + 0.5 * Math.sin(sec * 2.0 + (gx + gy) * 0.45));
+    // Аддитивное свечение поверх тела: два прохода при lighter. Прежние
+    // коэффициенты (0.055 + 0.065·pulse)·(0.85 + lvl·0.012) на L20
+    // выбеливали сегмент до светлой ленты. Снижены на ~30%, особенно
+    // на высоких уровнях; пульс и статичный режим сохранены.
+    var alpha = (0.040 + 0.047 * pulse) *
+      (0.82 + Math.min(20, lvl || 1) * 0.009);
+    try {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(glow, cx - S * ANCHOR_X, cy - S * ANCHOR_Y - 1, S, S);
+      ctx.globalAlpha = alpha * 0.8;
+      ctx.drawImage(glow, cx - S * ANCHOR_X, cy - S * ANCHOR_Y - 2, S, S);
+      ctx.restore();
+    } catch (e) { /* без свечения */ }
+  }
+
   function cellIndex(x, y) {
     if (x < 0 || y < 0 || x >= GRID || y >= GRID) return -1;
     return x * GRID + y;
@@ -312,6 +403,7 @@
     var rec = request(lvl, mask);
     if (!rec || !rec.ready) return 0;
     if (!drawSprite(ctx, run.x, run.y, rec)) return 0;
+    drawGlow(ctx, run.x, run.y, rec, lvl);
     return rec.top > 0 ? rec.top : fallbackTop(lvl);
   }
 
@@ -369,6 +461,12 @@
       if (!r2 || !r2.ready) return 0;
       if (!drawSprite(ctx, qx[k], qy[k], r2)) return 0;
     }
+    // Свечение — отдельным проходом после всех тел: аддитивные пятна не
+    // перекрывают соседние сегменты и не меняют порядок глубины.
+    for (i = 0; i < n; i++) {
+      var kg = qorder[i];
+      drawGlow(ctx, qx[kg], qy[kg], request(lvl, qm[kg]), lvl);
+    }
     return top > 0 ? top : fallbackTop(lvl);
   }
 
@@ -377,6 +475,7 @@
     var cells = run.cells;
     if (!cells || !cells.length) return 0;
     tick = nowTick();
+    glowBudget = GLOW_BUDGET;
 
     var lvl = clampLvl(run.lvl || cells[0].__level || cells[0].lvl || 1);
     warm(lvl);
@@ -392,15 +491,18 @@
   // Отладка для координатора и tools: готовность/кэш/ошибки.
   CC.Render.__wall3d = function () {
     var ready = 0;
+    var glows = 0;
     var levels = Object.create(null);
     images.forEach(function (rec, key) {
       if (!rec.ready) return;
       ready++;
+      if (rec.glow) glows++;
       levels[(key / 16) | 0] = true;
     });
     return {
       images: images.size,
       ready: ready,
+      glows: glows,
       levels: Object.keys(levels).map(Number).sort(function (a, b) { return a - b; }),
       failed: Object.keys(failed),
       cacheMax: CACHE_MAX,

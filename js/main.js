@@ -1728,7 +1728,6 @@ CC.CamMath = (function () {
 
   let lastT = 0;
   let lastSave = 0;
-  let lastRaidCheck = 0;
 
   // Сохраняем прогресс. В бою сначала возвращаем в деревню невысаженных,
   // чтобы закрытая вкладка не спасала высаженные войска. Вкладка, у которой
@@ -1769,12 +1768,6 @@ CC.CamMath = (function () {
       persist();
     }
 
-    // раз в минуту проверяем расписание набегов (симуляция headless)
-    if (!lastRaidCheck || now - lastRaidCheck > 60000) {
-      lastRaidCheck = now;
-      if (CC.Game.maybeRaid) CC.Game.maybeRaid(Date.now());
-    }
-
     if (CC.App.mode === 'battle') {
       // В первые 3 секунды база только показывается: бой и таймер стоят.
       if (!CC.App.prepActive) {
@@ -1795,6 +1788,8 @@ CC.CamMath = (function () {
     CC.TabGuard.claim();
     CC.Base.load();
     CC.Game.load();
+    // Набег проверяется только здесь, по реальному времени отсутствия из
+    // сейва. Пока игра открыта, нападений на базу нет.
     if (CC.Game.maybeRaid) CC.Game.maybeRaid(Date.now());
     CC.Battle.reset();
     resize();
@@ -1829,14 +1824,12 @@ CC.CamMath = (function () {
     });
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
+        // Запоминаем момент ухода. Скрытая, но не закрытая вкладка набега
+        // не запускает: он проверится только при следующем boot.
         persist();
         if (CC.Sound) CC.Sound.pause();
       } else {
         if (!CC.App.storagePaused && CC.Sound) CC.Sound.resume();
-        // пока вкладка была скрыта, мог случиться набег
-        if (!CC.App.storagePaused && CC.Game.maybeRaid) {
-          CC.Game.maybeRaid(Date.now());
-        }
       }
     });
 

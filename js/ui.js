@@ -935,7 +935,7 @@ CC.UI = (function () {
 
     if (mode === 'battle') {
       if (armyTotal() <= 0) {
-        toast('Сначала найми войска в ангаре');
+        toast('Сначала найми войска в Казарме');
         openHangar();
         return;
       }
@@ -1021,19 +1021,19 @@ CC.UI = (function () {
     const dcap = Math.round(CC.Game.cap('dark'));
 
     if (cache.gold !== gold) {
-      resGold.textContent = gold;
+      resGold.textContent = fmtNum(gold);
       cache.gold = gold;
     }
     if (cache.gcap !== gcap) {
-      resGoldCap.textContent = gcap > 0 ? 'из ' + gcap : 'нет склада';
+      resGoldCap.textContent = gcap > 0 ? 'из ' + fmtNum(gcap) : 'нет склада';
       cache.gcap = gcap;
     }
     if (cache.elixir !== elixir) {
-      resElixir.textContent = elixir;
+      resElixir.textContent = fmtNum(elixir);
       cache.elixir = elixir;
     }
     if (cache.ecap !== ecap) {
-      resElixirCap.textContent = ecap > 0 ? 'из ' + ecap : 'нет склада';
+      resElixirCap.textContent = ecap > 0 ? 'из ' + fmtNum(ecap) : 'нет склада';
       cache.ecap = ecap;
     }
 
@@ -1051,12 +1051,12 @@ CC.UI = (function () {
     }
     if (resDark) {
       if (cache.dark !== dark) {
-        resDark.textContent = dark;
+        resDark.textContent = fmtNum(dark);
         cache.dark = dark;
       }
     }
     if (resDarkCap) {
-      const capTextDark = dcap > 0 ? 'из ' + dcap : 'нет склада';
+      const capTextDark = dcap > 0 ? 'из ' + fmtNum(dcap) : 'нет склада';
       if (cache.dcap !== capTextDark) {
         resDarkCap.textContent = capTextDark;
         cache.dcap = capTextDark;
@@ -2819,8 +2819,7 @@ CC.UI = (function () {
 
     if (mapCardName) mapCardName.textContent = lvl.name;
     if (mapCardTh) {
-      mapCardTh.textContent = 'Командный центр ' + lvl.th + ' · TH ' + lvl.th +
-        ' / ' + CC.MAX_TH +
+      mapCardTh.textContent = 'Командный центр ' + lvl.th + ' / ' + CC.MAX_TH +
         (lvl.boss || lvl.final ? ' · финал' : '');
     }
     if (mapCardChapter) {
@@ -2898,7 +2897,7 @@ CC.UI = (function () {
     }
     if (armyTotal() <= 0) {
       closeLevels();
-      toast('Сначала найми войска в ангаре');
+      toast('Сначала найми войска в Казарме');
       openHangar();
       return { error: 'Армия пуста', needArmy: true };
     }
@@ -2946,7 +2945,7 @@ CC.UI = (function () {
     const pct = Math.max(0, Math.min(100, (xp - prev) / span * 100));
 
     if (xpLevel && xpLevel.textContent !== String(lvl)) xpLevel.textContent = String(lvl);
-    const label = xp + ' / ' + next + ' XP';
+    const label = fmtNum(xp) + ' / ' + fmtNum(next) + ' XP';
     if (xpLabel && xpLabel.textContent !== label) xpLabel.textContent = label;
     if (xpBar) {
       const w = pct.toFixed(0) + '%';
@@ -3065,7 +3064,10 @@ CC.UI = (function () {
     timer: null,
     frame: null,
     idle: null,
-    io: null
+    io: null,
+    pending: [],     // карточки, ждущие 3D-кадр (UI-04)
+    pollTimer: null,
+    pollUntil: 0
   };
 
   // Атрибуты слота: тип уже лежит в data-type рядом, здесь — как рисовать.
@@ -3092,6 +3094,12 @@ CC.UI = (function () {
       cancelIdleCallback(shopArt.idle);
     }
     shopArt.idle = null;
+    if (shopArt.pollTimer !== null) {
+      clearTimeout(shopArt.pollTimer);
+      shopArt.pollTimer = null;
+    }
+    shopArt.pending = [];
+    shopArt.pollUntil = 0;
     if (shopArt.io) {
       shopArt.io.disconnect();
       shopArt.io = null;
@@ -3109,21 +3117,79 @@ CC.UI = (function () {
   }
 
   // Нарисовать арт одного слота. Ошибки canvas уже глотает cardArt.
+  // Возвращает метаданные: по ним догружаем 3D-кадр и перерисовываем.
   function paintShopArtSlot(slot) {
-    if (!slot || !slot.getAttribute) return;
+    if (!slot || !slot.getAttribute) return null;
     const kind = slot.getAttribute('data-art-kind');
     const type = slot.getAttribute('data-type');
-    if (!kind || !type) return;
+    if (!kind || !type) return null;
     const size = Number(slot.getAttribute('data-art-size')) || 180;
     const level = Number(slot.getAttribute('data-art-level')) || 1;
     slot.removeAttribute('data-art-kind');
     const art = cardArt(kind, type, size, level,
       'shop-card__art term-card__art');
-    if (!art) return;
+    if (!art) return null;
     slot.innerHTML = art;
     if (slot.classList) slot.classList.add('has-art');
     const card = slot.closest ? slot.closest('.term-card') : null;
     if (card && card.classList) card.classList.add('has-art');
+    return { kind: kind, type: type, size: size, level: level };
+  }
+
+  // UI-04: карточка терминала нарисовалась 2.5D-вектором, потому что кадр
+  // 3D-здания ещё грузился. Держим такие слоты в очереди и точечно
+  // перерисовываем, когда CC.Render.buildingArtReady() вернёт true.
+  // Грид и cache.shopSig не пересобираются — меняется только слот.
+  function shopArtNeed3d(meta) {
+    if (!meta || meta.kind !== 'building') return false;
+    const R = CC.Render;
+    if (!R || typeof R.buildingArt3d !== 'function') return false;
+    if (!R.buildingArt3d(meta.type)) return false;
+    return typeof R.buildingArtReady !== 'function' ||
+      !R.buildingArtReady(meta.type, meta.level);
+  }
+
+  function trackShopArt3d(meta, slot) {
+    if (!slot || !shopArtNeed3d(meta)) return;
+    for (let i = 0; i < shopArt.pending.length; i++) {
+      if (shopArt.pending[i].slot === slot) return;
+    }
+    if (!shopArt.pollUntil) shopArt.pollUntil = Date.now() + 8000;
+    shopArt.pending.push({
+      slot: slot, kind: meta.kind, type: meta.type,
+      size: meta.size, level: meta.level
+    });
+  }
+
+  function scheduleShopArtPoll(gen) {
+    if (gen !== shopArt.gen || !shopOpen) return;
+    if (!shopArt.pending.length || shopArt.pollTimer !== null) return;
+    if (typeof setTimeout !== 'function') return;
+    shopArt.pollTimer = setTimeout(function () {
+      shopArt.pollTimer = null;
+      if (gen !== shopArt.gen || !shopOpen) return;
+      const R = CC.Render;
+      const left = [];
+      const expired = Date.now() >= (shopArt.pollUntil || 0);
+      for (let i = 0; i < shopArt.pending.length; i++) {
+        const it = shopArt.pending[i];
+        if (!it.slot || it.slot.isConnected === false) continue;
+        const ready = !R || typeof R.buildingArtReady !== 'function' ||
+          R.buildingArtReady(it.type, it.level);
+        if (!ready && !expired) {
+          left.push(it);
+          continue;
+        }
+        if (it.slot.setAttribute) {
+          it.slot.setAttribute('data-art-kind', it.kind);
+          it.slot.setAttribute('data-art-size', it.size);
+          it.slot.setAttribute('data-art-level', it.level);
+          paintShopArtSlot(it.slot);
+        }
+      }
+      shopArt.pending = left;
+      if (left.length) scheduleShopArtPoll(gen);
+    }, 200);
   }
 
   // Карточка въехала в кадр при прокрутке — поднять её в начало очереди.
@@ -3183,7 +3249,7 @@ CC.UI = (function () {
       // Грид перерисован или терминал закрыт — старый узел уже не в DOM.
       if (slot.isConnected === false) { done++; continue; }
       if (!slot.getAttribute || !slot.getAttribute('data-art-kind')) continue;
-      paintShopArtSlot(slot);
+      trackShopArt3d(paintShopArtSlot(slot), slot);
       done++;
     }
 
@@ -3193,6 +3259,7 @@ CC.UI = (function () {
     }
     shopArt.queue = [];
     shopArt.idx = 0;
+    scheduleShopArtPoll(gen);
     if (shopArt.io) {
       shopArt.io.disconnect();
       shopArt.io = null;
@@ -3286,26 +3353,78 @@ CC.UI = (function () {
     return 'all';
   }
 
-  // Сначала доступные карточки, затем закрытые; внутри — по TH открытия.
-  function shopSortedTypes(id) {
+  /* Единое описание карточки для сортировки и текста замка.
+     Доступность — ровно по контракту задачи: canBuild(type).ok и
+     limitAt(type, th) > 0. Слитый тип (лимит 0, а первый TH уже наступил)
+     считается отдельной группой «слито» и уходит в самый конец. */
+  const SHOP_ORDER_VERSION = 2;
+  const SHOP_CAT_RANK = {
+    townhall: 0, defense: 1, resources: 2, army: 3, traps: 4, walls: 5
+  };
+
+  function shopCardInfo(type) {
     const th = CC.Game.townhallLevel();
+    const open = CC.Game.canBuild(type);
+    const limit = CC.limitAt(type, th);
+    const first = firstThFor(type);
+    const merged = !!open.ok && limit <= 0 && first <= th;
+    const placeable = !!open.ok && limit > 0;
+    let needTh;
+    if (!open.ok) needTh = Math.max(open.needTh || 1, first);
+    else if (limit <= 0) needTh = merged ? th : first;
+    else needTh = th;
+    return {
+      th: th, open: open, limit: limit, first: first,
+      merged: merged, placeable: placeable, needTh: needTh,
+      locked: !placeable,
+      group: merged ? 2 : (placeable ? 0 : 1)
+    };
+  }
+
+  function shopCatRank(type) {
+    if (type === 'townhall') return 0;
+    const id = shopTypeCategory(type);
+    return SHOP_CAT_RANK[id] != null ? SHOP_CAT_RANK[id] : 9;
+  }
+
+  // Порядок: доступные → закрытые по возрастанию нужного TH → слитые.
+  // Внутри доступных: категория, цена постановки, TH открытия. Внутри
+  // закрытых: нужный TH, затем категория/цена. Исходный порядок CC.PALETTE
+  // остаётся стабильным добором при равенстве.
+  function shopSortedTypes(id) {
     const list = shopCatTypes(id).filter(function (t) {
       return !!CC.BUILDINGS[t];
     });
-    const rank = function (type) {
-      const limit = CC.limitAt(type, th);
-      const first = firstThFor(type);
-      const merged = limit <= 0 && first <= th;
-      const open = CC.Game.canBuild(type).ok && limit > 0;
-      return { open: open ? 0 : 1, th: merged ? 999 : first };
-    };
+    const info = {};
+    list.forEach(function (t) { info[t] = shopCardInfo(t); });
     const order = {};
     list.forEach(function (t, i) { order[t] = i; });
+    const price = function (type) {
+      return CC.placeCost ? (CC.placeCost(type) || {}) : {};
+    };
+    const byPrice = function (a, b) {
+      const pa = price(a);
+      const pb = price(b);
+      return (pa.gold || 0) - (pb.gold || 0) ||
+        (pa.elixir || 0) - (pb.elixir || 0) ||
+        (pa.dark || 0) - (pb.dark || 0);
+    };
     return list.slice().sort(function (a, b) {
-      const ra = rank(a);
-      const rb = rank(b);
-      if (ra.open !== rb.open) return ra.open - rb.open;
-      if (ra.th !== rb.th) return ra.th - rb.th;
+      const ia = info[a];
+      const ib = info[b];
+      if (ia.group !== ib.group) return ia.group - ib.group;
+      if (ia.group === 1 && ia.needTh !== ib.needTh) {
+        return ia.needTh - ib.needTh;
+      }
+      if (ia.group === 2 && ia.first !== ib.first) {
+        return ia.first - ib.first;
+      }
+      const ca = shopCatRank(a);
+      const cb = shopCatRank(b);
+      if (ca !== cb) return ca - cb;
+      const p = byPrice(a, b);
+      if (p) return p;
+      if (ia.first !== ib.first) return ia.first - ib.first;
       return order[a] - order[b];
     });
   }
@@ -3314,33 +3433,20 @@ CC.UI = (function () {
     const d = CC.BUILDINGS[type];
     if (!d) return '';
     const have = CC.Base.count(type);
-    const th = CC.Game.townhallLevel();
-    const limit = CC.limitAt(type, th);
-    const open = CC.Game.canBuild(type);
-    let locked = !open.ok;
-    let needTh = open.needTh;
-    let lockReason = open.reason;
-    let merged = false;
-
-    // на этом уровне центра лимит нулевой: карточка закрыта, даже если
-    // сама постройка формально открыта (энергобарьер до TH2). Если лимит
-    // был раньше, а теперь 0 — тип слит в позднюю башню: не показываем
-    // ложное «с командного центра 1».
-    if (!locked && limit <= 0) {
-      locked = true;
-      const first = firstThFor(type);
-      if (first <= th) {
-        merged = true;
-        needTh = th;
-        lockReason = 'Слито в позднюю башню';
-      } else {
-        needTh = first;
-        lockReason = 'Откроется с командного центра ' + needTh + ' уровня';
-      }
-    }
+    const info = shopCardInfo(type);
+    const th = info.th;
+    const limit = info.limit;
+    const open = info.open;
+    const locked = info.locked;
+    const needTh = info.needTh;
+    const merged = info.merged;
 
     const full = !merged && !locked && have >= limit;
     const atLimit = !merged && limit > 0 && have >= limit;
+    // Лимит можно поднять только если следующий центр действительно его
+    // увеличивает; иначе не обещаем ложного улучшения (UI-07).
+    const raiseLimit = !merged && th < CC.MAX_TH &&
+      CC.limitAt(type, th + 1) > limit;
     // Здание текущего шага Сержанта ставится бесплатно за 5 секунд —
     // карточка честно показывает «Бесплатно · 0:05».
     const lesson = !locked && !full && CC.Game.tutorialPlace
@@ -3403,11 +3509,22 @@ CC.UI = (function () {
       descText += ' · ответ ' + pct + '%';
     }
     let title;
-    if (merged) title = 'Слито в позднюю башню · на базе ' + have +
+    if (merged) title = 'Слито в позднюю башню · лимит 0 · на базе ' + have +
       ' · сносить не нужно';
-    else if (locked) title = lockReason;
-    else if (full) title = 'Лимит исчерпан';
-    else if (lesson) title = 'Сержант: бесплатно за ' + lesson.seconds + ' с';
+    else if (locked) {
+      if (needTh > th) {
+        const why = open.reason ||
+          ('Откроется с командного центра ' + needTh + ' уровня');
+        title = 'Нужен командный центр ' + needTh + ' — ' +
+          why.charAt(0).toLowerCase() + why.slice(1);
+      } else {
+        title = open.reason || ('Нужен командный центр ' + needTh);
+      }
+    } else if (full) {
+      title = 'Лимит исчерпан' + (raiseLimit
+        ? ' · улучши центр, чтобы поднять лимит'
+        : ' · это максимум для текущего центра');
+    } else if (lesson) title = 'Сержант: бесплатно за ' + lesson.seconds + ' с';
     else if (rescue) title = 'Первый склад: бесплатно, чтобы не потерять ресурсы';
     else if (poor) {
       const lack = [];
@@ -3421,6 +3538,8 @@ CC.UI = (function () {
       (d.trap ? ' data-trap="1"' : '') +
       (merged ? ' data-merged="1"' : '') +
       (locked ? ' data-locked="1" aria-disabled="true"' : '') +
+      ' data-group="' + (merged ? 'merged' : (locked ? 'locked' : 'open')) + '"' +
+      ' data-need-th="' + needTh + '"' +
       ' data-level="' + cardLevel + '" data-state="' + cardState + '"' +
       (full ? ' disabled' : '') + ' title="' + title + '">' +
       '<span class="term-card__banner">' +
@@ -3433,7 +3552,7 @@ CC.UI = (function () {
           artAttrs + '>' +
           icon + '</span>' +
       '</span>' +
-      '<span class="shop-card__desc term-card__desc">' + (descText || '') + '</span>' +
+      '<span class="shop-card__desc term-card__desc" title="' + escHtml(descText) + '">' + (descText || '') + '</span>' +
       statusEl + cost +
       '</button>';
   }
@@ -3596,7 +3715,7 @@ CC.UI = (function () {
     const th = CC.Game.townhallLevel();
     const rate = CC.gemExchange ? CC.gemExchange(res, th) : 0;
     const name = res === 'gold' ? 'руды' : (res === 'dark' ? 'плазмы' : 'энергии');
-    return 'Курс TH' + th + ': 1 платина = ' + fmtNum(rate) + ' ' + name;
+    return 'Курс центра ' + th + ': 1 платина = ' + fmtNum(rate) + ' ' + name;
   }
 
   // Перерисовать окно покупки ресурса и подпись про платину.
@@ -3822,8 +3941,9 @@ CC.UI = (function () {
       if (darkVisible() && CC.Game.cap('dark') <= 0) missing.push('Поставь склад плазмы');
       if (missing.length) hint = missing.join(' · ');
       else if (CC.Game.townhallLevel() === 1) {
-        hint = 'На 1 уровне доступны центр, турель и лазерная вышка.' +
-          ' Улучши центр до 2, чтобы открыть 3-й бур и мину';
+        hint = 'На 1 уровне доступны центр, турель, лазерная вышка, бур,' +
+          ' реактор, два склада, казарма и ангар.' +
+          ' Улучши центр до 2, чтобы открыть новые постройки';
       }
       if (hint) {
         if (shopNote.textContent !== hint) shopNote.textContent = hint;
@@ -3871,7 +3991,10 @@ CC.UI = (function () {
       '|dc' + Math.round(CC.Game.cap('dark')) +
       '|cat' + shopCat +
       '|gu' + guardianBattleValue().join(',') +
-      '|lesson' + (tutor && tutor.active ? tutor.id : '-');
+      '|lesson' + (tutor && tutor.active ? tutor.id : '-') +
+      // Версия порядка + фактический порядок карточек: смена TH/категории
+      // или правил сортировки не должна оставить старый грид из кэша.
+      '|ord' + SHOP_ORDER_VERSION + ':' + shopSortedTypes(shopCat).join(',');
     if (cache.shopSig === sig) return;
     cache.shopSig = sig;
 
@@ -5775,7 +5898,7 @@ CC.UI = (function () {
       label = 'Склад мал';
       reason = check.reason || 'Склад энергии мал';
     } else if (check.locked) {
-      label = 'Откроется на TH ' + check.needTh;
+      label = 'Откроется на центре ' + check.needTh;
       reason = check.reason || 'Войско ещё не открыто';
     } else {
       reason = check.reason || 'Исследование недоступно';
@@ -6959,14 +7082,136 @@ CC.UI = (function () {
       '</span>';
   }
 
+  /* Где тренируется войско. Бэкенд может сообщить needBuilding прямо в
+     canTrain; пока поля нет — тёмные войска (вторая половина ARMY_ORDER)
+     тренирует Тёмная казарма, остальные — Казарма. Питомник поддержан на
+     будущее: если canTrain вернёт needBuilding='pethouse', UI покажет его. */
+  const RECRUIT_DARK_FROM = 'minion';
+  const RECRUIT_DARK_TROOPS = {
+    minion: 1, hogrider: 1, valkyrie: 1, golem: 1, witch: 1, lavahound: 1,
+    bowler: 1, icegolem: 1, headhunter: 1, apprentice: 1, druid: 1,
+    furnace: 1, ruinwitch: 1
+  };
+
+  function troopTrainBuilding(type) {
+    const meta = (CC.TROOP_META && CC.TROOP_META[type]) || {};
+    const map = CC.TROOP_TRAINER || CC.TROOP_BUILDING || {};
+    const direct = map[type] || meta.trainBuilding || meta.building;
+    if (direct) return direct;
+    // Печь в справочнике тренируется в Питомнике — это исключение из
+    // «тёмных» войск, поэтому проверяем его до общего правила.
+    if (type === 'furnace') return 'pethouse';
+    if (RECRUIT_DARK_TROOPS[type]) return 'darktrain';
+    const at = CC.ARMY_ORDER.indexOf(type);
+    const darkAt = CC.ARMY_ORDER.indexOf(RECRUIT_DARK_FROM);
+    if (at !== -1 && darkAt !== -1 && at >= darkAt) return 'darktrain';
+    return 'train';
+  }
+
+  function trainBuildingName(id) {
+    if (id === 'train') return 'Казарма';
+    if (id === 'darktrain') return 'Тёмная казарма';
+    if (id === 'pethouse') return 'Питомник';
+    const b = CC.BUILDINGS && CC.BUILDINGS[id];
+    return (b && b.name) || 'постройка';
+  }
+
+  // Короткая пользовательская памятка в правильном роде.
+  function trainerNeedText(id) {
+    if (id === 'train') return 'Нужна Казарма';
+    if (id === 'darktrain') return 'Нужна Тёмная казарма';
+    if (id === 'pethouse') return 'Нужен Питомник';
+    return 'Нужна ' + trainBuildingName(id);
+  }
+
+  const NO_TRAINERS_HINT = 'Нет тренажёров — построй Казарму, ' +
+    'Тёмную казарму или Питомник в терминале';
+
+  function noTrainers() {
+    return !CC.Game.trainSlots();
+  }
+
+  // Шапка найма: подсказка о тренажёрах не блокирует окно.
+  function recruitHeaderLine(base) {
+    return (noTrainers() ? '⚠ ' + NO_TRAINERS_HINT + ' · ' : '') + base;
+  }
+
+  // На узких экранах CSS скрывает подзаголовок; там ту же подсказку
+  // показывает баннер в сетке найма (trainerBannerHtml).
+  function showRecruitSub(text) {
+    if (!recruitSub) return;
+    recruitSub.textContent = text;
+    recruitSub.style.display = '';
+  }
+
+  function trainerBannerHtml() {
+    if (!noTrainers()) return '';
+    return '<div class="recruit-hint recruit-hint_lock recruit-trainer-alert"' +
+      ' style="grid-column:1 / -1;grid-row:auto">⚠ ' +
+      escHtml(NO_TRAINERS_HINT) + '</div>';
+  }
+
+  function trainerCountsText() {
+    const parts = [
+      'Казарма ×' + CC.Base.count('train'),
+      'Тёмная казарма ×' + CC.Base.count('darktrain')
+    ];
+    const pet = CC.Base.count('pethouse');
+    if (pet > 0) parts.push('Питомник ×' + pet);
+    return parts.join(' · ');
+  }
+
+  /* hardLock — карточка не просто «сейчас нет энергии/места», а войско
+     ещё не открыто по TH или нет тренировочной постройки. Такие карточки
+     серые, с замком и памяткой, как просил игрок. */
+  function recruitLockInfo(type, check) {
+    const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
+    const th = CC.Game.townhallLevel();
+    const byTh = th < need;
+    const reason = String((check && (check.reason || check.error)) || '');
+    let buildingId = check && check.needBuilding ? check.needBuilding : null;
+    const missingBuilding = (!check || !check.ok)
+      ? (buildingId || (/ангар|казарм|питомник/i.test(reason)
+        ? troopTrainBuilding(type) : null))
+      : null;
+    if (!buildingId) buildingId = troopTrainBuilding(type);
+    const backendName = check && check.needBuildingName;
+    const buildingName = backendName || trainBuildingName(buildingId);
+    return {
+      need: need,
+      byTh: byTh,
+      buildingId: buildingId,
+      buildingName: buildingName,
+      missingBuilding: !!missingBuilding,
+      missingBuildingId: missingBuilding || null,
+      missingBuildingName: missingBuilding
+        ? (backendName || trainBuildingName(missingBuilding)) : null,
+      hardLock: byTh || !!missingBuilding
+    };
+  }
+
+  function recruitLockMemo(lock) {
+    const parts = [];
+    if (lock.byTh) {
+      parts.push('Откроется с командного центра ' + lock.need +
+        ' — улучши центр до ур. ' + lock.need);
+    }
+    if (lock.missingBuilding) {
+      parts.push(trainerNeedText(lock.missingBuildingId) +
+        ' — построй в терминале, раздел «Армия»');
+    }
+    return parts.join(' · ');
+  }
+
   function recruitCardHtml(type) {
     const d = CC.TROOPS[type];
     const th = CC.Game.townhallLevel();
-    const need = CC.troopUnlock ? CC.troopUnlock(type) : 1;
-    const locked = th < need;
-    const lvl = locked ? 1 : CC.Game.troopLevel(type);
-    const max = locked ? 1 : (CC.troopMaxLevel(type, th) || lvl);
-    const bad = locked ? null : CC.Game.canTrain(type).error;
+    const check = CC.Game.canTrain(type);
+    const lock = recruitLockInfo(type, check);
+    const locked = lock.hardLock;
+    const lvl = lock.byTh ? 1 : CC.Game.troopLevel(type);
+    const max = lock.byTh ? 1 : (CC.troopMaxLevel(type, th) || lvl);
+    const bad = locked ? null : check.error;
     const space = d.space || 1;
     const speed = d.speed != null ? d.speed : 1;
     const range = d.range != null ? d.range : 1;
@@ -6974,10 +7219,19 @@ CC.UI = (function () {
     const selected = state.trainSel === type ? ' is-selected' : '';
     const cls = 'recruit-card' + (locked ? ' is-locked' : '') +
       (bad ? ' is-off' : '') + selected;
+    const memo = recruitLockMemo(lock);
+    const lockText = lock.byTh
+      ? '🔒 С центра ' + lock.need
+      : (lock.missingBuilding ? '🔒 ' + trainerNeedText(lock.missingBuildingId) : '');
+    const title = d.name + ' · ' + (d.desc || '') +
+      ' · Тренируется: ' + lock.buildingName +
+      (memo ? ' · ' + memo : (bad ? ' · ' + bad : ''));
 
     return '<button class="' + cls + '" type="button" data-recruit="' + type + '"' +
       (locked ? ' data-locked="1" aria-disabled="true"' : '') +
-      ' title="' + escHtml(d.name + ' · ' + (d.desc || '')) + '">' +
+      ' data-building="' + escHtml(lock.buildingId) + '"' +
+      (lock.byTh ? ' data-need-th="' + lock.need + '"' : '') +
+      ' title="' + escHtml(title) + '">' +
       troopPortrait(type, 84, lvl, 'recruit-card__portrait') +
       '<span class="recruit-card__body">' +
         '<b class="recruit-card__name">' + escHtml(d.name) + '</b>' +
@@ -6986,9 +7240,11 @@ CC.UI = (function () {
           space + ' ' + spaceWord(space) + ' · ' + d.time + 'с</span>' +
         '<span class="recruit-card__stats" title="Скорость · дальность · темп атаки">' +
           speed + ' · ' + range + ' · ' + rate + '/с</span>' +
+        '<span class="recruit-card__building" title="Где тренируется">🏰 ' +
+          escHtml(lock.buildingName) + '</span>' +
       '</span>' +
       (locked
-        ? '<span class="recruit-card__lock">🔒 С центра ' + need + '</span>'
+        ? '<span class="recruit-card__lock">' + escHtml(lockText) + '</span>'
         : (bad ? '<span class="recruit-card__off">' + escHtml(bad) + '</span>' : '')) +
       '</button>';
   }
@@ -7079,7 +7335,8 @@ CC.UI = (function () {
   }
 
   /* ---------- вкладки окна армии ----------
-     Войска тренируются в Казарме, тёмные — в Казарме плазмы. Заклинания,
+     Войска тренируются в Казарме, тёмные — в Тёмной казарме, Печь — в
+     Питомнике; Ангар даёт только места в армии. Заклинания,
      питомцы и осадные машины в P2 ещё без механик: показываем полные
      карточки данных и честную кнопку «В разработке». */
 
@@ -7495,6 +7752,32 @@ CC.UI = (function () {
     return '';
   }
 
+  /* UI-10: правая панель найма. Верх (герой, лимиты, очередь) прокручивается,
+     а статы, цена и основная кнопка закреплены внизу. Так CTA не уходит под
+     сгиб на 844×390 и 683×320 и не перекрывает прокручиваемый контент. */
+  function layoutRecruitSide() {
+    if (!recruitSide) return;
+    if (recruitSide.firstElementChild &&
+        recruitSide.firstElementChild.classList.contains('recruit__scroll')) return;
+    const scroll = document.createElement('div');
+    scroll.className = 'recruit__scroll';
+    const foot = document.createElement('div');
+    foot.className = 'recruit__foot';
+    const kids = Array.prototype.slice.call(recruitSide.children);
+    let lastAction = null;
+    kids.forEach(function (el) {
+      if (el.classList && el.classList.contains('recruit-actions')) lastAction = el;
+    });
+    kids.forEach(function (el) {
+      const cls = el.classList || {};
+      const toFoot = cls.contains('recruit-stats') ||
+        cls.contains('recruit-price') || el === lastAction;
+      (toFoot ? foot : scroll).appendChild(el);
+    });
+    recruitSide.appendChild(scroll);
+    if (foot.children.length) recruitSide.appendChild(foot);
+  }
+
   function syncRecruit() {
     if (!recruitOpen || !recruitGrid || !recruitSide) return;
 
@@ -7532,26 +7815,25 @@ CC.UI = (function () {
           ? guardUp.id + ':' + guardUp.to + ':' + Math.ceil(guardUp.left) : '-');
       if (cache.recruitSig === sig) return;
       cache.recruitSig = sig;
-      if (recruitSub) {
-        let line = 'Армия ' + CC.Game.armyUsed() + '/' + CC.Game.capacity();
-        if (recruitTab === 'guardians') {
-          const picked = guardianBattleValue();
-          line += ' · стражей на бой: ' + picked.length +
-            (guardUp ? ' · идёт прокачка' : '') +
-            ' · места в армии не занимают';
-        } else if (recruitTab === 'spells') {
-          line += ' · слоты ' + spellUsed() + '/' + spellSlots();
-        } else if (recruitTab === 'pets') {
-          line += ' · питомцев в наборе: ' + Object.keys(ld.pets).length +
-            (petUp ? ' · идёт прокачка' : '');
-        } else {
-          const picked = ld.siege && CC.SIEGE[ld.siege];
-          line += ' · осада: ' + (picked ? picked.name : 'не выбрана');
-        }
-        recruitSub.textContent = line;
+      let line = 'Армия ' + CC.Game.armyUsed() + '/' + CC.Game.capacity();
+      if (recruitTab === 'guardians') {
+        const picked = guardianBattleValue();
+        line += ' · стражей на бой: ' + picked.length +
+          (guardUp ? ' · идёт прокачка' : '') +
+          ' · места в армии не занимают';
+      } else if (recruitTab === 'spells') {
+        line += ' · слоты ' + spellUsed() + '/' + spellSlots();
+      } else if (recruitTab === 'pets') {
+        line += ' · питомцев в наборе: ' + Object.keys(ld.pets).length +
+          (petUp ? ' · идёт прокачка' : '');
+      } else {
+        const picked = ld.siege && CC.SIEGE[ld.siege];
+        line += ' · осада: ' + (picked ? picked.name : 'не выбрана');
       }
+      showRecruitSub(line);
       recruitGrid.innerHTML = recruitTabGridHtml();
       recruitSide.innerHTML = recruitSideSpecialHtml();
+      layoutRecruitSide();
       bindRecruitPortraits(recruitGrid);
       bindRecruitPortraits(recruitSide);
       return;
@@ -7563,34 +7845,38 @@ CC.UI = (function () {
     const sel = state.trainSel && CC.TROOPS[state.trainSel] ? state.trainSel
       : (CC.ARMY_ORDER[0] || 'barb');
     const d = CC.TROOPS[sel];
-    const need = CC.troopUnlock ? CC.troopUnlock(sel) : 1;
-    const locked = th < need;
-    const lvl = locked ? 1 : CC.Game.troopLevel(sel);
-    const st = CC.Game.troopStats(sel) || { hp: d.hp, dmg: d.dmg, level: lvl };
     const check = CC.Game.canTrain(sel);
+    const lock = recruitLockInfo(sel, check);
+    const locked = lock.hardLock;
+    const need = lock.need;
+    const lvl = lock.byTh ? 1 : CC.Game.troopLevel(sel);
+    const st = CC.Game.troopStats(sel) || { hp: d.hp, dmg: d.dmg, level: lvl };
+    const memo = recruitLockMemo(lock);
     const fit = CC.Game.batchFit(sel);
     const used = CC.Game.armyUsed();
     const cap = CC.Game.capacity();
-    const qSlots = Math.max(1, stats.slots || CC.Game.trainSlots() || 1);
+    const qSlots = Math.max(0, stats.slots || CC.Game.trainSlots() || 0);
     const queued = stats.queued || 0;
     const training = stats.training || 0;
 
     const sig = [sel, th, lvl, used, cap, queued, training,
       queue.map(function (q) { return q.type + Math.ceil(q.left) + ':' + q.slot; }).join(','),
-      CC.Game.elixir(), check.ok ? 1 : 0, fit, CC.Game.gems()].join('|');
+      CC.Game.elixir(), check.ok ? 1 : 0, check.reason || check.error || '',
+      lock.buildingId, locked ? 1 : 0, memo, fit, CC.Game.gems(),
+      qSlots, CC.Base.count('train'), CC.Base.count('darktrain'),
+      CC.Base.count('pethouse'), noTrainers() ? 1 : 0].join('|');
     if (cache.recruitSig === sig) return;
     cache.recruitSig = sig;
 
-    if (recruitSub) {
-      recruitSub.textContent = 'Армия ' + used + '/' + cap + ' · ' + queued +
-        ' в очереди · ' + qSlots + ' ' + slotWord(qSlots);
-    }
+    showRecruitSub(recruitHeaderLine('Армия ' + used + '/' + cap + ' · ' +
+      queued + ' в очереди · ' + qSlots + ' ' + slotWord(qSlots)));
 
-    recruitGrid.innerHTML = CC.ARMY_ORDER.map(recruitCardHtml).join('');
+    recruitGrid.innerHTML = trainerBannerHtml() +
+      CC.ARMY_ORDER.map(recruitCardHtml).join('');
     bindRecruitPortraits(recruitGrid);
 
     const armyPct = cap > 0 ? Math.round(used / cap * 100) : 0;
-    const queuePct = Math.round(Math.min(1, queued / qSlots) * 100);
+    const queuePct = qSlots > 0 ? Math.round(Math.min(1, queued / qSlots) * 100) : 0;
     const price = '⚡ ' + fmtNum(d.cost) + ' · ' + d.time + 'с';
 
     const mini = queue.length
@@ -7609,9 +7895,13 @@ CC.UI = (function () {
         (stats.slots ? ' · ' + stats.slots + ' ' + slotWord(stats.slots) : '') + '</p>';
 
     let action;
-    if (locked) {
-      action = '<button class="recruit-hire" type="button" disabled>' +
-        'С центра ' + need + '</button>';
+    if (lock.byTh) {
+      action = '<button class="recruit-hire" type="button" disabled title="' +
+        escHtml(memo) + '">С центра ' + need + '</button>';
+    } else if (lock.missingBuilding) {
+      action = '<button class="recruit-hire" type="button" disabled title="' +
+        escHtml(memo) + '">' + escHtml(trainerNeedText(lock.missingBuildingId)) +
+        '</button>';
     } else if (check.error) {
       action = '<button class="recruit-hire" type="button" disabled title="' +
         escHtml(check.error) + '">' + escHtml(check.error) + '</button>';
@@ -7622,7 +7912,8 @@ CC.UI = (function () {
     const batchLabel = fit > 0 ? '×' + fit : '×5';
     const batch = '<button class="recruit-batch" type="button" data-recruit-batch="' + sel + '"' +
       (locked || fit < 1 ? ' disabled' : '') +
-      ' title="' + (fit > 0 ? 'Нанять до ' + fit : 'Нет места или энергии') + '">' +
+      ' title="' + (locked && memo ? escHtml(memo)
+        : (fit > 0 ? 'Нанять до ' + fit : 'Нет места или энергии')) + '">' +
       batchLabel + '</button>';
 
     recruitSide.innerHTML =
@@ -7634,6 +7925,9 @@ CC.UI = (function () {
           '<span class="recruit-hero__lvl">Ур. ' + lvl + '</span>' +
         '</div>' +
       '</div>' +
+      (memo
+        ? '<p class="recruit-hint recruit-hint_lock">🔒 ' + escHtml(memo) + '</p>'
+        : '') +
       '<div class="recruit-stats">' +
         '<span class="recruit-stat"><b>' + fmtNum(st.hp) + '</b><i>HP</i></span>' +
         '<span class="recruit-stat"><b>' + fmtNum(st.dmg) + '</b><i>Урон</i></span>' +
@@ -7660,26 +7954,24 @@ CC.UI = (function () {
         '<div class="recruit-train-line">Тренируется <b id="recruit-training">' +
           training + '</b> · свободно <b id="recruit-free">' +
           Math.max(0, cap - used - (stats.space || 0)) + '</b></div>' +
-        '<p class="recruit-hint">Очередь: Казарма ×' +
-          CC.Base.count('train') + ' · плазма: Казарма плазмы ×' +
-          CC.Base.count('darktrain') + '</p>' +
+        '<p class="recruit-hint">Тренажёры: ' + trainerCountsText() + '</p>' +
       '</div>' +
       '<p class="recruit-price">' + price + '</p>' +
       '<div class="recruit-actions">' + action + batch + '</div>' +
       '<div class="recruit-minihead">Очередь <span>' + queued + ' · ' +
         qSlots + ' ' + slotWord(qSlots) + '</span></div>' +
       '<div class="recruit-queue">' + mini + '</div>' +
-      '<p class="recruit-hint">Улучшение войск — в Исследовательском центре</p>';
+      '<p class="recruit-hint">Тренируется в: ' + escHtml(lock.buildingName) +
+        ' · улучшение войск — в Исследовательском центре</p>';
+    layoutRecruitSide();
     bindRecruitPortraits(recruitSide);
   }
 
   function openRecruit(type) {
     if (CC.App.mode === 'battle') setMode('base');
-    if (!CC.Game.trainSlots()) {
-      toast('Нужен ангар');
-      return { error: 'Нужен ангар' };
-    }
 
+    // Окно найма не блокируем отсутствием тренажёра: игрок должен видеть
+    // карточки, замки и памятку «Построй Казарму / Тёмную казарму / Питомник».
     const th = CC.Game.townhallLevel();
     const pick = type && CC.TROOPS[type] ? type
       : (state.trainSel && CC.TROOPS[state.trainSel] ? state.trainSel
@@ -7695,11 +7987,10 @@ CC.UI = (function () {
     if (recruitEl) recruitEl.classList.remove('hidden');
     // Окно найма перекрывает низ экрана: Сержант не должен выглядывать.
     if (sergeantEl) sergeantEl.classList.add('hidden');
-    if (recruitSub) {
-      const qs = CC.Game.queueStats();
-      recruitSub.textContent = 'Армия ' + CC.Game.armyUsed() + '/' + CC.Game.capacity() +
-        ' · ' + qs.queued + ' в очереди · ' + qs.slots + ' ' + slotWord(qs.slots);
-    }
+    const qs = CC.Game.queueStats();
+    showRecruitSub(recruitHeaderLine('Армия ' +
+      CC.Game.armyUsed() + '/' + CC.Game.capacity() +
+      ' · ' + qs.queued + ' в очереди · ' + qs.slots + ' ' + slotWord(qs.slots)));
     syncRecruit();
     return { ok: true, selected: pick, tab: recruitTab };
   }
@@ -10117,8 +10408,8 @@ CC.UI = (function () {
 
     const bar = CC.Base.list().find(function (b) { return b.type === 'barracks'; });
     if (!bar) {
-      toast('Сначала поставь ангар');
-      return { error: 'Нужен ангар' };
+      toast('Сначала поставь Ангар — он даёт места в армии');
+      return { error: 'Сначала поставь Ангар' };
     }
 
     closeQuests();
@@ -10355,7 +10646,7 @@ CC.UI = (function () {
           '<b class="arena-card__name">' + escHtml(g.name) + '</b>' +
           '<span class="arena-card__rating">🏆 ' + g.rating + '</span>' +
         '</div>' +
-        '<div class="arena-card__meta">Центр ' + g.th + ' · TH ' + g.th +
+        '<div class="arena-card__meta">Центр ' + g.th +
           ' · оборона ' + g.defenses + note + '</div>' +
         '<div class="arena-card__loot">' +
           '<span>🔩 ' + info.gold + '</span>' +
@@ -10401,7 +10692,7 @@ CC.UI = (function () {
     const empty = armyTotal() <= 0;
     if (arenaNote) {
       arenaNote.textContent = empty
-        ? 'Армия пуста — найми войск в ангаре, потом возвращайся'
+        ? 'Армия пуста — найми войска в Казарме, потом возвращайся'
         : '';
       arenaNote.classList.toggle('hidden', !empty);
     }
@@ -10482,7 +10773,7 @@ CC.UI = (function () {
 
     if (armyTotal() <= 0) {
       closeArena();
-      toast('Армия пуста — найми войска в ангаре');
+      toast('Армия пуста — найми войска в Казарме');
       openHangar();
       return { error: 'Армия пуста', needArmy: true };
     }
@@ -10626,7 +10917,7 @@ CC.UI = (function () {
     if (CC.App.mode === 'battle') setMode('base');
 
     if (armyTotal() <= 0) {
-      toast('Армия пуста — найми войска в ангаре');
+      toast('Армия пуста — найми войска в Казарме');
       openHangar();
       return { error: 'Армия пуста', needArmy: true };
     }

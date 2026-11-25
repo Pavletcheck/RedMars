@@ -585,15 +585,16 @@ CC.Game = (function () {
     },
     {
       id: 'placeBarracks', text: 'Поставь ангар',
-      hint: 'Тренирует войска и даёт места в армии.', place: 'barracks',
-      lore: 'Ангар — это твоя армия. Без него некому держать рубеж; ' +
-        'с него начнётся тренировка гарнизона.'
+      hint: 'Даёт места в армии. Тренирует бойцов Казарма — построй и её.',
+      place: 'barracks',
+      lore: 'Ангар — дом для гарнизона. Сами бойцы учатся в Казарме: ' +
+        'без неё ангар останется пустым складом.'
     },
     {
       id: 'train5', text: 'Натренируй 5 штурмовиков',
-      hint: 'Открой ангар, выбери штурмовика и жми «Нанять» или «×5». ' +
-        'Очередь тренировки идёт сама; на L1 ангара — 20 мест, энергия ' +
-        'списывается за каждого бойца.', goal: 'train', target: 5,
+      hint: 'Построй Казарму, открой ангар, выбери штурмовика и жми ' +
+        '«Нанять» или «×5». Очередь идёт сама; на L1 ангара — 20 мест, ' +
+        'энергия списывается за каждого бойца.', goal: 'train', target: 5,
       lore: 'Пять штурмовиков — минимальный гарнизон. Они пойдут первыми, ' +
         'когда сектор понадобится вернуть.'
     },
@@ -684,6 +685,9 @@ CC.Game = (function () {
   let tutorialEvent = null;
   let levelUpEvent = 0;
   let pendingOffline = null;
+  // Время отсутствия из последней загрузки. Набег возможен только здесь:
+  // пока игра открыта, maybeRaid не срабатывает.
+  let bootAwayMs = 0;
   let noEstorageEvent = false;
   let upgradeDoneEvent = 0;
   let buildDoneEvent = [];
@@ -1451,7 +1455,7 @@ CC.Game = (function () {
     return { ok: true, spent: cost, gems: gemsNow(), level: level(id) };
   }
 
-  // Ускорение завершает самый ранний юнит среди всех параллельных ангаров.
+  // Ускорение завершает самый ранний юнит среди всех параллельных слотов.
   function firstQueueIndex(now) {
     let best = -1;
     for (let i = 0; i < st.queue.length; i++) {
@@ -1680,7 +1684,7 @@ CC.Game = (function () {
     const seed = (Math.floor(num(now, 0) / 60000) + th * 37) >>> 0;
     const a = RAID_NAME_A[seed % RAID_NAME_A.length];
     const b = RAID_NAME_B[(seed >>> 4) % RAID_NAME_B.length];
-    return a + ' ' + b + ' · TH' + th;
+    return a + ' ' + b + ' · центр ' + th;
   }
 
   // Одна запись истории: время, кто напал, итог, украденное, лог высадки
@@ -1831,8 +1835,16 @@ CC.Game = (function () {
     return st.pendingRaid;
   }
 
+  // Набег запускается только при возвращении в игру. bootAwayMs заполняет
+  // load() реальным временем отсутствия из сейва (lastSeen). Пока документ
+  // открыт и сессия жива, maybeRaid не срабатывает: иначе нападение
+  // случалось бы прямо во время игры. Скрытая, но не закрытая вкладка
+  // тоже не считается отсутствием — набег произойдёт при следующем boot.
   function maybeRaid(now) {
     now = typeof now === 'number' ? now : Date.now();
+    const away = bootAwayMs;
+    bootAwayMs = 0;
+    if (away < RAIDS.interval) return null;
     if (!raidDue(now)) return null;
     return runRaid(now);
   }
@@ -2149,8 +2161,18 @@ CC.Game = (function () {
     if (lvl >= maxLvl) {
       const target = lvl + 1;
       const need = needThFor(it.type, target);
+      // Потолок типа берём из таблицы здания, а не maxLevelAt(type, 19):
+      // у слитых на TH19 типов (cannon/archer/eagle/scattershot) там 0,
+      // и `lvl >= 0` ложно превращало любой их апгрейд в «Максимальный».
+      const absMax = CC.buildingMaxLevel
+        ? CC.buildingMaxLevel(it.type)
+        : CC.maxLevelAt(it.type, MAX_TH);
 
-      if (it.type === 'townhall' || need > MAX_TH || target > MAX_TH) {
+      // Если следующий уровень не открывает ни один TH (или нужен уже
+      // достигнутый), это настоящий максимум, а не «ждите центр N»:
+      // иначе на TH19 лаборатория 17/17 показывала «Нужен центр ур. 19».
+      if (it.type === 'townhall' || need > MAX_TH || target > MAX_TH ||
+          (absMax > 0 && lvl >= absMax) || need <= townhallLevel()) {
         return {
           ok: false,
           error: 'Максимальный уровень',
@@ -4171,7 +4193,7 @@ CC.Game = (function () {
       out.housing = true;
     }
 
-    if (it.type === 'train' || it.type === 'darktrain') {
+    if (it.type === 'train' || it.type === 'darktrain' || it.type === 'pethouse') {
       out.trainSlots = 1;
       out.training = true;
     }
@@ -4189,8 +4211,9 @@ CC.Game = (function () {
   //
   // Места в армии дают только готовые ангары: 20 за каждый уровень ангара.
   // Один L1 + один L2 = 60, два L10 = 400. Стройплощадка и снесённый ангар
-  // мест не дают. Ангары тренируют параллельно: каждый ангар — один
-  // одновременный юнит, а очередь общая и ограничена вместимостью армии.
+  // мест не дают. Тренируют не ангары, а Казарма, Тёмная казарма и Питомник:
+  // каждый готовый тренажёр — один одновременный юнит, очередь общая и
+  // ограничена вместимостью армии.
 
   function barracksList() {
     const list = CC.Base.list();
@@ -4213,16 +4236,60 @@ CC.Game = (function () {
     return n;
   }
 
-  // Одновременная тренировка: один слот на каждый готовый Ангар
-  // (barracks) и каждую готовую Казарму (train/darktrain). Очередь общая,
-  // поэтому три бойца при двух Ангарах встают в два слота. Стройки
-  // слотов не дают. Старый слот вне диапазона обрабатывает slotOf.
+  // Тренажёры по справочнику coc-th-tables/csv/09_voyska.csv, колонка
+  // «Валюта»: обычные войска за «эликсир» учит Казарма (train), тёмные за
+  // «т. эликсир» — Тёмная казарма (darktrain). Печь идёт в войсках как
+  // «Призыв / осада» (Мин. TH15; в справочнике ей нужен Дом питомцев —
+  // 13–15), поэтому её тренажёр — Питомник (pethouse). Ангар (barracks =
+  // army_camp) — жильё: места в армии даёт, но не тренирует.
+  const TRAINER_NAME = {
+    train: 'Казарма',
+    darktrain: 'Тёмная казарма',
+    pethouse: 'Питомник'
+  };
+  const TRAINER_NEED = {
+    train: 'Постройте Казарму',
+    darktrain: 'Постройте Тёмную казарму',
+    pethouse: 'Постройте Питомник'
+  };
+  const TROOP_TRAINER = {
+    barb: 'train', archer: 'train', giant: 'train', goblin: 'train',
+    gnome: 'train', airship: 'train', wizard: 'train', healer: 'train',
+    dragon: 'train', pekka: 'train', babydragon: 'train', miner: 'train',
+    electrodragon: 'train', yeti: 'train', dragonrider: 'train',
+    electrotitan: 'train', rootrider: 'train', thrower: 'train',
+    meteorgolem: 'train',
+    minion: 'darktrain', hogrider: 'darktrain', valkyrie: 'darktrain',
+    golem: 'darktrain', witch: 'darktrain', lavahound: 'darktrain',
+    bowler: 'darktrain', icegolem: 'darktrain', headhunter: 'darktrain',
+    apprentice: 'darktrain', druid: 'darktrain', ruinwitch: 'darktrain',
+    furnace: 'pethouse'
+  };
+
+  // Тренажёр типа войск: id здания или null для неизвестного/героя.
+  function trainerOf(type) {
+    return TROOP_TRAINER[type] || null;
+  }
+
+  // Общий справочник для интерфейса: ui.js читает CC.TROOP_TRAINER, чтобы
+  // карточка найма и памятка показывали то же здание, что и canTrain.
+  CC.TROOP_TRAINER = TROOP_TRAINER;
+
+  function hasTrainer(type) {
+    const trainer = trainerOf(type);
+    return !!trainer && readyBuildingLevel(trainer) > 0;
+  }
+
+  // Одновременная тренировка: один слот на каждую готовую Казарму, Тёмную
+  // казарму и Питомник. Ангар (barracks) слотов не даёт — он только жильё.
+  // Очередь общая, стройки слотов не дают. Старый слот вне диапазона
+  // обрабатывает slotOf.
   function trainSlots() {
     const list = CC.Base.list();
     let n = 0;
     for (let i = 0; i < list.length; i++) {
       const t = list[i].type;
-      if (t !== 'barracks' && t !== 'train' && t !== 'darktrain') continue;
+      if (t !== 'train' && t !== 'darktrain' && t !== 'pethouse') continue;
       if (isBuilding(list[i].id)) continue;
       n++;
     }
@@ -4256,7 +4323,7 @@ CC.Game = (function () {
     return capacity();
   }
 
-  // Старые сейвы и изменение числа ангаров могли оставить слот вне
+  // Старые сейвы и изменение числа тренажёров могли оставить слот вне
   // диапазона. Такой юнит безопасно считаем первым слотом.
   function slotOf(e, slots) {
     const n = slots || trainSlots();
@@ -4266,7 +4333,7 @@ CC.Game = (function () {
     return s >= n ? s % n : s;
   }
 
-  // Когда освободится конкретный ангар: конец его последнего юнита.
+  // Когда освободится конкретный слот тренажёра: конец его последнего юнита.
   function slotFreeAt(slot, now) {
     let end = now;
     for (let i = 0; i < st.queue.length; i++) {
@@ -4277,31 +4344,54 @@ CC.Game = (function () {
   }
 
   function canTrain(type) {
-    if (!TROOPS[type]) return { error: 'Неизвестное войско' };
+    if (!TROOPS[type]) {
+      const reason = 'Неизвестное войско';
+      return { ok: false, error: reason, reason: reason };
+    }
     // Герой не тренируется и не встаёт в очередь: он всегда готов.
     if (type === 'hero') {
-      return { error: 'Герой не тренируется', reason: 'Герой не тренируется' };
+      const reason = 'Герой не тренируется';
+      return { ok: false, error: reason, reason: reason };
     }
 
     // Постепенное открытие: на TH1 только штурмовик, дальше раз в два уровня.
+    // needTh — памятка для интерфейса: «С командного центра N».
     const unlockAt = CC.troopUnlock ? CC.troopUnlock(type) : 1;
     if (unlockAt > townhallLevel()) {
       const reason = 'Откроется на ' + unlockAt + ' уровне центра';
-      return { error: reason, reason: reason, needTh: unlockAt };
+      return { ok: false, error: reason, reason: reason, needTh: unlockAt };
     }
 
-    if (!trainSlots()) return { error: 'Нужен ангар' };
+    // У каждого типа свой тренажёр: Казарма, Тёмная казарма или Питомник.
+    // Ангар (жильё) тренировать не умеет.
+    const trainer = trainerOf(type);
+    if (!trainer) {
+      const reason = 'Нет тренажёра для этого войска';
+      return { ok: false, error: reason, reason: reason };
+    }
+    if (readyBuildingLevel(trainer) <= 0) {
+      const name = TRAINER_NAME[trainer] || trainer;
+      const reason = TRAINER_NEED[trainer] || ('Постройте ' + name);
+      return {
+        ok: false, error: reason, reason: reason,
+        needBuilding: trainer, needBuildingName: name
+      };
+    }
 
     const d = TROOPS[type];
-    if (st.elixir < d.cost) return { error: 'Не хватает энергии' };
+    if (st.elixir < d.cost) {
+      const reason = 'Не хватает энергии';
+      return { ok: false, error: reason, reason: reason };
+    }
     if (armyUsed() + queuedSpace() + (d.space || 1) > capacity()) {
-      return { error: 'Армия заполнена' };
+      const reason = 'Армия заполнена';
+      return { ok: false, error: reason, reason: reason };
     }
     return { ok: true };
   }
 
-  // Найм ставит юнита в самый ранний свободный ангар. Поэтому два ангара
-  // реально тренируют двух бойцов одновременно, а не ждут друг друга.
+  // Найм ставит юнита в самый ранний свободный слот тренажёра. Поэтому две
+  // казармы реально тренируют двух бойцов одновременно, а не ждут друг друга.
   function train(type, now) {
     const check = canTrain(type);
     if (check.error) return check;
@@ -4330,14 +4420,15 @@ CC.Game = (function () {
     return { ok: true, slot: slot };
   }
 
-  // Сколько юнитов реально влезет в пачку прямо сейчас: место в армии
-  // и энергия. Очередь общая, поэтому отдельных «слотов» больше нет.
+  // Сколько юнитов реально влезет в пачку прямо сейчас: место в армии,
+  // энергия и готовый тренажёр нужного типа. Очередь общая, поэтому
+  // отдельных «слотов» больше нет.
   function batchFit(type) {
     const d = TROOPS[type];
     if (!d) return 0;
     const unlockAt = CC.troopUnlock ? CC.troopUnlock(type) : 1;
     if (unlockAt > townhallLevel()) return 0;
-    if (!trainSlots()) return 0;
+    if (!hasTrainer(type)) return 0;
 
     const spaceLeft = Math.max(0, capacity() - armyUsed() - queuedSpace());
     const bySpace = Math.floor(spaceLeft / (d.space || 1));
@@ -4377,7 +4468,7 @@ CC.Game = (function () {
     const slot = slotOf(e);
     st.queue.splice(index, 1);
 
-    // Пересобираем таймеры только своего ангара: остальные продолжают
+    // Пересобираем таймеры только своего слота: остальные продолжают
     // тренировку без потери прогресса. Внутри слота отсчёт идёт от now,
     // иначе отмена частично обученного юнита дарила бы ускорение.
     let end = now;
@@ -4396,7 +4487,7 @@ CC.Game = (function () {
     return { ok: true, refund: refund };
   }
 
-  // Готовые юниты снимаем в любом порядке: параллельные ангары завершают
+  // Готовые юниты снимаем в любом порядке: параллельные слоты завершают
   // работу независимо, поэтому ждать queue[0] нельзя.
   function settleQueue(now) {
     if (!st.queue.length) return;
@@ -4417,7 +4508,7 @@ CC.Game = (function () {
   }
 
   // Информация для панели: active — юнит, который тренируется прямо сейчас
-  // в своём ангаре; остальные ждут своей очереди в том же слоте.
+  // в своём слоте; остальные ждут своей очереди в том же слоте.
   function queueInfo(now) {
     now = typeof now === 'number' ? now : Date.now();
     const slots = trainSlots();
@@ -4443,7 +4534,7 @@ CC.Game = (function () {
     });
   }
 
-  // Сводка очереди для заголовка ангара: сколько тренируется одновременно
+  // Сводка очереди для окна найма: сколько тренируется одновременно
   // и сколько всего стоит в очереди.
   function queueStats(now) {
     now = typeof now === 'number' ? now : Date.now();
@@ -4663,7 +4754,7 @@ CC.Game = (function () {
     const idx = QUESTS.indexOf(def);
     let primary = 'Поставить';
     if (def.place) primary = 'Поставить';
-    else if (def.goal === 'train') primary = 'В ангар';
+    else if (def.goal === 'train') primary = 'Нанять войска';
     else if (def.goal === 'battle' || def.goal === 'level1') primary = 'В бой';
     else if (def.goal === 'th2') primary = 'К центру';
     else if (def.goal === 'cannon2') primary = 'К турели';
@@ -5623,8 +5714,8 @@ CC.Game = (function () {
         const type = e.type === 'balloon' ? 'airship' : e.type;
         if (!TROOPS[type]) continue;
         const rec = { type: type, endAt: Number(e.endAt) };
-        // Новые сейвы помнят ангар. У старых поле отсутствует — такой
-        // юнит безопасно встаёт в первый слот (slotOf вернёт 0).
+        // Новые сейвы помнят слот тренажёра. У старых поле отсутствует —
+        // такой юнит безопасно встаёт в первый слот (slotOf вернёт 0).
         const slot = Math.floor(Number(e.slot));
         if (isFinite(slot) && slot >= 0) rec.slot = slot;
         s.queue.push(rec);
@@ -5779,9 +5870,9 @@ CC.Game = (function () {
     return s;
   }
 
-  // Миграция старого сейва: если ангары нет, ставим одну на свободную
+  // Миграция старого сейва: если ангара нет, ставим один на свободную
   // клетку. Иначе выданная стартовая армия не влезает в лимит (0 мест).
-  // Ангар из миграции сразу готов: иначе у игрока 0 мест и Нужен ангар.
+  // Ангар из миграции сразу готов: иначе у игрока 0 мест в армии.
   function ensureBarracks() {
     if (CC.Base.count('barracks') > 0) return true;
 
@@ -5983,8 +6074,8 @@ CC.Game = (function () {
     // Уровни всех героев согласованы с текущим центром и их потолками.
     syncHeroLevels();
 
-    // Старому сейву без ангара добавляем её, чтобы армии было где жить.
-    // Новый старт (только центр) не трогаем: ангар выдаёт обучение.
+    // Старому сейву без ангара добавляем его, чтобы армии было где жить.
+    // Новый старт (только центр) не трогаем: ангар даёт места, а не тренирует.
     if (migrating && !onlyCenter && !ensureBarracks()) st.army = copyArmy({});
 
     // Общий склад старого сейва стал складом руды: энергию хранить негде,
@@ -6013,6 +6104,9 @@ CC.Game = (function () {
 
     pendingOffline = null;
     const off = tick(now);
+    // Реальное время отсутствия до этой загрузки. Именно оно решает,
+    // случится ли набег: boot вызовет maybeRaid сразу после load.
+    bootAwayMs = Math.max(0, (Number(off.awaySeconds) || 0) * 1000);
     const buffered = bufferTotals();
     if (off.seconds >= 60 &&
         (off.gold > 0 || off.elixir > 0 || off.dark > 0 || off.capped ||
@@ -6045,6 +6139,7 @@ CC.Game = (function () {
     st = fresh();
     st.lastSeen = Date.now();
     pendingOffline = null;
+    bootAwayMs = 0;
     questRewardEvent = null;
     tutorialEvent = null;
     levelUpEvent = 0;
@@ -6233,6 +6328,7 @@ CC.Game = (function () {
     queueSlots: queueSlots,
     trainSlots: trainSlots,
     queueStats: queueStats,
+    trainerOf: trainerOf,
     canTrain: canTrain,
     train: train,
     batchFit: batchFit,

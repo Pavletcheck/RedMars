@@ -15,10 +15,11 @@
 
   CC.Render3DUnits = CC.Render3DUnits || {};
 
-  // Типы, у которых есть 3D-кадры (barb/archer/giant + партия v3).
+  // Типы, у которых есть 3D-кадры (barb/archer/giant + партии v3/v4).
   var K3D = {
     barb: 1, archer: 1, giant: 1,
-    goblin: 1, gnome: 1, wizard: 1, airship: 1, healer: 1
+    goblin: 1, gnome: 1, wizard: 1, airship: 1, healer: 1,
+    dragon: 1, pekka: 1, miner: 1, thrower: 1
   };
 
   // frame — сторона кадра в мировых px (как в UNIT3D_V2);
@@ -31,7 +32,12 @@
     gnome:   { f: 30, sx: 4.4, sy: 0.470 },
     wizard:  { f: 36, sx: 4.8, sy: 0.465 },
     airship: { f: 44, sx: 8.0, sy: 0.380 },
-    healer:  { f: 36, sx: 4.6, sy: 0.470 }
+    healer:  { f: 36, sx: 4.6, sy: 0.470 },
+    // v4: плечи дракона ниже относительно рогов, у пекки — массивные наплечники.
+    dragon:  { f: 50, sx: 6.6, sy: 0.410 },
+    pekka:   { f: 51, sx: 8.0, sy: 0.450 },
+    miner:   { f: 36, sx: 4.2, sy: 0.470 },
+    thrower: { f: 37, sx: 5.2, sy: 0.465 }
   };
 
   // Палитра типа: [кант, свечение]. Совпадает с материалами моделей.
@@ -44,6 +50,11 @@
     wizard:  ['#2f7f89', '#4fe8e0'],
     airship: ['#ff8a3a', '#ffd08a'],
     healer:  ['#ffa53a', '#7fe9ff'],
+    // v4: портреты dragon/pekka/miner/thrower.
+    dragon:  ['#b07a42', '#8dffa8'],   // бронза / изумруд
+    pekka:   ['#8b9399', '#3af0d0'],   // сталь / бирюза
+    miner:   ['#3f8a80', '#ffc94a'],   // бирюза / янтарь
+    thrower: ['#3a8078', '#e0b06a'],   // бирюза / бронза
     hero:    ['#ffcf4a', '#fff0a0']
   };
 

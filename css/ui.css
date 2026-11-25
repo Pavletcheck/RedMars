@@ -112,7 +112,7 @@ html, body { width: 100%; height: 100%; }
 .hud-tl {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 8px);
-  left: 8px;
+  left: calc(env(safe-area-inset-left, 0px) + 8px);
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -431,7 +431,10 @@ html, body { width: 100%; height: 100%; }
 .hud-tc {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 8px);
-  left: 50%;
+  /* Центр безопасной области, а не всего экрана: на вырезе чип не
+     уезжает под него. Без inset-ов (десктоп) остаётся ровно 50%. */
+  left: calc(50% + (env(safe-area-inset-left, 0px) -
+    env(safe-area-inset-right, 0px)) / 2);
   transform: translateX(-50%);
   z-index: 5;
   display: flex;
@@ -546,7 +549,7 @@ html, body { width: 100%; height: 100%; }
 .resbar {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 8px);
-  right: 8px;
+  right: calc(env(safe-area-inset-right, 0px) + 8px);
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -1500,6 +1503,7 @@ html, body { width: 100%; height: 100%; }
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 240px);
   right: 56px;
+  right: calc(env(safe-area-inset-right, 0px) + 56px);
   width: min(280px, calc(100% - 16px));
   z-index: 7;
   display: flex;
@@ -1611,7 +1615,7 @@ html, body { width: 100%; height: 100%; }
 
 .quest-bar {
   position: absolute;
-  left: 8px;
+  left: calc(env(safe-area-inset-left, 0px) + 8px);
   bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
   width: min(260px, calc(100% - 16px));
   min-height: 44px;
@@ -1669,7 +1673,7 @@ html, body { width: 100%; height: 100%; }
 
 .quest-panel {
   position: absolute;
-  left: 8px;
+  left: calc(env(safe-area-inset-left, 0px) + 8px);
   bottom: calc(env(safe-area-inset-bottom, 0px) + 142px);
   width: min(320px, calc(100% - 16px));
   max-height: 320px;
@@ -3683,7 +3687,7 @@ html, body { width: 100%; height: 100%; }
   .chapter-claim { padding: 4px 6px 4px 10px; gap: 6px; }
   .chapter-claim__reward { font-size: .62rem; }
   .chapter-claim__btn { min-width: 112px; }
-  .map-chest { flex-basis: 36px; width: 36px; }
+  .map-chest { flex-basis: 40px; width: 40px; }
 }
 
 @media (max-width: 520px) {
@@ -4159,7 +4163,7 @@ html, body { width: 100%; height: 100%; }
   }
   /* На телефоне панель строителей уходит к правому краю: 56 px для
      неё там слишком дороги. */
-  .bpanel { right: 8px; }
+  .bpanel { right: 8px; right: calc(env(safe-area-inset-right, 0px) + 8px); }
 }
 
 /* На низких экранах (телефон лёжа) элементы чуть компактнее,
@@ -4181,7 +4185,7 @@ html, body { width: 100%; height: 100%; }
    площадь нажатия не меняются. */
 .bottom-bar {
   position: absolute;
-  right: 10px;
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
   bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   z-index: 6;
   display: flex;
@@ -5964,7 +5968,7 @@ html, body { width: 100%; height: 100%; }
     top: calc(env(safe-area-inset-top, 0px) + 64px);
     padding: 4px 6px 4px 10px;
   }
-  #app .battle-prep__skip { min-height: 36px; }
+  #app .battle-prep__skip { min-height: 40px; }
 }
 
 #app[data-mode="battle"] .hud-tl,
@@ -6146,7 +6150,8 @@ html, body { width: 100%; height: 100%; }
 /* ---- экран победы/поражения ---- */
 #app .result-card {
   max-width: min(720px, calc(100vw - 24px));
-  max-height: calc(100dvh - 20px);
+  max-height: calc(100dvh - 16px -
+    env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow: hidden;
   padding: 12px 16px 14px;
   display: grid;
@@ -6180,6 +6185,12 @@ html, body { width: 100%; height: 100%; }
 
 #app .result-body {
   min-width: 0;
+  max-height: calc(100dvh - 42px -
+    env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6238,11 +6249,26 @@ html, body { width: 100%; height: 100%; }
   align-items: stretch;
   gap: 8px;
   margin-top: 8px;
+  /* Кнопки всегда на виду: при нехватке высоты прокручивается текст
+     выше, а ряд действий прилипает к низу карточки. */
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  width: 100%;
+  /* Фон как у карточки: под прилипшим рядом не просвечивает текст,
+     который уезжает под кнопки при прокрутке. */
+  background: var(--hud-surface);
 }
 
-#app .result-actions .overlay__btn { margin: 0; }
-#app .result-actions__main { flex: 1 1 auto; min-height: 48px; }
+#app .result-actions .overlay__btn {
+  width: auto;
+  margin: 0;
+}
+#app .result-actions__main { flex: 1 1 auto; min-width: 138px; min-height: 52px; }
 #app .result-actions__second { flex: 0 0 auto; min-width: 104px; min-height: 48px; }
+
+/* Пустые звёзды при поражении не должны занимать строку. */
+#app .result-card .overlay__stars:empty { display: none; }
 
 #app .result-card .overlay__stars {
   font-size: 24px;
@@ -6256,7 +6282,8 @@ html, body { width: 100%; height: 100%; }
     flex-direction: column;
     gap: 5px;
     max-width: min(560px, calc(100vw - 18px));
-    max-height: calc(100dvh - 12px);
+    max-height: calc(100dvh - 16px -
+      env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     padding: 7px 12px 9px;
   }
   #app .result-banner-wrap {
@@ -6279,6 +6306,34 @@ html, body { width: 100%; height: 100%; }
   #app .result-card .overlay__hint { margin: 0 0 2px; }
   #app .battle-stats { bottom: calc(env(safe-area-inset-bottom, 0px) + 126px); }
   #app .battle-loot { top: calc(env(safe-area-inset-top, 0px) + 58px); max-width: 200px; }
+}
+
+/* Окно боя на низком экране: баннер слева, текст и кнопки справа.
+   Так вертикаль не съедается баннером, а тело карточки скроллится. */
+@media (max-height: 430px) {
+  #app #overlay .result-card {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  #app #overlay .result-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: auto;
+    max-height: calc(100dvh - 38px -
+      env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    align-self: stretch;
+    overflow-y: auto;
+  }
+  #app #overlay .result-banner-wrap {
+    width: 132px;
+    height: 112px;
+    flex: 0 0 132px;
+    align-self: center;
+  }
+  #app #overlay .result-banner { max-height: 112px; }
+  #app #overlay .result-banner__fallback { font-size: 64px; }
 }
 
 @media (max-width: 620px) {
@@ -6605,6 +6660,26 @@ html, body { width: 100%; height: 100%; }
   line-height: 1.15;
   color: var(--hud-muted);
   white-space: normal;
+}
+
+/* Бейдж тренировочного здания: компактная тёмно-кремовая пилюля под
+   характеристиками. Ширина по тексту, длинное название обрезается
+   многоточием; полное имя здания остаётся в title карточки. */
+#app .recruit-card__building {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid rgba(233, 242, 243, .20);
+  border-radius: 999px;
+  background: rgba(233, 242, 243, .08);
+  color: var(--hud-text);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #app .recruit-card__lock,
@@ -7660,6 +7735,7 @@ html, body { width: 100%; height: 100%; }
 #app .ach-list,
 #app .recruit__grid,
 #app .recruit__side,
+#app .result-body,
 #app .result-card {
   scrollbar-width: thin;
   scrollbar-color: rgba(240, 196, 84, .55) rgba(20, 28, 32, .2);
@@ -7673,6 +7749,7 @@ html, body { width: 100%; height: 100%; }
 #app .ach-list::-webkit-scrollbar,
 #app .recruit__grid::-webkit-scrollbar,
 #app .recruit__side::-webkit-scrollbar,
+#app .result-body::-webkit-scrollbar,
 #app .result-card::-webkit-scrollbar {
   width: 6px;
 }
@@ -7685,6 +7762,7 @@ html, body { width: 100%; height: 100%; }
 #app .ach-list::-webkit-scrollbar-thumb,
 #app .recruit__grid::-webkit-scrollbar-thumb,
 #app .recruit__side::-webkit-scrollbar-thumb,
+#app .result-body::-webkit-scrollbar-thumb,
 #app .result-card::-webkit-scrollbar-thumb {
   background: rgba(196, 139, 24, .65);
   border-radius: 3px;
@@ -8124,7 +8202,7 @@ html, body { width: 100%; height: 100%; }
   #app .map-era__head { margin-bottom: 3px; }
   #app .map-era__track .map-node { flex-basis: 44px; width: 44px; height: 44px; }
   #app .map-node__num { font-size: var(--fs-12); }
-  #app .map-era__track .map-chest { flex-basis: 38px; width: 38px; min-height: 42px; }
+  #app .map-era__track .map-chest { flex-basis: 40px; width: 40px; min-height: 42px; }
   #app .map-card {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 1px 8px;
@@ -9080,8 +9158,8 @@ html:root {
   scroll-snap-align: center;
 }
 #app .map-era__track .map-chest {
-  flex: 0 0 30px;
-  width: 30px;
+  flex: 0 0 40px;
+  width: 40px;
   min-height: 42px;
   scroll-snap-align: center;
 }
@@ -9113,8 +9191,8 @@ html:root {
     height: 40px;
   }
   #app .map-era__track .map-chest {
-    flex-basis: 28px;
-    width: 28px;
+    flex-basis: 40px;
+    width: 40px;
     min-height: 40px;
   }
   #app .map-era__track .map-node__stars { font-size: 10px; }
@@ -10130,7 +10208,7 @@ html:root {
 /* ---- академия: шесть карточек ---- */
 #app .hero-roster { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 #app .hero-card__stats { font-size: 10px; }
-#app .hero-card .tcard__hire { min-height: 34px; padding: 2px 6px; }
+#app .hero-card .tcard__hire { min-height: 40px; padding: 2px 6px; }
 
 @media (max-width: 1200px) {
   #app .hero-roster { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -10528,4 +10606,365 @@ html:root {
 #app .term-card_guardian .term-card__art-wrap {
   background: radial-gradient(circle at 50% 45%,
     rgba(240, 196, 84, .16), rgba(0, 0, 0, .18));
+}
+
+/* ===================================================================
+   UI-аудит 2026-11-24: P2/P3 (звук, тап-цели, скроллбары, рейл)
+   =================================================================== */
+
+/* UI-05: кнопка «Звук» больше не наезжает на чип бригад. Левый HUD
+   не заходит в центральную колонку, а на узком ландшафте звук
+   переносится на вторую строку. */
+@media (orientation: landscape) {
+  #app.is-landscape .hud-tl {
+    max-width: calc(50% - 44px);
+  }
+}
+
+@media (max-width: 1100px) {
+  #app .audio-panel .sound-btn_chip {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
+  #app .audio-panel .sound-btn_chip .sound-btn__label {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  #app.is-compact .hud-tl {
+    flex-wrap: wrap;
+  }
+}
+
+/* UI-08: второстепенные тап-цели не меньше 40 px. */
+.quest-row.is-link {
+  min-height: 40px;
+}
+
+#app .replay-chip,
+#app #lvl-chip {
+  min-width: 40px;
+}
+
+/* UI-11/UI-16: на десктопе у прокручиваемых списков виден тонкий
+   скроллбар и цвет ползунка; на тач-устройствах остаётся системный. */
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
+  #app .shop__grid,
+  #app .hero-list,
+  #app .selbar,
+  #app .quest-panel,
+  #app .arena__list,
+  #app .bpanel__list,
+  #app .troopup__list,
+  #app .terminal__rail {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(224, 176, 69, .62) rgba(20, 28, 32, .16);
+  }
+
+  #app .shop__grid::-webkit-scrollbar,
+  #app .hero-list::-webkit-scrollbar,
+  #app .selbar::-webkit-scrollbar,
+  #app .quest-panel::-webkit-scrollbar,
+  #app .arena__list::-webkit-scrollbar,
+  #app .bpanel__list::-webkit-scrollbar,
+  #app .troopup__list::-webkit-scrollbar,
+  #app .terminal__rail::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+    height: 6px;
+  }
+
+  #app .shop__grid::-webkit-scrollbar-thumb,
+  #app .hero-list::-webkit-scrollbar-thumb,
+  #app .selbar::-webkit-scrollbar-thumb,
+  #app .quest-panel::-webkit-scrollbar-thumb,
+  #app .arena__list::-webkit-scrollbar-thumb,
+  #app .bpanel__list::-webkit-scrollbar-thumb,
+  #app .troopup__list::-webkit-scrollbar-thumb,
+  #app .terminal__rail::-webkit-scrollbar-thumb {
+    background: rgba(224, 176, 69, .62);
+    border-radius: 3px;
+  }
+
+  #app .shop__grid::-webkit-scrollbar-track,
+  #app .hero-list::-webkit-scrollbar-track,
+  #app .selbar::-webkit-scrollbar-track,
+  #app .quest-panel::-webkit-scrollbar-track,
+  #app .arena__list::-webkit-scrollbar-track,
+  #app .bpanel__list::-webkit-scrollbar-track,
+  #app .troopup__list::-webkit-scrollbar-track,
+  #app .terminal__rail::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* UI-13: на компактных экранах полоса задания больше не лежит на нижнем
+   рейле. Раньше при bottom:64px и высоте рейла 62px крайние 4px совпадали. */
+#app.is-compact[data-mode="base"] .quest-bar {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+}
+
+/* UI-11: горизонтальный рейл категорий терминала на узком ландшафте.
+   Седьмая категория не влезает, поэтому у правого края — мягкий фейд,
+   а под рейлом виден тонкий ползунок. */
+@media (max-width: 900px) {
+  #app .terminal__rail {
+    padding-right: 22px;
+    -webkit-mask-image: linear-gradient(90deg, #000 0,
+      #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0,
+      #000 calc(100% - 22px), transparent 100%);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(224, 176, 69, .72) rgba(20, 28, 32, .2);
+  }
+  #app .terminal__rail::-webkit-scrollbar {
+    display: block;
+    width: 5px;
+    height: 5px;
+  }
+  #app .terminal__rail::-webkit-scrollbar-thumb {
+    background: rgba(224, 176, 69, .72);
+    border-radius: 3px;
+  }
+  #app .terminal__rail::-webkit-scrollbar-track {
+    background: rgba(20, 28, 32, .2);
+  }
+}
+
+/* UI-09: мелкие подписи на компактных экранах — до 11 px там, где
+   карточка это выдерживает. */
+@media (max-height: 430px) {
+  /* Каскад: правило ниже по файлу ставило 3 колонки и ломало компактную
+     раскладку академии — карточки наезжали друг на друга. Возвращаем
+     задуманные 5 колонок на низком ландшафте. */
+  #app .hero-roster {
+    grid-template-columns: repeat(5, minmax(86px, 1fr));
+    gap: 4px;
+  }
+  #app .hero-card__stats {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  #app .hero-card__lvl { font-size: 10px; }
+  #app .info-card__role,
+  #app .info-card__desc {
+    font-size: 11px;
+  }
+}
+
+@media (max-height: 430px) {
+  /* UI-08: вкладки найма были 34 px по высоте. */
+  #app .recruit-tab { min-height: 40px; }
+}
+
+@media (max-height: 340px) {
+  #app .term-card__name,
+  #app .term-card__limit,
+  #app .term-card__status,
+  #app .term-card__cost {
+    font-size: 11px;
+  }
+  #app .info-card__role,
+  #app .info-card__desc,
+  #app .info-stat dt,
+  #app .info-stat dd {
+    font-size: 10px;
+  }
+}
+
+/* ===================================================================
+   UI-10 / UI-15 / UI-18: найм, описание в терминале, safe-area
+   =================================================================== */
+
+/* UI-10: середина правой панели «Найма» прокручивается, а статы, цена
+   и основная кнопка закреплены внизу. Обёртки .recruit__scroll и
+   .recruit__foot собирает layoutRecruitSide() в ui.js, поэтому CTA
+   не уходит под сгиб и не перекрывает контент. */
+#app .recruit__side {
+  overflow: hidden;
+  gap: 0;
+  padding: 0;
+}
+
+#app .recruit__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 3px 4px 1px;
+  scrollbar-width: thin;
+}
+
+#app .recruit__foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 6px 3px 3px;
+  border-top: 1px solid rgba(147, 167, 173, .2);
+  border-radius: 0 0 10px 10px;
+  background: linear-gradient(180deg, rgba(17, 23, 28, .55),
+    rgba(17, 23, 28, .96) 14px);
+  box-shadow: 0 -8px 14px rgba(8, 12, 15, .28);
+}
+
+/* Индикатор прокрутки середины: тонкий ползунок на десктопе. На тач-
+   устройствах CTA и так видна, поэтому системный скролл не форсируем. */
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
+  #app .recruit__scroll {
+    scrollbar-color: rgba(224, 176, 69, .62) rgba(20, 28, 32, .16);
+  }
+  #app .recruit__scroll::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+  }
+  #app .recruit__scroll::-webkit-scrollbar-thumb {
+    background: rgba(224, 176, 69, .62);
+    border-radius: 3px;
+  }
+  #app .recruit__scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media (max-height: 430px) {
+  #app .recruit__side {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  /* Компактная середина: портрет слева, имя и лимиты справа, очередь
+     и подсказки — ниже на всю ширину. Без портрета (заклинания, осада)
+     остаётся обычная колонка. */
+  #app .recruit__scroll:has(.recruit-hero__portrait) {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    align-content: start;
+    align-items: start;
+    gap: 4px 8px;
+  }
+  #app .recruit__scroll {
+    -webkit-mask-image: linear-gradient(180deg, #000 0,
+      #000 calc(100% - 12px), transparent 100%);
+    mask-image: linear-gradient(180deg, #000 0,
+      #000 calc(100% - 12px), transparent 100%);
+  }
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-hero {
+    display: contents;
+  }
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-hero__portrait {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: 88px;
+    height: 88px;
+  }
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-hero__who {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-limits {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-minihead,
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-queue,
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-hint,
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-kitbar,
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-heroes,
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-price,
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-actions,
+  #app .recruit__scroll:has(.recruit-hero__portrait) .recruit-limit__bar {
+    grid-column: 1 / -1;
+  }
+
+  #app .recruit__foot .recruit-stats { padding: 1px 2px; }
+  #app .recruit__foot .recruit-stats b { font-size: var(--fs-12); }
+  #app .recruit__foot .recruit-stats i { font-size: 10px; }
+  #app .recruit__foot .recruit-price { font-size: var(--fs-11); }
+  #app .recruit__foot .recruit-actions .recruit-hire,
+  #app .recruit__foot .recruit-actions .recruit-batch { min-height: 44px; }
+  /* Вторая строка статов (скорость/дальность/темп) на низком ландшафте
+     отнимает у середины почти весь обзор — оставляем HP/урон/место. */
+  #app .recruit__foot .recruit-stats_extra { display: none; }
+}
+
+/* На 683×320 и ниже закреплённый низ дополнительно поджимаем, чтобы
+   кнопка найма целиком влезала в панель даже на 568×320. */
+@media (max-height: 340px) {
+  #app .recruit__scroll {
+    padding: 0 2px 0 0;
+  }
+  #app .recruit__foot {
+    gap: 3px;
+    margin-top: 0;
+    padding: 4px 3px 2px;
+  }
+  #app .recruit__foot .recruit-stat { padding: 0 2px; }
+  #app .recruit__foot .recruit-price { line-height: 1.1; }
+}
+
+/* На 568×320 сетка и панель делят высоту поровну и раньше панели
+   доставалось 82 px — теперь у неё чуть больше места под закреплённый низ. */
+@media (max-width: 620px) and (max-height: 430px) {
+  #app .recruit__body {
+    grid-template-rows: minmax(0, .75fr) minmax(0, 1.25fr);
+  }
+  /* На 568×320 панель деталей низкая: статы и цена слева, CTA справа.
+     Так закреплённый низ занимает ~55 px вместо ~100 и середина панели
+     остаётся прокручиваемой. */
+  #app .recruit__foot:has(.recruit-stats) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
+    align-items: center;
+    gap: 4px 10px;
+    padding: 5px 4px 3px;
+  }
+  #app .recruit__foot:has(.recruit-stats) .recruit-stats {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  #app .recruit__foot:has(.recruit-stats) .recruit-price {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  #app .recruit__foot:has(.recruit-stats) .recruit-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+/* UI-15: на широком десктопе описание карточки терминала — две строки
+   вместо одной с ellipsis. Высота карточки увеличена на 20 px, иначе
+   вторая строка выталкивала блок цены за край. title остаётся. */
+@media (min-width: 1200px) and (min-height: 431px) {
+  #app .term-card {
+    height: 292px;
+    min-height: 292px;
+  }
+  #app .term-card__desc {
+    display: -webkit-box;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: clip;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}
+
+/* UI-18: боковые safe-area уже в базовых правилах .hud-tl/.resbar/
+   .quest-panel/.quest-bar/.bottom-bar/.bpanel. Левый HUD в ландшафте
+   не должен доходить до центра ещё и на ширину выреза. */
+@media (orientation: landscape) {
+  #app.is-landscape .hud-tl {
+    max-width: calc(50% - 44px - env(safe-area-inset-left, 0px));
+  }
 }
