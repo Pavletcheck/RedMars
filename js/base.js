@@ -380,32 +380,71 @@ CC.Base = (function () {
       return;
     }
 
-    // проверяем каждый элемент: тип существует, влезает в поле, не пересекается
+    // проверяем каждый элемент: тип существует, влезает в поле, не пересекается.
+    // Старой Казармы (train) из CoC-таблицы больше нет: превращаем её в
+    // Ангар (barracks) с тем же id, чтобы сохранить уровень и апгрейды.
     const seen = new Int8Array(G * G);
     const kept = [];
+    const trainMigrations = [];
+    const trainLost = [];
     let maxId = 0;
+
+    function freeSpotFor(w, h) {
+      for (let yy = 0; yy <= G - h; yy++) {
+        for (let xx = 0; xx <= G - w; xx++) {
+          let busy = false;
+          for (let dy = 0; dy < h && !busy; dy++) {
+            for (let dx = 0; dx < w; dx++) {
+              if (seen[(yy + dy) * G + xx + dx]) { busy = true; break; }
+            }
+          }
+          if (!busy) return { x: xx, y: yy };
+        }
+      }
+      return null;
+    }
 
     const unknown = {};
     for (let i = 0; i < data.items.length; i++) {
       const it = data.items[i];
       if (!it) continue;
-      if (!DEFS[it.type]) {
+      const fromTrain = it.type === 'train';
+      const type = fromTrain ? 'barracks' : it.type;
+      if (!DEFS[type]) {
         // Не удаляем молча: старый/будущий тип просто не рисуем и говорим.
-        unknown[it.type] = (unknown[it.type] || 0) + 1;
+        unknown[type] = (unknown[type] || 0) + 1;
         continue;
       }
-      const s = size(it.type);
-      const x = it.x | 0;
-      const y = it.y | 0;
-      if (x < 0 || y < 0 || x + s.w > G || y + s.h > G) continue;
-
+      const s = size(type);
+      let x = it.x | 0;
+      let y = it.y | 0;
+      let inside = !(x < 0 || y < 0 || x + s.w > G || y + s.h > G);
       let clash = false;
-      for (let yy = y; yy < y + s.h && !clash; yy++) {
-        for (let xx = x; xx < x + s.w; xx++) {
-          if (seen[yy * G + xx]) { clash = true; break; }
+      if (inside) {
+        for (let yy = y; yy < y + s.h && !clash; yy++) {
+          for (let xx = x; xx < x + s.w; xx++) {
+            if (seen[yy * G + xx]) { clash = true; break; }
+          }
         }
       }
-      if (clash) continue;
+
+      let moved = false;
+      if (fromTrain && (!inside || clash)) {
+        // Оба здания 2×1, поэтому при нормальном сейве хватает той же клетки.
+        // Если старый сейв битый — ищем ближайшее свободное место.
+        const spot = freeSpotFor(s.w, s.h);
+        if (spot) {
+          x = spot.x;
+          y = spot.y;
+          inside = true;
+          clash = false;
+          moved = true;
+        }
+      }
+      if (!inside || clash) {
+        if (fromTrain) trainLost.push({ id: it.id | 0, x: x, y: y });
+        continue;
+      }
 
       for (let yy = y; yy < y + s.h; yy++) {
         for (let xx = x; xx < x + s.w; xx++) seen[yy * G + xx] = 1;
@@ -413,13 +452,26 @@ CC.Base = (function () {
 
       const id = (it.id | 0) || (kept.length + 1);
       if (id > maxId) maxId = id;
-      kept.push({ id: id, type: it.type, x: x, y: y });
+      kept.push({ id: id, type: type, x: x, y: y });
+      if (fromTrain) {
+        trainMigrations.push({ id: id, x: x, y: y, moved: moved });
+      }
     }
 
     const unknownTypes = Object.keys(unknown);
     if (unknownTypes.length && typeof console !== 'undefined' && console.warn) {
       console.warn('CC.Base.load: пропущены неизвестные типы построек: ' +
         unknownTypes.map(function (t) { return t + '×' + unknown[t]; }).join(', '));
+    }
+    if (trainMigrations.length && typeof console !== 'undefined' && console.info) {
+      console.info('CC.Base.load: Казарма → Ангар, id ' +
+        trainMigrations.map(function (m) {
+          return m.id + (m.moved ? ' (перенесён на ' + m.x + ',' + m.y + ')' : '');
+        }).join('; '));
+    }
+    if (trainLost.length && typeof console !== 'undefined' && console.warn) {
+      console.warn('CC.Base.load: Казарму некуда перенести, id ' +
+        trainLost.map(function (m) { return m.id; }).join('; '));
     }
 
     if (!kept.length) {
@@ -433,6 +485,9 @@ CC.Base = (function () {
     fromSave = true;
     nextId = Math.max(maxId + 1, data.nextId | 0, kept.length + 1);
     rebuild();
+    // Миграция Казарма → Ангар должна стать постоянной, иначе каждый
+    // запуск будет заново читать старый тип и писать предупреждение.
+    if (trainMigrations.length || trainLost.length) save();
   }
 
   function reset() {
@@ -584,17 +639,17 @@ CC.Game = (function () {
         'в пылевых бурях.'
     },
     {
-      id: 'placeBarracks', text: 'Поставь ангар',
-      hint: 'Даёт места в армии. Тренирует бойцов Казарма — построй и её.',
+      id: 'placeBarracks', text: 'Поставь Ангар',
+      hint: 'Тренирует войска и даёт места в армии.',
       place: 'barracks',
-      lore: 'Ангар — дом для гарнизона. Сами бойцы учатся в Казарме: ' +
-        'без неё ангар останется пустым складом.'
+      lore: 'Ангар — дом для гарнизона: здесь бойцы учатся и отсюда ' +
+        'выходят в бой.'
     },
     {
       id: 'train5', text: 'Натренируй 5 штурмовиков',
-      hint: 'Построй Казарму, открой ангар, выбери штурмовика и жми ' +
-        '«Нанять» или «×5». Очередь идёт сама; на L1 ангара — 20 мест, ' +
-        'энергия списывается за каждого бойца.', goal: 'train', target: 5,
+      hint: 'Открой Ангар, выбери штурмовика и жми «Нанять» или «×5». ' +
+        'Очередь идёт сама; на L1 Ангара — 20 мест, энергия списывается ' +
+        'за каждого бойца.', goal: 'train', target: 5,
       lore: 'Пять штурмовиков — минимальный гарнизон. Они пойдут первыми, ' +
         'когда сектор понадобится вернуть.'
     },
@@ -4188,12 +4243,14 @@ CC.Game = (function () {
     }
 
     if (it.type === 'barracks') {
-      // Ангар (army_camp) даёт cap мест по строке таблицы.
+      // Ангар (army_camp) даёт cap мест по строке таблицы и тренирует.
       out.capacity = Math.max(0, Number(calc.cap) || 0);
       out.housing = true;
+      out.trainSlots = 1;
+      out.training = true;
     }
 
-    if (it.type === 'train' || it.type === 'darktrain' || it.type === 'pethouse') {
+    if (it.type === 'darktrain' || it.type === 'pethouse') {
       out.trainSlots = 1;
       out.training = true;
     }
@@ -4211,9 +4268,9 @@ CC.Game = (function () {
   //
   // Места в армии дают только готовые ангары: 20 за каждый уровень ангара.
   // Один L1 + один L2 = 60, два L10 = 400. Стройплощадка и снесённый ангар
-  // мест не дают. Тренируют не ангары, а Казарма, Тёмная казарма и Питомник:
-  // каждый готовый тренажёр — один одновременный юнит, очередь общая и
-  // ограничена вместимостью армии.
+  // мест не дают. Ангар тренирует обычные войска и даёт места; тёмные учит
+  // Ангар плазмы, Печь — Питомник. Каждый готовый тренажёр — один слот,
+  // очередь общая и ограничена армией.
 
   function barracksList() {
     const list = CC.Base.list();
@@ -4236,29 +4293,28 @@ CC.Game = (function () {
     return n;
   }
 
-  // Тренажёры по справочнику coc-th-tables/csv/09_voyska.csv, колонка
-  // «Валюта»: обычные войска за «эликсир» учит Казарма (train), тёмные за
-  // «т. эликсир» — Тёмная казарма (darktrain). Печь идёт в войсках как
-  // «Призыв / осада» (Мин. TH15; в справочнике ей нужен Дом питомцев —
-  // 13–15), поэтому её тренажёр — Питомник (pethouse). Ангар (barracks =
-  // army_camp) — жильё: места в армии даёт, но не тренирует.
+  // Тренажёры: обычные войска учит Ангар (barracks = army_camp), тёмные —
+  // Ангар плазмы (darktrain). Печь идёт в войсках как «Призыв / осада»
+  // (Мин. TH15; в справочнике ей нужен Дом питомцев — 13–15), поэтому её
+  // тренажёр — Питомник (pethouse). Ангар одновременно даёт места в армии.
+  // Отдельной Казармы из CoC-таблицы (train) в игре нет.
   const TRAINER_NAME = {
-    train: 'Казарма',
-    darktrain: 'Тёмная казарма',
+    barracks: 'Ангар',
+    darktrain: 'Ангар плазмы',
     pethouse: 'Питомник'
   };
   const TRAINER_NEED = {
-    train: 'Постройте Казарму',
-    darktrain: 'Постройте Тёмную казарму',
+    barracks: 'Постройте Ангар',
+    darktrain: 'Постройте Ангар плазмы',
     pethouse: 'Постройте Питомник'
   };
   const TROOP_TRAINER = {
-    barb: 'train', archer: 'train', giant: 'train', goblin: 'train',
-    gnome: 'train', airship: 'train', wizard: 'train', healer: 'train',
-    dragon: 'train', pekka: 'train', babydragon: 'train', miner: 'train',
-    electrodragon: 'train', yeti: 'train', dragonrider: 'train',
-    electrotitan: 'train', rootrider: 'train', thrower: 'train',
-    meteorgolem: 'train',
+    barb: 'barracks', archer: 'barracks', giant: 'barracks', goblin: 'barracks',
+    gnome: 'barracks', airship: 'barracks', wizard: 'barracks', healer: 'barracks',
+    dragon: 'barracks', pekka: 'barracks', babydragon: 'barracks', miner: 'barracks',
+    electrodragon: 'barracks', yeti: 'barracks', dragonrider: 'barracks',
+    electrotitan: 'barracks', rootrider: 'barracks', thrower: 'barracks',
+    meteorgolem: 'barracks',
     minion: 'darktrain', hogrider: 'darktrain', valkyrie: 'darktrain',
     golem: 'darktrain', witch: 'darktrain', lavahound: 'darktrain',
     bowler: 'darktrain', icegolem: 'darktrain', headhunter: 'darktrain',
@@ -4280,16 +4336,15 @@ CC.Game = (function () {
     return !!trainer && readyBuildingLevel(trainer) > 0;
   }
 
-  // Одновременная тренировка: один слот на каждую готовую Казарму, Тёмную
-  // казарму и Питомник. Ангар (barracks) слотов не даёт — он только жильё.
-  // Очередь общая, стройки слотов не дают. Старый слот вне диапазона
-  // обрабатывает slotOf.
+  // Одновременная тренировка: один слот на каждый готовый Ангар, Ангар
+  // плазмы и Питомник. Ангар ещё и даёт места в армии. Очередь общая,
+  // стройки слотов не дают. Старый слот вне диапазона обрабатывает slotOf.
   function trainSlots() {
     const list = CC.Base.list();
     let n = 0;
     for (let i = 0; i < list.length; i++) {
       const t = list[i].type;
-      if (t !== 'train' && t !== 'darktrain' && t !== 'pethouse') continue;
+      if (t !== 'barracks' && t !== 'darktrain' && t !== 'pethouse') continue;
       if (isBuilding(list[i].id)) continue;
       n++;
     }
@@ -4362,8 +4417,8 @@ CC.Game = (function () {
       return { ok: false, error: reason, reason: reason, needTh: unlockAt };
     }
 
-    // У каждого типа свой тренажёр: Казарма, Тёмная казарма или Питомник.
-    // Ангар (жильё) тренировать не умеет.
+    // У каждого типа свой тренажёр: Ангар, Ангар плазмы или Питомник.
+    // Ангар тренировать умеет — это его основная роль.
     const trainer = trainerOf(type);
     if (!trainer) {
       const reason = 'Нет тренажёра для этого войска';
@@ -4390,8 +4445,8 @@ CC.Game = (function () {
     return { ok: true };
   }
 
-  // Найм ставит юнита в самый ранний свободный слот тренажёра. Поэтому две
-  // казармы реально тренируют двух бойцов одновременно, а не ждут друг друга.
+  // Найм ставит юнита в самый ранний свободный слот тренажёра. Поэтому два
+  // Ангара реально тренируют двух бойцов одновременно, а не ждут друг друга.
   function train(type, now) {
     const check = canTrain(type);
     if (check.error) return check;
@@ -6029,6 +6084,35 @@ CC.Game = (function () {
     st.builds = out;
   }
 
+  // Уровни и апгрейды сверяем с фактическим типом постройки. После миграции
+  // Казарма → Ангар старый уровень 19 подрезается до потолка army_camp (14),
+  // а апгрейд с недостижимой целью удаляется.
+  function sanitizeProgress() {
+    const list = CC.Base.list();
+    const typeOf = {};
+    for (let i = 0; i < list.length; i++) typeOf[list[i].id] = list[i].type;
+
+    for (const id in st.levels) {
+      const type = typeOf[id];
+      if (!type) continue;
+      const max = CC.buildingMaxLevel ? CC.buildingMaxLevel(type) : 0;
+      if (max > 0 && st.levels[id] > max) st.levels[id] = max;
+    }
+
+    for (const id in st.upgrades) {
+      const type = typeOf[id];
+      const u = st.upgrades[id];
+      const max = type && CC.buildingMaxLevel ? CC.buildingMaxLevel(type) : 0;
+      if (!type || !max || !u) {
+        delete st.upgrades[id];
+        continue;
+      }
+      if (u.to > max) u.to = max;
+      const lvl = st.levels[id] | 0;
+      if (u.to <= lvl) delete st.upgrades[id];
+    }
+  }
+
   function load(now) {
     now = typeof now === 'number' ? now : Date.now();
 
@@ -6088,6 +6172,7 @@ CC.Game = (function () {
     // Накопители: только живые буры/реакторы и не больше текущей ёмкости.
     sanitizeExtract();
     sanitizeBuilds();
+    sanitizeProgress();
     // старый сейв деревни мог сохранить ресурсы выше лимита — подрезаем.
     // При миграции старой раскладки стартовые ресурсы не трогаем.
     // Нулевой лимит не обнуляет ресурсы: их нельзя терять, игрок сам

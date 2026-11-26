@@ -92,7 +92,6 @@ CC.BUILDING_TABLE = {
   estorage: 'elixir_storage',
   darkstorage: 'dark_storage',
   barracks: 'army_camp',
-  train: 'barracks',
   darktrain: 'dark_barracks',
   spellfactory: 'spell_factory',
   darkspellfactory: 'dark_spell_factory',
@@ -290,17 +289,12 @@ CC.BUILDING_META = {
     color: '#3a3142', top: '#b06adf'
   },
   barracks: {
-    name: 'Ангар', desc: 'даёт места в армии',
+    name: 'Ангар', desc: 'даёт места в армии и тренирует войска',
     role: 'армия', w: 2, h: 1, height: 38,
-    color: '#7b5a3a', top: '#c9a06a', housing: true
-  },
-  train: {
-    name: 'Казарма', desc: 'тренирует войска',
-    role: 'армия', w: 2, h: 1, height: 34,
-    color: '#6f5a42', top: '#d1b07a', training: true
+    color: '#7b5a3a', top: '#c9a06a', housing: true, training: true
   },
   darktrain: {
-    name: 'Казарма плазмы', desc: 'готовит плазменные отряды',
+    name: 'Ангар плазмы', desc: 'тренирует тёмные войска',
     role: 'армия', w: 2, h: 1, height: 34,
     color: '#45394f', top: '#b984d8', training: true, darkTraining: true
   },
@@ -345,7 +339,7 @@ CC.BUILDING_META = {
     color: '#4a5468', top: '#a9b8d8'
   },
   squadbarracks: {
-    name: 'Казарма эскадрильи', desc: 'режим отрядов',
+    name: 'Ангар эскадрильи', desc: 'готовит эскадрильи',
     role: 'армия', w: 2, h: 1, height: 34,
     color: '#5a4e3a', top: '#c8b07a', squad: true
   },
@@ -1817,7 +1811,7 @@ const CC_DEF_TYPES = [
 ];
 const CC_RES_TYPES = ['goldmine', 'elixir', 'darkdrill', 'storage', 'estorage', 'darkstorage'];
 const CC_ARMY_TYPES = [
-  'barracks', 'train', 'darktrain', 'spellfactory', 'darkspellfactory',
+  'barracks', 'darktrain', 'spellfactory', 'darkspellfactory',
   'lab', 'herohall', 'pethouse', 'blacksmith', 'workshop', 'clancastle',
   'squadbarracks'
 ];
@@ -1897,7 +1891,7 @@ CC.LevelGen = {
       return n;
     }
 
-    // Ловушки финала — 70% количества: они не входят в процент, но
+    // Ловушки финала — 50% количества: они не входят в процент, но
     // выкашивают десант.
     function trapCountAt(type) {
       const lim = CC.limitAt(type, capTh);
@@ -1910,11 +1904,24 @@ CC.LevelGen = {
 
     function levelAt(type) {
       const max = Math.max(1, ccLevelMax(type, capTh));
-      if (finalLevel) return max;
+      if (finalLevel) {
+        // Финал: оборона на уровень ниже максимума (после удаления Казармы
+        // train процент просел), плюс не ставим дальнюю Оружейную. Это
+        // возвращает максимуму 52% на финале, средняя не проходит.
+        return CC_DEF_TYPES.indexOf(type) !== -1
+          ? Math.max(1, max - 1) : max;
+      }
       const f = era <= 1 ? (0.25 + 0.6 * within / 9)
         : (era >= 5 ? (0.18 + 0.48 * within / 9)
           : (era >= 4 ? (0.22 + 0.52 * within / 9) : (0.3 + 0.7 * within / 9)));
-      return Math.max(1, Math.min(max, 1 + Math.round((max - 1) * f)));
+      let lvl = Math.max(1, Math.min(max, 1 + Math.round((max - 1) * f)));
+      // Сектор 99 (Ядро 9): после удаления Казармы средняя армия стала
+      // проходить его на 53%. Поднимаем оборону на два уровня (с потолком),
+      // чтобы вернуть прежние 98/100 у средней; у максимальной есть запас.
+      if (era === 9 && within === 8 && CC_DEF_TYPES.indexOf(type) !== -1) {
+        lvl = Math.min(max, lvl + 2);
+      }
+      return lvl;
     }
 
     function wallLevelAt() {
@@ -2177,10 +2184,13 @@ CC.LevelGen = {
       for (let j = 0; j < n; j++) putSolid(type, levelAt(type), j % 2 ? 'outer' : 'mid');
     }
 
-    // Армия и развитие: казармы, фабрики, лаборатория, академия, питомник,
+    // Армия и развитие: ангары, фабрики, лаборатория, академия, питомник,
     // мастерская. Держим их по периметру, чтобы центр не был перегружен.
     for (let k = 0; k < CC_ARMY_TYPES.length; k++) {
       const type = CC_ARMY_TYPES[k];
+      // Финальный сектор: без одной дальней Оружейной, чтобы максимальная
+      // армия добивала 52%, а не 51%. Средняя всё равно не проходит.
+      if (finalLevel && type === 'blacksmith') continue;
       const n = countAt(type);
       for (let j = 0; j < n; j++) putSolid(type, levelAt(type), 'outer');
     }
@@ -2520,7 +2530,7 @@ CC.PALETTE = [
   'wall', 'mine', 'spring', 'airmine', 'giantbomb', 'seekingair',
   'skeletontrap', 'tornado', 'gigabomb',
   'goldmine', 'elixir', 'darkdrill', 'storage', 'estorage', 'darkstorage',
-  'barracks', 'train', 'darktrain', 'spellfactory', 'darkspellfactory',
+  'barracks', 'darktrain', 'spellfactory', 'darkspellfactory',
   'lab', 'herohall', 'pethouse', 'blacksmith', 'workshop', 'clancastle',
   'squadbarracks'
 ];
@@ -2537,7 +2547,7 @@ CC.ICONS = {
   seekingair: '🚀', skeletontrap: '💀', tornado: '🌪️', gigabomb: '☢️',
   wall: '🛡️', goldmine: '⛏️', elixir: '⚡', darkdrill: '🛢️',
   storage: '🗄️', estorage: '🔋', darkstorage: '🧪',
-  barracks: '🏗️', train: '🪖', darktrain: '🖤', spellfactory: '🧿',
+  barracks: '🏗️', darktrain: '🖤', spellfactory: '🧿',
   darkspellfactory: '🔮', lab: '🔬', herohall: '🏛️', pethouse: '🐾',
   blacksmith: '⚒️', workshop: '🛠️', clancastle: '🛸', squadbarracks: '✈️'
 };
