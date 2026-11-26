@@ -19,7 +19,8 @@
   var K3D = {
     barb: 1, archer: 1, giant: 1,
     goblin: 1, gnome: 1, wizard: 1, airship: 1, healer: 1,
-    dragon: 1, pekka: 1, miner: 1, thrower: 1
+    dragon: 1, pekka: 1, miner: 1, thrower: 1,
+    valkyrie: 1, headhunter: 1, bowler: 1, witch: 1
   };
 
   // frame — сторона кадра в мировых px (как в UNIT3D_V2);
@@ -37,7 +38,12 @@
     dragon:  { f: 50, sx: 6.6, sy: 0.410 },
     pekka:   { f: 51, sx: 8.0, sy: 0.450 },
     miner:   { f: 36, sx: 4.2, sy: 0.470 },
-    thrower: { f: 37, sx: 5.2, sy: 0.465 }
+    thrower: { f: 37, sx: 5.2, sy: 0.465 },
+    // v5: у валькирии и дуэлянта узкие плечи, у дроболита — латные наплечники.
+    valkyrie:  { f: 32, sx: 4.2, sy: 0.436 },
+    headhunter: { f: 35, sx: 4.2, sy: 0.436 },
+    bowler:    { f: 37, sx: 6.6, sy: 0.454 },
+    witch:     { f: 35, sx: 4.2, sy: 0.410 }
   };
 
   // Палитра типа: [кант, свечение]. Совпадает с материалами моделей.
@@ -55,6 +61,11 @@
     pekka:   ['#8b9399', '#3af0d0'],   // сталь / бирюза
     miner:   ['#3f8a80', '#ffc94a'],   // бирюза / янтарь
     thrower: ['#3a8078', '#e0b06a'],   // бирюза / бронза
+    // v5: портреты valkyrie/headhunter/bowler/witch.
+    valkyrie:   ['#2f7f89', '#ff7a56'],   // бирюза / рыжий
+    headhunter: ['#b98a4a', '#ff4a3a'],   // золото / красный визор
+    bowler:     ['#d4ac64', '#3ae0c8'],   // латунь / бирюза
+    witch:      ['#2f8f86', '#e0c080'],   // бирюза / золото
     hero:    ['#ffcf4a', '#fff0a0']
   };
 

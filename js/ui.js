@@ -7124,6 +7124,14 @@ CC.UI = (function () {
     return 'Нужна ' + trainBuildingName(id);
   }
 
+  // Короткая форма для пилюли замка: полная «Тёмная казарма» на карточке
+  // 190 px обрезается, поэтому в пилюле — «Тёмная каз.». Полный текст
+  // остаётся в title, правой панели и кнопке.
+  function trainerPillText(id) {
+    if (id === 'darktrain') return 'Тёмная каз.';
+    return trainBuildingName(id);
+  }
+
   const NO_TRAINERS_HINT = 'Нет тренажёров — построй Казарму, ' +
     'Тёмную казарму или Питомник в терминале';
 
@@ -7222,7 +7230,7 @@ CC.UI = (function () {
     const memo = recruitLockMemo(lock);
     const lockText = lock.byTh
       ? '🔒 С центра ' + lock.need
-      : (lock.missingBuilding ? '🔒 ' + trainerNeedText(lock.missingBuildingId) : '');
+      : (lock.missingBuilding ? '🔒 ' + trainerPillText(lock.missingBuildingId) : '');
     const title = d.name + ' · ' + (d.desc || '') +
       ' · Тренируется: ' + lock.buildingName +
       (memo ? ' · ' + memo : (bad ? ' · ' + bad : ''));
