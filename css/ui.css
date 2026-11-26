@@ -11105,3 +11105,296 @@ html:root {
     max-width: calc(50% - 49px - env(safe-area-inset-left, 0px));
   }
 }
+
+/* ===================================================================
+   Окно поздравления после улучшения центра (#th-unlock)
+   =================================================================== */
+
+#app #th-unlock > .unlock-card {
+  width: min(900px, calc(100vw - 16px));
+  max-width: min(900px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px -
+    env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  margin: 0;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid var(--hud-line);
+  border-radius: 16px;
+  background: var(--hud-surface);
+  color: var(--hud-text);
+  box-shadow: var(--hud-shadow);
+  text-align: left;
+}
+
+#app #th-unlock .unlock-card__head {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+#app #th-unlock .unlock-title {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-20);
+  line-height: 1.15;
+  letter-spacing: .01em;
+  color: var(--hud-gold);
+  overflow-wrap: anywhere;
+}
+
+#app #th-unlock .unlock-close {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(147, 167, 173, .25);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .05);
+  color: var(--hud-muted);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#app #th-unlock .unlock-close:hover {
+  border-color: rgba(70, 224, 200, .55);
+  color: var(--hud-text);
+}
+
+#app #th-unlock .unlock-sub {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: var(--fs-14);
+  line-height: 1.35;
+  color: var(--hud-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+#app #th-unlock .unlock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 4px 2px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 196, 84, .55) rgba(20, 28, 32, .22);
+}
+
+#app #th-unlock .unlock-body::-webkit-scrollbar { width: 6px; }
+
+#app #th-unlock .unlock-body::-webkit-scrollbar-thumb {
+  background: rgba(196, 139, 24, .65);
+  border-radius: 3px;
+}
+
+#app #th-unlock .unlock-section + .unlock-section { margin-top: 12px; }
+
+/* ui.js собирает все пять секций; пустые не должны оставлять заголовок
+   без карточек. */
+#app #th-unlock .unlock-section:has(> .unlock-grid:empty) { display: none; }
+
+#app #th-unlock .unlock-section__title {
+  margin: 0 0 7px;
+  font-size: var(--fs-12);
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--hud-gold);
+}
+
+#app #th-unlock .unlock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-items: stretch;
+  gap: 9px;
+}
+
+#app #th-unlock .unlock-item {
+  min-width: 0;
+  padding: 8px 8px 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  border: 2px solid #8a5a2b;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f3d9a6 0%, #e2bd7e 48%, #c99a56 100%);
+  color: #3a2410;
+  text-align: center;
+  box-shadow: 0 2px 0 rgba(70, 45, 15, .32);
+}
+
+#app #th-unlock .unlock-item__art {
+  position: relative;
+  width: 100%;
+  height: clamp(100px, 9vw, 140px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  background:
+    radial-gradient(70% 60% at 50% 72%, rgba(80, 40, 15, .16), transparent 70%),
+    rgba(255, 248, 225, .20);
+  font-size: 54px;
+  line-height: 1;
+}
+
+#app #th-unlock .unlock-item__art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
+}
+
+#app #th-unlock .unlock-item__icon {
+  font-style: normal;
+  line-height: 1;
+}
+
+#app #th-unlock .unlock-item__name {
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* На десктопе имя может занять две строки: в узкой колонке длинные
+   названия вроде «Орбитальная станция» иначе обрезаются слишком рано. */
+@media (min-width: 621px) and (min-height: 431px) {
+  #app #th-unlock .unlock-item__name {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.15;
+  }
+}
+
+#app #th-unlock .unlock-item__role {
+  max-width: 100%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #5f4526;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+#app #th-unlock .unlock-item__tag {
+  max-width: 100%;
+  margin-top: auto;
+  padding: 1px 8px;
+  border: 1px solid rgba(58, 36, 16, .22);
+  border-radius: 999px;
+  background: rgba(58, 36, 16, .12);
+  color: #5a3814;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.5;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Если новых объектов нет, ui.js показывает одну сводную карточку.
+   Не даём ей сжаться до ширины одной колонки. */
+#app #th-unlock .unlock-item_summary {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(100%, 320px);
+}
+
+#app #th-unlock .unlock-actions {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(147, 167, 173, .22);
+}
+
+#app #th-unlock .unlock-actions .overlay__btn {
+  width: auto;
+  min-width: 180px;
+  min-height: 52px;
+  margin: 0;
+}
+
+/* 844/683/568: три карточки в ряд, как в компактном терминале. */
+@media (max-width: 900px) {
+  #app #th-unlock .unlock-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 568×320: две карточки в ряд, шапка и футер компактные, CTA на всю ширину. */
+@media (max-width: 620px) {
+  #app #th-unlock .unlock-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  #app #th-unlock .unlock-actions .overlay__btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Низкий ландшафт: окно обязано влезть в 320 px, кнопка остаётся видимой. */
+@media (max-height: 430px) {
+  #app #th-unlock > .unlock-card {
+    gap: 4px;
+    padding: 8px 10px;
+  }
+  #app #th-unlock .unlock-title { font-size: var(--fs-16); }
+  #app #th-unlock .unlock-sub {
+    font-size: var(--fs-14);
+    line-height: 1.1;
+    -webkit-line-clamp: 1;
+  }
+  #app #th-unlock .unlock-section__title { margin-bottom: 4px; }
+  #app #th-unlock .unlock-item {
+    padding: 2px 5px;
+    gap: 0;
+    border-radius: 12px;
+  }
+  #app #th-unlock .unlock-item__art { height: 100px; font-size: 42px; }
+  #app #th-unlock .unlock-item__name { font-size: 12px; }
+  #app #th-unlock .unlock-item__role {
+    font-size: 10px;
+    line-height: 1.2;
+    -webkit-line-clamp: 1;
+  }
+  #app #th-unlock .unlock-item__tag { padding: 0 7px; line-height: 1.3; }
+  #app #th-unlock .unlock-actions { padding-top: 2px; }
+  #app #th-unlock .unlock-actions .overlay__btn {
+    min-height: 44px;
+    padding: 8px 14px;
+  }
+}

@@ -58,6 +58,11 @@ CC.UI = (function () {
   const recruitSub = document.getElementById('recruit-sub');
   const recruitTabs = document.getElementById('recruit-tabs');
   const hangarRecruitBtn = document.getElementById('hangar-recruit');
+  const thUnlockEl = document.getElementById('th-unlock');
+  const thUnlockSub = document.getElementById('th-unlock-sub');
+  const thUnlockBody = document.getElementById('th-unlock-body');
+  const thUnlockClose = document.getElementById('th-unlock-close');
+  const thUnlockOk = document.getElementById('th-unlock-ok');
   const shopPrev = document.getElementById('shop-prev');
   const shopNext = document.getElementById('shop-next');
   const speedTrainBtn = document.getElementById('speed-train');
@@ -310,6 +315,7 @@ CC.UI = (function () {
 
   let lastMode = null;
   let overlayShown = false;
+  let thUnlockOpen = false;
   let offlineShown = false;
   let buildersOpen = false;
   let questOpen = false;
@@ -637,6 +643,14 @@ CC.UI = (function () {
         const it = state.selected ? findItem(state.selected) : null;
         const building = it && RECRUIT_SCOPES[it.type] ? it.type : 'barracks';
         openRecruitForBuilding(building);
+      });
+    }
+    // Окно «Поздравляем!» после улучшения центра.
+    if (thUnlockClose) thUnlockClose.addEventListener('click', closeThUnlock);
+    if (thUnlockOk) thUnlockOk.addEventListener('click', closeThUnlock);
+    if (thUnlockEl) {
+      thUnlockEl.addEventListener('click', function (e) {
+        if (e.target === thUnlockEl) closeThUnlock();
       });
     }
     if (mapCard) {
@@ -1830,6 +1844,7 @@ CC.UI = (function () {
   function anyOverlayOpen() {
     if (shopOpen || levelsOpen || chapterOpen || recruitOpen || achOpen || dailyOpen || arenaOpen ||
         replaysOpen || buyResOpen || buyPlatOpen || askState || infoOpen || researchOpen) return true;
+    if (thUnlockOpen) return true;
     if (overlayShown) return true;
     if (replayEnd && !replayEnd.classList.contains('hidden')) return true;
     if (offlineEl && !offlineEl.classList.contains('hidden')) return true;
@@ -4451,6 +4466,16 @@ CC.UI = (function () {
         try {
           if (next && next.focus) next.focus();
         } catch (err) { /* фокус не критичен */ }
+      }
+      return;
+    }
+
+    // Окно поздравления с новым центром закрывается по Esc и ничего
+    // не пропускает дальше в сцену.
+    if (thUnlockOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeThUnlock();
       }
       return;
     }
@@ -11385,6 +11410,202 @@ CC.UI = (function () {
     if (changed) invalidate();
   }
 
+  /* ---------- поздравление после улучшения командного центра ---------- */
+
+  function closeThUnlock() {
+    thUnlockOpen = false;
+    if (thUnlockEl) thUnlockEl.classList.add('hidden');
+  }
+
+  function thOtherOverlayOpen() {
+    if (!document.querySelectorAll) return false;
+    const list = document.querySelectorAll('.overlay:not(.hidden)');
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].id !== 'th-unlock') return true;
+    }
+    return false;
+  }
+
+  function thCelebrationFrom(value, fallback) {
+    const n = Math.round(Number(value));
+    return isFinite(n) && n > 0 ? n : fallback;
+  }
+
+  function thUnlockBuildings(from, to) {
+    const order = CC.BUILDING_ORDER || CC.PALETTE || Object.keys(CC.BUILDINGS || {});
+    return order.filter(function (type) {
+      if (type === 'townhall' || type === 'train' || !CC.BUILDINGS[type]) return false;
+      const limitTo = CC.limitAt ? CC.limitAt(type, to) : 0;
+      const limitFrom = CC.limitAt ? CC.limitAt(type, from) : 0;
+      const req = CC.REQUIREMENTS && CC.REQUIREMENTS[type];
+      const minTh = (req && req.minTh) || 1;
+      return limitTo > 0 && (limitFrom <= 0 || minTh > from);
+    });
+  }
+
+  function thUnlockTroops(from, to) {
+    return (CC.ARMY_ORDER || []).filter(function (type) {
+      const at = CC.troopUnlock ? CC.troopUnlock(type)
+        : (CC.TROOP_UNLOCK ? CC.TROOP_UNLOCK[type] : 0);
+      return at > from && at <= to;
+    });
+  }
+
+  function thUnlockHeroes(from, to) {
+    return (CC.HEROES || []).filter(function (hero) {
+      const id = hero && hero.id ? hero.id : String(hero);
+      const at = CC.HERO_UNLOCK && CC.HERO_UNLOCK[id] !== undefined
+        ? CC.HERO_UNLOCK[id] : (hero && hero.minTh) || 0;
+      return at > from && at <= to;
+    });
+  }
+
+  function thUnlockSiege(from, to) {
+    return Object.keys(CC.SIEGE || {}).filter(function (id) {
+      const s = CC.SIEGE[id] || {};
+      const at = CC.SIEGE_UNLOCK && CC.SIEGE_UNLOCK[id] !== undefined
+        ? CC.SIEGE_UNLOCK[id] : (s.minTh || 0);
+      return at > from && at <= to;
+    });
+  }
+
+  function thUnlockGuardians(from, to) {
+    const order = (CC.GUARDIAN_ORDER || []).length
+      ? CC.GUARDIAN_ORDER : Object.keys(CC.GUARDIANS || {});
+    return order.filter(function (id) {
+      const g = CC.GUARDIANS[id] || {};
+      const at = CC.GUARDIAN_UNLOCK && CC.GUARDIAN_UNLOCK[id] !== undefined
+        ? CC.GUARDIAN_UNLOCK[id] : (g.minTh || 0);
+      return at > from && at <= to;
+    });
+  }
+
+  function thGrowthCount(from, to) {
+    const order = CC.BUILDING_ORDER || CC.PALETTE || Object.keys(CC.BUILDINGS || {});
+    let n = 0;
+    order.forEach(function (type) {
+      if (type === 'townhall' || type === 'train' || !CC.BUILDINGS[type]) return;
+      const limit0 = CC.limitAt ? CC.limitAt(type, from) : 0;
+      const limit1 = CC.limitAt ? CC.limitAt(type, to) : 0;
+      const max0 = CC.maxLevelAt ? CC.maxLevelAt(type, from) : 0;
+      const max1 = CC.maxLevelAt ? CC.maxLevelAt(type, to) : 0;
+      if (limit1 > limit0 || max1 > max0) n++;
+    });
+    return n;
+  }
+
+  function unlockArtHtml(art, icon) {
+    return '<span class="unlock-item__art">' +
+      (art || '<i class="unlock-item__icon" aria-hidden="true">' +
+        escHtml(icon || '▦') + '</i>') +
+      '</span>';
+  }
+
+  function unlockItemHtml(art, icon, name, role, tag) {
+    return '<div class="unlock-item">' +
+      unlockArtHtml(art, icon) +
+      '<b class="unlock-item__name">' + escHtml(name) + '</b>' +
+      '<span class="unlock-item__role">' + escHtml(role || '') + '</span>' +
+      '<em class="unlock-item__tag">' + escHtml(tag) + '</em>' +
+      '</div>';
+  }
+
+  function unlockSectionHtml(title, cards) {
+    if (!cards.length) return '';
+    return '<section class="unlock-section">' +
+      '<h3 class="unlock-section__title">' + escHtml(title) + '</h3>' +
+      '<div class="unlock-grid">' + cards.join('') + '</div>' +
+      '</section>';
+  }
+
+  function thCelebrationHtml(from, to) {
+    const buildingCards = thUnlockBuildings(from, to).map(function (type) {
+      const d = CC.BUILDINGS[type] || {};
+      const art = cardArt('building', type, 140, 1, 'unlock-item__art-img');
+      return unlockItemHtml(art, CC.ICONS[type] || '🏠', d.name || type,
+        d.desc || d.role || '', 'Новое здание');
+    });
+    const troopCards = thUnlockTroops(from, to).map(function (type) {
+      const d = CC.TROOPS[type] || {};
+      const art = cardArt('troop', type, 140, 1, 'unlock-item__art-img');
+      return unlockItemHtml(art, d.icon || '🪖', d.name || type,
+        d.role || d.desc || '', 'Новое войско');
+    });
+    const heroCards = thUnlockHeroes(from, to).map(function (hero) {
+      const id = hero && hero.id ? hero.id : String(hero);
+      const meta = (CC.HERO_META && CC.HERO_META[id]) || {};
+      const portrait = (hero && hero.portrait) || meta.portrait;
+      const art = portrait
+        ? '<img class="unlock-item__art-img" src="' + escHtml(portrait) +
+          '" alt="" width="140" height="140" loading="lazy" decoding="async"' +
+          ' onerror="this.style.display=\'none\'">' : null;
+      return unlockItemHtml(art, '🦸', (hero && hero.name) || meta.name || id,
+        (hero && hero.role) || meta.role || '', 'Новый герой');
+    });
+    const siegeCards = thUnlockSiege(from, to).map(function (id) {
+      const s = CC.SIEGE[id] || {};
+      return unlockItemHtml(null, siegeIcon(id), s.name || id,
+        s.role || '', 'Новая осада');
+    });
+    const guardianCards = thUnlockGuardians(from, to).map(function (id) {
+      const g = CC.GUARDIANS[id] || {};
+      return unlockItemHtml(null, GUARDIAN_ICONS[id] || '🛡️', g.name || id,
+        g.role || '', 'Новый страж');
+    });
+
+    let html = unlockSectionHtml('Здания', buildingCards) +
+      unlockSectionHtml('Войска', troopCards) +
+      unlockSectionHtml('Герои', heroCards) +
+      unlockSectionHtml('Осада', siegeCards) +
+      unlockSectionHtml('Стражи', guardianCards);
+
+    if (!html) {
+      const count = thGrowthCount(from, to);
+      const card = '<div class="unlock-item unlock-item_summary">' +
+        unlockArtHtml(null, '🛰️') +
+        '<b class="unlock-item__name">Командный центр ' + to + '</b>' +
+        '<span class="unlock-item__role">Лимиты и уровни построек выросли · ' +
+          'затронуто типов: ' + count + '</span>' +
+        '<em class="unlock-item__tag">Улучшение</em>' +
+        '</div>';
+      html = '<section class="unlock-section">' +
+        '<h3 class="unlock-section__title">Командный центр</h3>' +
+        '<div class="unlock-grid">' + card + '</div></section>';
+    }
+    return html;
+  }
+
+  function showThCelebration(ev) {
+    if (!thUnlockEl) return;
+    const to = thCelebrationFrom(ev && ev.to, CC.Game.townhallLevel());
+    const from = thCelebrationFrom(ev && ev.from, Math.max(1, to - 1));
+    if (thUnlockSub) {
+      thUnlockSub.textContent = 'Командный центр улучшен до ' + to +
+        '. Открылись новые возможности.';
+    }
+    if (thUnlockBody) {
+      thUnlockBody.innerHTML = thCelebrationHtml(from, to);
+      thUnlockBody.scrollTop = 0;
+    }
+    thUnlockEl.classList.remove('hidden');
+    thUnlockOpen = true;
+    if (thUnlockOk && thUnlockOk.focus) {
+      try { thUnlockOk.focus(); } catch (e) { /* фокус не критичен */ }
+    }
+  }
+
+  function syncThCelebration() {
+    if (!thUnlockEl || thUnlockOpen) return;
+    if (!CC.Game || typeof CC.Game.takeThCelebration !== 'function') return;
+    if (CC.App.mode !== 'base' || CC.App.introOpen || CC.App.prepActive ||
+        CC.App.modalOpen) return;
+    if (thOtherOverlayOpen()) return;
+    let ev = null;
+    try { ev = CC.Game.takeThCelebration(); } catch (e) { ev = null; }
+    if (!ev) return;
+    showThCelebration(ev);
+  }
+
   function sync() {
     syncCompact();
     syncUpgradeWatchers();
@@ -11486,6 +11707,7 @@ CC.UI = (function () {
 
     syncTutorialPointer();
     syncBattlePrep();
+    syncThCelebration();
   }
 
   /* ---------- финал боя ---------- */
@@ -12032,6 +12254,9 @@ CC.UI = (function () {
     openRecruitForBuilding: openRecruitForBuilding,
     closeRecruit: closeRecruit,
     openRecruitTab: openRecruitTab,
+    thUnlockOpen: function () { return thUnlockOpen; },
+    syncThCelebration: syncThCelebration,
+    closeThUnlock: closeThUnlock,
     recruitTab: function () { return recruitTab; },
     recruitScope: function () {
       return { building: recruitScope.building, tabs: recruitScope.tabs.slice(),

@@ -846,6 +846,9 @@ CC.Game = (function () {
       battleStarted: false,
       levels: {},
       upgrades: {},
+      // Поздравление после улучшения командного центра: {from, to} или null.
+      // UI забирает его через CC.Game.takeThCelebration().
+      thCelebrate: null,
       // Идущие стройки: id → { startedAt, endAt, time }. Старый сейв без поля
       // читается как «всё давно построено».
       builds: {},
@@ -2419,29 +2422,62 @@ CC.Game = (function () {
   }
 
   function completeUpgrade(id, to) {
+    // Старый уровень нужен до записи: у старого сейва поле могло быть пустым.
+    let oldLevel = st.levels[id] != null ? st.levels[id] : (to | 0) - 1;
+    if (!(oldLevel >= 1)) oldLevel = 1;
     st.levels[id] = to;
     upgradeDoneEvent++;
     addStat('upgrades', 1);
     // «Максимальная мощность»: модуль докачан до максимума, который
     // разрешён текущим центром (башня-лазер и ангар отстают на 1).
-    const it = item(id);
+    // id из st.upgrades приходит строкой, поэтому ищем и по числу.
+    const it = item(id) || item(Number(id));
     if (it && to >= maxLevel(it.type)) addStat('maxed', 1);
     addXp(10 * (to | 0));
     invalidateCaps();
+
+    // Улучшение командного центра: копим диапазон для окна поздравления.
+    // Если предыдущее событие ещё не забрали, объединяем from..to.
+    if (it && it.type === 'townhall' && to > oldLevel) {
+      let from = oldLevel;
+      let toLevel = to;
+      const prev = st.thCelebrate;
+      if (prev && prev.from >= 1 && prev.to > prev.from) {
+        from = Math.min(prev.from, from);
+        toLevel = Math.max(prev.to, toLevel);
+      }
+      st.thCelebrate = { from: from, to: toLevel };
+      save();
+    }
+  }
+
+  // Забрать поздравление после улучшения центра. Возвращает {from,to}
+  // и очищает событие; повторный вызов — null.
+  function takeThCelebration() {
+    const c = st.thCelebrate;
+    if (!c) return null;
+    st.thCelebrate = null;
+    save();
+    return { from: c.from, to: c.to };
   }
 
   function settleUpgrades(now) {
-    let changed = false;
+    const done = [];
     for (const id in st.upgrades) {
       const u = st.upgrades[id];
       if (!u) continue;
       if (u.endAt <= now) {
-        completeUpgrade(id, u.to);
+        // Сначала снимаем все завершённые записи: completeUpgrade может
+        // сохранить базу, и они не должны воскреснуть при загрузке.
         delete st.upgrades[id];
-        changed = true;
+        done.push({ id: id, to: u.to });
       }
     }
-    if (changed) save();
+    if (!done.length) return;
+    for (let i = 0; i < done.length; i++) {
+      completeUpgrade(done[i].id, done[i].to);
+    }
+    save();
   }
 
   /* ---------- прокачка войск ---------- */
@@ -5384,6 +5420,7 @@ CC.Game = (function () {
         battleStarted: !!st.battleStarted,
         levels: st.levels,
         upgrades: st.upgrades,
+        thCelebrate: st.thCelebrate,
         builds: st.builds,
         troopLevels: st.troopLevels,
         troopUp: st.troopUp,
@@ -5612,6 +5649,15 @@ CC.Game = (function () {
           endAt: Number(u.endAt),
           time: Math.max(0, num(u.time, 0))
         };
+      }
+    }
+
+    // Поздравление с улучшением центра. Битое/старое поле — null.
+    if (d.thCelebrate && typeof d.thCelebrate === 'object') {
+      const from = Math.floor(num(d.thCelebrate.from, 0));
+      const to = Math.floor(num(d.thCelebrate.to, 0));
+      if (from >= 1 && to <= MAX_TH && to > from) {
+        s.thCelebrate = { from: from, to: to };
       }
     }
 
@@ -6340,6 +6386,7 @@ CC.Game = (function () {
     canUpgrade: canUpgrade,
     startUpgrade: startUpgrade,
     upgradeInfo: upgradeInfo,
+    takeThCelebration: takeThCelebration,
     isUpgrading: busy,
     isBuilding: isBuilding,
     buildInfo: buildInfo,
